@@ -3,38 +3,35 @@
 from PyQt5 import QtCore, QtGui, QtWidgets
 import tool
 
-
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
+
         MainWindow.setObjectName("MainWindow")
         MainWindow.resize(1920, 1080)
-        MainWindow.setMinimumSize(QtCore.QSize(1000, 700))
-        self.centralwidget = QtWidgets.QWidget(MainWindow)
+        MainWindow.setMinimumSize(QtCore.QSize(1920, 1080))
+        self.centralwidget = QtWidgets.QWidget(MainWindow) # central widget inside main window
         self.centralwidget.setObjectName("centralwidget")
-        self.horizontalLayout_6 = QtWidgets.QHBoxLayout(self.centralwidget)
-        self.horizontalLayout_6.setObjectName("horizontalLayout_6")
-        self.main_layout = QtWidgets.QHBoxLayout()
-        self.main_layout.setObjectName("main_layout")
+        self.central_widget_layout = QtWidgets.QHBoxLayout(self.centralwidget) # add a layout to centralwidget so window can resize properly
+        self.central_widget_layout.setObjectName("central_widget_layout")
+        self.main_layout = QtWidgets.QHBoxLayout() # main layout to add align canvas and the tab
+        self.main_layout.setObjectName("main_layout") 
+
+        # tabs
         self.tabWidget = QtWidgets.QTabWidget(self.centralwidget)
-        self.tabWidget.setMinimumSize(QtCore.QSize(400, 0))
-        self.tabWidget.setMaximumSize(QtCore.QSize(500, 3000))
+        self.tabWidget.setMinimumSize(QtCore.QSize(400, 500))
+        self.tabWidget.setMaximumSize(QtCore.QSize(500, 2000))
         self.tabWidget.setAutoFillBackground(False)
         self.tabWidget.setObjectName("tabWidget")
+
+        # preprocessing tab
         self.preprocessing_tab = QtWidgets.QWidget()
         self.preprocessing_tab.setMinimumSize(QtCore.QSize(0, 0))
         self.preprocessing_tab.setObjectName("preprocessing_tab")
         self.horizontalLayout = QtWidgets.QHBoxLayout(self.preprocessing_tab)
-        self.horizontalLayout.setObjectName("horizontalLayout")
-        self.preprocessing_dockwidget = QtWidgets.QDockWidget(self.preprocessing_tab)
-        self.preprocessing_dockwidget.setMinimumSize(QtCore.QSize(320, 725))
-        self.preprocessing_dockwidget.setObjectName("preprocessing_dockwidget")
-        self.dockWidgetContents_preprocessing = QtWidgets.QWidget()
-        self.dockWidgetContents_preprocessing.setObjectName("dockWidgetContents_preprocessing")
-        self.verticalLayout_13 = QtWidgets.QVBoxLayout(self.dockWidgetContents_preprocessing)
-        self.verticalLayout_13.setObjectName("verticalLayout_13")
+        self.horizontalLayout.setObjectName("horizontalLayout") 
         self.preprocessing_dockwidget_main_vlayout = QtWidgets.QVBoxLayout()
         self.preprocessing_dockwidget_main_vlayout.setObjectName("preprocessing_dockwidget_main_vlayout")
-        self.thresholding_groupBox = QtWidgets.QGroupBox(self.dockWidgetContents_preprocessing)
+        self.thresholding_groupBox = QtWidgets.QGroupBox(self.preprocessing_tab)
         self.thresholding_groupBox.setMinimumSize(QtCore.QSize(300, 300))
         self.thresholding_groupBox.setObjectName("thresholding_groupBox")
         self.horizontalLayout_9 = QtWidgets.QHBoxLayout(self.thresholding_groupBox)
@@ -62,7 +59,7 @@ class Ui_MainWindow(object):
         self.thresholding_components_vlayout.addWidget(self.thresholding_run_button)
         self.horizontalLayout_9.addLayout(self.thresholding_components_vlayout)
         self.preprocessing_dockwidget_main_vlayout.addWidget(self.thresholding_groupBox)
-        self.stardist_groupbox = QtWidgets.QGroupBox(self.dockWidgetContents_preprocessing)
+        self.stardist_groupbox = QtWidgets.QGroupBox(self.preprocessing_tab)
         self.stardist_groupbox.setMinimumSize(QtCore.QSize(300, 300))
         self.stardist_groupbox.setObjectName("stardist_groupbox")
         self.horizontalLayout_4 = QtWidgets.QHBoxLayout(self.stardist_groupbox)
@@ -132,24 +129,17 @@ class Ui_MainWindow(object):
         self.stardist_components_vlayout.addWidget(self.stardist_run_button)
         self.horizontalLayout_4.addLayout(self.stardist_components_vlayout)
         self.preprocessing_dockwidget_main_vlayout.addWidget(self.stardist_groupbox)
-        self.verticalLayout_13.addLayout(self.preprocessing_dockwidget_main_vlayout)
-        self.preprocessing_dockwidget.setWidget(self.dockWidgetContents_preprocessing)
-        self.horizontalLayout.addWidget(self.preprocessing_dockwidget)
+        self.horizontalLayout.addLayout(self.preprocessing_dockwidget_main_vlayout)
+
+        # view tab
         self.tabWidget.addTab(self.preprocessing_tab, "")
         self.view_tab = QtWidgets.QWidget()
         self.view_tab.setObjectName("view_tab")
         self.horizontalLayout_3 = QtWidgets.QHBoxLayout(self.view_tab)
         self.horizontalLayout_3.setObjectName("horizontalLayout_3")
-        self.view_dockwidget = QtWidgets.QDockWidget(self.view_tab)
-        self.view_dockwidget.setMinimumSize(QtCore.QSize(332, 600))
-        self.view_dockwidget.setObjectName("view_dockwidget")
-        self.dockWidgetContents_view = QtWidgets.QWidget()
-        self.dockWidgetContents_view.setObjectName("dockWidgetContents_view")
-        self.verticalLayout_9 = QtWidgets.QVBoxLayout(self.dockWidgetContents_view)
-        self.verticalLayout_9.setObjectName("verticalLayout_9")
         self.proteinWidget_main_vlayout = QtWidgets.QVBoxLayout()
         self.proteinWidget_main_vlayout.setObjectName("proteinWidget_main_vlayout")
-        self.protein2_groupbox = QtWidgets.QGroupBox(self.dockWidgetContents_view)
+        self.protein2_groupbox = QtWidgets.QGroupBox(self.view_tab)
         self.protein2_groupbox.setMinimumSize(QtCore.QSize(100, 100))
         self.protein2_groupbox.setTitle("")
         self.protein2_groupbox.setObjectName("protein2_groupbox")
@@ -167,7 +157,7 @@ class Ui_MainWindow(object):
         self.protein2_vlayout.addWidget(self.protein2_contrast_slider)
         self.horizontalLayout_8.addLayout(self.protein2_vlayout)
         self.proteinWidget_main_vlayout.addWidget(self.protein2_groupbox)
-        self.protein3_groupbox = QtWidgets.QGroupBox(self.dockWidgetContents_view)
+        self.protein3_groupbox = QtWidgets.QGroupBox(self.view_tab)
         self.protein3_groupbox.setMinimumSize(QtCore.QSize(100, 100))
         self.protein3_groupbox.setTitle("")
         self.protein3_groupbox.setObjectName("protein3_groupbox")
@@ -185,7 +175,7 @@ class Ui_MainWindow(object):
         self.protein3_vlayout.addWidget(self.protein3_contrast_slider)
         self.horizontalLayout_7.addLayout(self.protein3_vlayout)
         self.proteinWidget_main_vlayout.addWidget(self.protein3_groupbox)
-        self.protein1_groupbox = QtWidgets.QGroupBox(self.dockWidgetContents_view)
+        self.protein1_groupbox = QtWidgets.QGroupBox(self.view_tab)
         self.protein1_groupbox.setMinimumSize(QtCore.QSize(100, 100))
         self.protein1_groupbox.setTitle("")
         self.protein1_groupbox.setObjectName("protein1_groupbox")
@@ -203,49 +193,54 @@ class Ui_MainWindow(object):
         self.protein1_vlayout.addWidget(self.protein1_contrast_slider)
         self.horizontalLayout_5.addLayout(self.protein1_vlayout)
         self.proteinWidget_main_vlayout.addWidget(self.protein1_groupbox)
-        self.verticalLayout_9.addLayout(self.proteinWidget_main_vlayout)
-        self.view_dockwidget.setWidget(self.dockWidgetContents_view)
-        self.horizontalLayout_3.addWidget(self.view_dockwidget)
+        self.horizontalLayout_3.addLayout(self.proteinWidget_main_vlayout)
         self.tabWidget.addTab(self.view_tab, "")
         self.main_layout.addWidget(self.tabWidget)
         self.canvas = QtWidgets.QGraphicsView(self.centralwidget)
         self.canvas.setMinimumSize(QtCore.QSize(800, 500))
         self.canvas.setObjectName("canvas")
         self.main_layout.addWidget(self.canvas)
-        self.horizontalLayout_6.addLayout(self.main_layout)
+        self.central_widget_layout.addLayout(self.main_layout)
         MainWindow.setCentralWidget(self.centralwidget)
+
+
+        # menubar
         self.menubar = QtWidgets.QMenuBar(MainWindow)
-        self.menubar.setGeometry(QtCore.QRect(0, 0, 1039, 22))
+        self.menubar.setGeometry(QtCore.QRect(0, 0, 1061, 22))
         self.menubar.setObjectName("menubar")
         self.menuFile = QtWidgets.QMenu(self.menubar)
         self.menuFile.setObjectName("menuFile")
         MainWindow.setMenuBar(self.menubar)
-        self.statusbar = QtWidgets.QStatusBar(MainWindow)
-        self.statusbar.setObjectName("statusbar")
-        MainWindow.setStatusBar(self.statusbar)
+
+        # toolbar
         self.toolBar = QtWidgets.QToolBar(MainWindow)
         self.toolBar.setObjectName("toolBar")
         MainWindow.addToolBar(QtCore.Qt.TopToolBarArea, self.toolBar)
         self.actionOpen = tool.Tool(MainWindow, "actionOpen", "icons/folder.png")
         self.actionSaveAs = tool.Tool(MainWindow, "actionSaveAs", "icons/save-as.png")
-
         self.actionRotate = tool.Tool(MainWindow, "actionRotate", "icons/rotate-right.png")
         self.actionSelect_ROI = tool.Tool(MainWindow, "actionSelect_ROI",  "icons/rectangle.png")
         self.actionReset = tool.Tool(MainWindow, "actionReset", "icons/home.png")
-
         self.menuFile.addAction(self.actionOpen)
         self.menuFile.addAction(self.actionSaveAs)
         self.menubar.addAction(self.menuFile.menuAction())
         self.toolBar.addAction(self.actionSelect_ROI)
         self.toolBar.addAction(self.actionRotate)
         self.toolBar.addAction(self.actionReset)
+
+
+        # status bar
+        self.statusbar = QtWidgets.QStatusBar(MainWindow)
+        self.statusbar.setObjectName("statusbar")
+        MainWindow.setStatusBar(self.statusbar)
+
         self.retranslateUi(MainWindow)
         self.tabWidget.setCurrentIndex(0)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
-        MainWindow.setWindowTitle(_translate("MainWindow", "Protein Visualization"))
+        MainWindow.setWindowTitle(_translate("MainWindow", "MainWindow"))
         self.thresholding_groupBox.setTitle(_translate("MainWindow", "Thresholding"))
         self.thresholding_label1.setText(_translate("MainWindow", "Block Size"))
         self.thresholding_label2.setText(_translate("MainWindow", "Offset"))
@@ -259,15 +254,20 @@ class Ui_MainWindow(object):
         self.stardist_label6.setText(_translate("MainWindow", "Number of Tiles"))
         self.stardist_run_button.setText(_translate("MainWindow", "Run"))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.preprocessing_tab), _translate("MainWindow", "Preprocessing"))
+        self.protein2_combobox.setItemText(0, _translate("MainWindow", "Select"))
+        self.protein3_combobox.setItemText(0, _translate("MainWindow", "Select"))
+        self.protein1_combobox.setItemText(0, _translate("MainWindow", "Select"))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.view_tab), _translate("MainWindow", "View"))
         self.menuFile.setTitle(_translate("MainWindow", "File"))
         self.toolBar.setWindowTitle(_translate("MainWindow", "toolBar"))
-        self.actionOpen.setText(_translate("MainWindow", "Open ... "))
-        self.actionSaveAs.setText(_translate("MainWindow", "Save as ... "))
+        self.actionOpen.setText(_translate("MainWindow", "Open"))
+        self.actionSaveAs.setText(_translate("MainWindow", "Save As..."))
         self.actionRotate.setText(_translate("MainWindow", "Rotate"))
+        self.actionRotate.setToolTip(_translate("MainWindow", "Rotate"))
         self.actionSelect_ROI.setText(_translate("MainWindow", "Select ROI"))
+        self.actionSelect_ROI.setToolTip(_translate("MainWindow", "Select ROI"))
         self.actionReset.setText(_translate("MainWindow", "Reset"))
-
+        self.actionReset.setToolTip(_translate("MainWindow", "Reset Image"))
 
 
 if __name__ == "__main__":
