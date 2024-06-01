@@ -1,7 +1,37 @@
 
 
 from PyQt5 import QtCore, QtGui, QtWidgets
-import tool
+import tool, protein_selection
+
+class ImageGraphicsView(QtWidgets.QGraphicsView):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMinimumSize(QtCore.QSize(600, 600))
+        self.setObjectName("canvas")
+        self.setAcceptDrops(True)
+        self.setScene(QtWidgets.QGraphicsScene(self))
+        self.setSceneRect(0, 0, 800, 600)
+
+    def dragEnterEvent(self, event: QtGui.QDragEnterEvent):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dragMoveEvent(self, event: QtGui.QDragEnterEvent):
+        event.acceptProposedAction()
+
+    def dropEvent(self, event: QtGui.QDropEvent):
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                file_path = url.toLocalFile()
+                pixmap = QtGui.QPixmap(file_path)
+                if not pixmap.isNull():
+                    self.addImage(pixmap)
+            event.acceptProposedAction()
+
+    def addImage(self, pixmap: QtGui.QPixmap):
+        item = QtWidgets.QGraphicsPixmapItem(pixmap)
+        self.scene().addItem(item)
+        item.setPos(-200, -200)  # You can set position as needed
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -135,71 +165,29 @@ class Ui_MainWindow(object):
         self.tabWidget.addTab(self.preprocessing_tab, "")
         self.view_tab = QtWidgets.QWidget()
         self.view_tab.setObjectName("view_tab")
-        self.horizontalLayout_3 = QtWidgets.QHBoxLayout(self.view_tab)
-        self.horizontalLayout_3.setObjectName("horizontalLayout_3")
+        self.protein_hlayout = QtWidgets.QHBoxLayout(self.view_tab)
+        self.protein_hlayout.setObjectName("horizontalLayout_3")
+
+        
+        # add the protein selection boxes
         self.proteinWidget_main_vlayout = QtWidgets.QVBoxLayout()
         self.proteinWidget_main_vlayout.setObjectName("proteinWidget_main_vlayout")
-        self.protein2_groupbox = QtWidgets.QGroupBox(self.view_tab)
-        self.protein2_groupbox.setMinimumSize(QtCore.QSize(100, 100))
-        self.protein2_groupbox.setTitle("")
-        self.protein2_groupbox.setObjectName("protein2_groupbox")
-        self.horizontalLayout_8 = QtWidgets.QHBoxLayout(self.protein2_groupbox)
-        self.horizontalLayout_8.setObjectName("horizontalLayout_8")
-        self.protein2_vlayout = QtWidgets.QVBoxLayout()
-        self.protein2_vlayout.setObjectName("protein2_vlayout")
-        self.protein2_combobox = QtWidgets.QComboBox(self.protein2_groupbox)
-        self.protein2_combobox.setObjectName("protein2_combobox")
-        self.protein2_combobox.addItem("")
-        self.protein2_vlayout.addWidget(self.protein2_combobox)
-        self.protein2_contrast_slider = QtWidgets.QSlider(self.protein2_groupbox)
-        self.protein2_contrast_slider.setOrientation(QtCore.Qt.Horizontal)
-        self.protein2_contrast_slider.setObjectName("protein2_contrast_slider")
-        self.protein2_vlayout.addWidget(self.protein2_contrast_slider)
-        self.horizontalLayout_8.addLayout(self.protein2_vlayout)
-        self.proteinWidget_main_vlayout.addWidget(self.protein2_groupbox)
-        self.protein3_groupbox = QtWidgets.QGroupBox(self.view_tab)
-        self.protein3_groupbox.setMinimumSize(QtCore.QSize(100, 100))
-        self.protein3_groupbox.setTitle("")
-        self.protein3_groupbox.setObjectName("protein3_groupbox")
-        self.horizontalLayout_7 = QtWidgets.QHBoxLayout(self.protein3_groupbox)
-        self.horizontalLayout_7.setObjectName("horizontalLayout_7")
-        self.protein3_vlayout = QtWidgets.QVBoxLayout()
-        self.protein3_vlayout.setObjectName("protein3_vlayout")
-        self.protein3_combobox = QtWidgets.QComboBox(self.protein3_groupbox)
-        self.protein3_combobox.setObjectName("protein3_combobox")
-        self.protein3_combobox.addItem("")
-        self.protein3_vlayout.addWidget(self.protein3_combobox)
-        self.protein3_contrast_slider = QtWidgets.QSlider(self.protein3_groupbox)
-        self.protein3_contrast_slider.setOrientation(QtCore.Qt.Horizontal)
-        self.protein3_contrast_slider.setObjectName("protein3_contrast_slider")
-        self.protein3_vlayout.addWidget(self.protein3_contrast_slider)
-        self.horizontalLayout_7.addLayout(self.protein3_vlayout)
-        self.proteinWidget_main_vlayout.addWidget(self.protein3_groupbox)
-        self.protein1_groupbox = QtWidgets.QGroupBox(self.view_tab)
-        self.protein1_groupbox.setMinimumSize(QtCore.QSize(100, 100))
-        self.protein1_groupbox.setTitle("")
-        self.protein1_groupbox.setObjectName("protein1_groupbox")
-        self.horizontalLayout_5 = QtWidgets.QHBoxLayout(self.protein1_groupbox)
-        self.horizontalLayout_5.setObjectName("horizontalLayout_5")
-        self.protein1_vlayout = QtWidgets.QVBoxLayout()
-        self.protein1_vlayout.setObjectName("protein1_vlayout")
-        self.protein1_combobox = QtWidgets.QComboBox(self.protein1_groupbox)
-        self.protein1_combobox.setObjectName("protein1_combobox")
-        self.protein1_combobox.addItem("")
-        self.protein1_vlayout.addWidget(self.protein1_combobox)
-        self.protein1_contrast_slider = QtWidgets.QSlider(self.protein1_groupbox)
-        self.protein1_contrast_slider.setOrientation(QtCore.Qt.Horizontal)
-        self.protein1_contrast_slider.setObjectName("protein1_contrast_slider")
-        self.protein1_vlayout.addWidget(self.protein1_contrast_slider)
-        self.horizontalLayout_5.addLayout(self.protein1_vlayout)
+        self.protein1_groupbox = protein_selection.Protein_Selector(self.view_tab)
+        self.protein2_groupbox = protein_selection.Protein_Selector(self.view_tab)
+        self.protein3_groupbox = protein_selection.Protein_Selector(self.view_tab)
         self.proteinWidget_main_vlayout.addWidget(self.protein1_groupbox)
-        self.horizontalLayout_3.addLayout(self.proteinWidget_main_vlayout)
+        self.proteinWidget_main_vlayout.addWidget(self.protein2_groupbox)
+        self.proteinWidget_main_vlayout.addWidget(self.protein3_groupbox)
+        self.protein_hlayout.addLayout(self.proteinWidget_main_vlayout) # allow expansion of the groupbox when you resize
         self.tabWidget.addTab(self.view_tab, "")
         self.main_layout.addWidget(self.tabWidget)
-        self.canvas = QtWidgets.QGraphicsView(self.centralwidget)
+
+
+        # canvas
+        self.canvas = ImageGraphicsView(self.centralwidget)
         self.canvas.setMinimumSize(QtCore.QSize(800, 500))
         self.canvas.setObjectName("canvas")
-        self.main_layout.addWidget(self.canvas)
+        self.main_layout.addWidget(self.canvas) 
         self.central_widget_layout.addLayout(self.main_layout)
         MainWindow.setCentralWidget(self.centralwidget)
 
@@ -235,7 +223,10 @@ class Ui_MainWindow(object):
         MainWindow.setStatusBar(self.statusbar)
 
         self.retranslateUi(MainWindow)
-        self.tabWidget.setCurrentIndex(0)
+        self.tabWidget.setCurrentIndex(0) # start from preprocessing tab
+
+        self.actionOpen.triggered.connect(self.openFileDialog)
+
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
 
     def retranslateUi(self, MainWindow):
@@ -254,9 +245,6 @@ class Ui_MainWindow(object):
         self.stardist_label6.setText(_translate("MainWindow", "Number of Tiles"))
         self.stardist_run_button.setText(_translate("MainWindow", "Run"))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.preprocessing_tab), _translate("MainWindow", "Preprocessing"))
-        self.protein2_combobox.setItemText(0, _translate("MainWindow", "Select"))
-        self.protein3_combobox.setItemText(0, _translate("MainWindow", "Select"))
-        self.protein1_combobox.setItemText(0, _translate("MainWindow", "Select"))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.view_tab), _translate("MainWindow", "View"))
         self.menuFile.setTitle(_translate("MainWindow", "File"))
         self.toolBar.setWindowTitle(_translate("MainWindow", "toolBar"))
@@ -268,6 +256,15 @@ class Ui_MainWindow(object):
         self.actionSelect_ROI.setToolTip(_translate("MainWindow", "Select ROI"))
         self.actionReset.setText(_translate("MainWindow", "Reset"))
         self.actionReset.setToolTip(_translate("MainWindow", "Reset Image"))
+
+
+    def openFileDialog(self):
+        options = QtWidgets.QFileDialog.Options()
+        fileName, _ = QtWidgets.QFileDialog.getOpenFileName(None, "Open Image File", "", "Images (*.png *.xpm *.jpg *.bmp *.gif *.tif);;All Files (*)", options=options)
+        if fileName:
+            pixmap = QtGui.QPixmap(fileName)
+            if not pixmap.isNull():
+                self.canvas.addImage(pixmap)
 
 
 if __name__ == "__main__":
