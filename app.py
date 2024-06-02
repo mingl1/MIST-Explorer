@@ -6,11 +6,16 @@ import tool, protein_selection
 class ImageGraphicsView(QtWidgets.QGraphicsView):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.pixmap=None
+        self.pixmapItem=None
         self.setMinimumSize(QtCore.QSize(600, 600))
         self.setObjectName("canvas")
         self.setAcceptDrops(True)
         self.setScene(QtWidgets.QGraphicsScene(self))
         self.setSceneRect(0, 0, 800, 600)
+        self.setDragMode(QtWidgets.QGraphicsView.DragMode.ScrollHandDrag)
+        self.setTransformationAnchor(QtWidgets.QGraphicsView.ViewportAnchor.AnchorUnderMouse)
+        self.scale_factor = 1.25
 
     def dragEnterEvent(self, event: QtGui.QDragEnterEvent):
         if event.mimeData().hasUrls():
@@ -29,10 +34,22 @@ class ImageGraphicsView(QtWidgets.QGraphicsView):
             event.acceptProposedAction()
 
     def addImage(self, pixmap: QtGui.QPixmap):
-        item = QtWidgets.QGraphicsPixmapItem(pixmap)
-        self.scene().addItem(item)
-        item.setPos(-200, -200)  # You can set position as needed
+        self.pixmap=pixmap
+        self.pixmapItem = QtWidgets.QGraphicsPixmapItem(pixmap)
+        self.fitInView(self.pixmapItem, QtCore.Qt.AspectRatioMode.KeepAspectRatio)
 
+        # check if the item has multiple channels
+        self.scene().addItem(self.pixmapItem)
+
+        self.pixmapItem.setPos(-200, -200)  # You can set position as needed
+        self.pixmapItem.setFlag(QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
+        
+
+    def wheelEvent(self, event):
+        if event.angleDelta().y() > 0:
+            self.scale(self.scale_factor, self.scale_factor)
+        else:
+            self.scale(1/self.scale_factor, 1/self.scale_factor)
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
 
@@ -45,7 +62,7 @@ class Ui_MainWindow(object):
         self.central_widget_layout.setObjectName("central_widget_layout")
         self.main_layout = QtWidgets.QHBoxLayout() # main layout to add align canvas and the tab
         self.main_layout.setObjectName("main_layout") 
-
+        
         # tabs
         self.tabWidget = QtWidgets.QTabWidget(self.centralwidget)
         self.tabWidget.setMinimumSize(QtCore.QSize(400, 500))
@@ -203,7 +220,7 @@ class Ui_MainWindow(object):
         # toolbar
         self.toolBar = QtWidgets.QToolBar(MainWindow)
         self.toolBar.setObjectName("toolBar")
-        MainWindow.addToolBar(QtCore.Qt.TopToolBarArea, self.toolBar)
+        MainWindow.addToolBar(QtCore.Qt.ToolBarArea.TopToolBarArea, self.toolBar)
         self.actionOpen = tool.Tool(MainWindow, "actionOpen", "icons/folder.png")
         self.actionSaveAs = tool.Tool(MainWindow, "actionSaveAs", "icons/save-as.png")
         self.actionRotate = tool.Tool(MainWindow, "actionRotate", "icons/rotate-right.png")
@@ -227,7 +244,15 @@ class Ui_MainWindow(object):
 
         self.actionOpen.triggered.connect(self.openFileDialog)
 
+        self.rotation_dialog = tool.Rotate_Dialog(self.canvas, self.canvas.pixmap)
+        self.actionRotate.triggered.connect(self.showRotationDialog)
+        self.actionReset.triggered.connect(self.resetImage)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
+
+    def showRotationDialog(self):
+        self.rotation_dialog.show()
+    def resetImage(self):
+        self.canvas.resetTransform()
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
