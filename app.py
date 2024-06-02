@@ -36,6 +36,7 @@ class ImageGraphicsView(QtWidgets.QGraphicsView):
     def addImage(self, pixmap: QtGui.QPixmap):
 
         # check if canvas already has an image
+        self.resetTransform()
         if self.pixmapItem:
             self.scene().removeItem(self.pixmapItem)
             self.pixmapItem = None
@@ -48,7 +49,7 @@ class ImageGraphicsView(QtWidgets.QGraphicsView):
         # check if the item has multiple channels
         self.scene().addItem(self.pixmapItem)
 
-        self.pixmapItem.setPos(-200, -200)  # You can set position as needed
+        self.pixmapItem.setPos(0, 0)  # You can set position as needed
         self.pixmapItem.setFlag(QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
 
         
@@ -57,7 +58,8 @@ class ImageGraphicsView(QtWidgets.QGraphicsView):
             self.scale(self.scale_factor, self.scale_factor)
         else:
             self.scale(1/self.scale_factor, 1/self.scale_factor)
-            
+
+    
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
 
@@ -253,14 +255,10 @@ class Ui_MainWindow(object):
         self.actionOpen.triggered.connect(self.openFileDialog)
 
         self.rotation_dialog = tool.Rotate_Dialog(self.canvas, self.canvas.pixmap)
-        self.actionRotate.triggered.connect(self.showRotationDialog)
-        self.actionReset.triggered.connect(self.resetImage)
+        self.actionRotate.triggered.connect(self.rotation_dialog.show)
+        self.actionReset.triggered.connect(self.canvas.resetTransform)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
 
-    def showRotationDialog(self):
-        self.rotation_dialog.show()
-    def resetImage(self):
-        self.canvas.resetTransform()
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate

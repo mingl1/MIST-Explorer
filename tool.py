@@ -52,4 +52,5 @@ class Rotate_Dialog(QtWidgets.QDialog):
         transform = QtGui.QTransform()
         transform.rotate(int(self.lineEdit.text()))
         self.canvas.setTransform(transform)
-        self.pixmap = self.canvas.items()[0]
+        self.destroy()
+
