@@ -34,6 +34,13 @@ class ImageGraphicsView(QtWidgets.QGraphicsView):
             event.acceptProposedAction()
 
     def addImage(self, pixmap: QtGui.QPixmap):
+
+        # check if canvas already has an image
+        if self.pixmapItem:
+            self.scene().removeItem(self.pixmapItem)
+            self.pixmapItem = None
+
+        # else
         self.pixmap=pixmap
         self.pixmapItem = QtWidgets.QGraphicsPixmapItem(pixmap)
         self.fitInView(self.pixmapItem, QtCore.Qt.AspectRatioMode.KeepAspectRatio)
@@ -43,13 +50,14 @@ class ImageGraphicsView(QtWidgets.QGraphicsView):
 
         self.pixmapItem.setPos(-200, -200)  # You can set position as needed
         self.pixmapItem.setFlag(QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
-        
 
+        
     def wheelEvent(self, event):
         if event.angleDelta().y() > 0:
             self.scale(self.scale_factor, self.scale_factor)
         else:
             self.scale(1/self.scale_factor, 1/self.scale_factor)
+            
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
 
