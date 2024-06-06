@@ -1,7 +1,7 @@
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPixmap
-import sys, os
+import sys, os, canvas
 
 
 class Tool(QtWidgets.QAction):
@@ -17,8 +17,10 @@ class Tool(QtWidgets.QAction):
 
 
 class Rotate_Dialog(QtWidgets.QDialog):
-    def __init__(self, canvas:QtWidgets.QGraphicsView, pixmap:QtGui.QPixmap = None):
+    def __init__(self, canvas:canvas.ImageGraphicsView=None, pixmap:QtGui.QPixmap = None):
         super().__init__()
+        if pixmap is None:
+            raise ValueError("Pixmap cannot be None")
         self.pixmap = pixmap
         self.canvas = canvas
         self.setObjectName("Dialog")
@@ -49,8 +51,14 @@ class Rotate_Dialog(QtWidgets.QDialog):
         self.label.setText("Enter degrees of rotation")
 
     def accept(self):
+        if self.pixmap == None:
+            print("pixmap is null")
+        image = self.pixmap.toImage()
         transform = QtGui.QTransform()
         transform.rotate(int(self.lineEdit.text()))
-        self.canvas.setTransform(transform)
+        rotated_image = image.transformed(transform, QtCore.Qt.TransformationMode.SmoothTransformation)
+        rotated_pixmap = QtGui.QPixmap.fromImage(rotated_image)
+        self.canvas.pixmapItem.setPixmap(rotated_pixmap)
+        self.canvas.scene().update()
         self.destroy()
 

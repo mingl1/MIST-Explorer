@@ -1,65 +1,6 @@
-
-
 from PyQt5 import QtCore, QtGui, QtWidgets
-import tool, protein_selection
+import tool, protein_selection, canvas
 
-class ImageGraphicsView(QtWidgets.QGraphicsView):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.pixmap=None
-        self.pixmapItem=None
-        self.setMinimumSize(QtCore.QSize(600, 600))
-        self.setObjectName("canvas")
-        self.setAcceptDrops(True)
-        self.setScene(QtWidgets.QGraphicsScene(self))
-        self.setSceneRect(0, 0, 800, 600)
-        self.setDragMode(QtWidgets.QGraphicsView.DragMode.ScrollHandDrag)
-        self.setTransformationAnchor(QtWidgets.QGraphicsView.ViewportAnchor.AnchorUnderMouse)
-        self.scale_factor = 1.25
-
-    def dragEnterEvent(self, event: QtGui.QDragEnterEvent):
-        if event.mimeData().hasUrls():
-            event.acceptProposedAction()
-
-    def dragMoveEvent(self, event: QtGui.QDragEnterEvent):
-        event.acceptProposedAction()
-
-    def dropEvent(self, event: QtGui.QDropEvent):
-        if event.mimeData().hasUrls():
-            for url in event.mimeData().urls():
-                file_path = url.toLocalFile()
-                pixmap = QtGui.QPixmap(file_path)
-                if not pixmap.isNull():
-                    self.addImage(pixmap)
-            event.acceptProposedAction()
-
-    def addImage(self, pixmap: QtGui.QPixmap):
-
-        # check if canvas already has an image
-        self.resetTransform()
-        if self.pixmapItem:
-            self.scene().removeItem(self.pixmapItem)
-            self.pixmapItem = None
-
-        # else
-        self.pixmap=pixmap
-        self.pixmapItem = QtWidgets.QGraphicsPixmapItem(pixmap)
-        self.fitInView(self.pixmapItem, QtCore.Qt.AspectRatioMode.KeepAspectRatio)
-
-        # check if the item has multiple channels
-        self.scene().addItem(self.pixmapItem)
-
-        self.pixmapItem.setPos(0, 0)  # You can set position as needed
-        self.pixmapItem.setFlag(QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
-
-        
-    def wheelEvent(self, event):
-        if event.angleDelta().y() > 0:
-            self.scale(self.scale_factor, self.scale_factor)
-        else:
-            self.scale(1/self.scale_factor, 1/self.scale_factor)
-
-    
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
 
@@ -211,7 +152,7 @@ class Ui_MainWindow(object):
 
 
         # canvas
-        self.canvas = ImageGraphicsView(self.centralwidget)
+        self.canvas = canvas.ImageGraphicsView(self.centralwidget)
         self.canvas.setMinimumSize(QtCore.QSize(800, 500))
         self.canvas.setObjectName("canvas")
         self.main_layout.addWidget(self.canvas) 
@@ -253,12 +194,14 @@ class Ui_MainWindow(object):
         self.tabWidget.setCurrentIndex(0) # start from preprocessing tab
 
         self.actionOpen.triggered.connect(self.openFileDialog)
-
-        self.rotation_dialog = tool.Rotate_Dialog(self.canvas, self.canvas.pixmap)
-        self.actionRotate.triggered.connect(self.rotation_dialog.show)
-        self.actionReset.triggered.connect(self.canvas.resetTransform)
+        self.rotation_dialog=None
+        self.actionRotate.triggered.connect(self.createRotateDialog)
+        self.actionReset.triggered.connect(self.canvas.resetImage)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
 
+    def createRotateDialog(self):
+        self.rotation_dialog = tool.Rotate_Dialog(self.canvas, self.canvas.pixmap)
+        self.rotation_dialog.show()
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
