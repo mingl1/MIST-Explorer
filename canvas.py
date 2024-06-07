@@ -65,5 +65,6 @@ class ImageGraphicsView(QtWidgets.QGraphicsView):
         self.pixmapItem=None
 
     def resetImage(self):
-        self.pixmapItem.setPixmap(self.reset_pixmap)
-        self.scene().update()
+        if self.pixmapItem:
+            self.pixmapItem.setPixmap(self.reset_pixmap)
+            self.scene().update()

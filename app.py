@@ -1,7 +1,10 @@
 from PyQt5 import QtCore, QtGui, QtWidgets
-import tool, protein_selection, canvas
+import tool, protein_selection, canvas, dialogs
 
 class Ui_MainWindow(object):
+    def __init__(self, MainWindow):
+        self.setupUi(MainWindow)
+
     def setupUi(self, MainWindow):
 
         MainWindow.setObjectName("MainWindow")
@@ -177,12 +180,17 @@ class Ui_MainWindow(object):
         self.actionRotate = tool.Tool(MainWindow, "actionRotate", "icons/rotate-right.png")
         self.actionSelect_ROI = tool.Tool(MainWindow, "actionSelect_ROI",  "icons/rectangle.png")
         self.actionReset = tool.Tool(MainWindow, "actionReset", "icons/home.png")
+        self.action_BC = tool.Tool(MainWindow, "actionBC", "icons/brightness.png")
+
+
         self.menuFile.addAction(self.actionOpen)
         self.menuFile.addAction(self.actionSaveAs)
         self.menubar.addAction(self.menuFile.menuAction())
         self.toolBar.addAction(self.actionSelect_ROI)
         self.toolBar.addAction(self.actionRotate)
         self.toolBar.addAction(self.actionReset)
+        self.toolBar.addAction(self.action_BC)
+        
 
 
         # status bar
@@ -197,11 +205,15 @@ class Ui_MainWindow(object):
         self.rotation_dialog=None
         self.actionRotate.triggered.connect(self.createRotateDialog)
         self.actionReset.triggered.connect(self.canvas.resetImage)
+        self.action_BC.triggered.connect(self.createBCDialog)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
 
     def createRotateDialog(self):
-        self.rotation_dialog = tool.Rotate_Dialog(self.canvas, self.canvas.pixmap)
+        self.rotation_dialog = dialogs.Rotate_Dialog(self.canvas, self.canvas.pixmap)
         self.rotation_dialog.show()
+
+    def createBCDialog(self):
+        self.BC_dialog = dialogs.BrightnessContrastDialog()
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
@@ -241,11 +253,4 @@ class Ui_MainWindow(object):
                 self.canvas.addImage(pixmap)
 
 
-if __name__ == "__main__":
-    import sys
-    app = QtWidgets.QApplication(sys.argv)
-    MainWindow = QtWidgets.QMainWindow()
-    ui = Ui_MainWindow()
-    ui.setupUi(MainWindow)
-    MainWindow.show()
-    sys.exit(app.exec_())
+
