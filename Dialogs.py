@@ -48,7 +48,7 @@ class BrightnessContrastDialog(QtWidgets.QDialog):
         self.contrast_min_label.setObjectName("contrast_min_label")
         self.contrast_min_slider_layout.addWidget(self.contrast_min_label)
         self.contrast_min_slider = QtWidgets.QSlider(self)
-        self.contrast_min_slider.setOrientation(QtCore.Qt.Horizontal)
+        self.contrast_min_slider.setOrientation(QtCore.Qt.Orientation.Horizontal)
         self.contrast_min_slider.setObjectName("contrast_min_slider")
         self.contrast_min_slider_layout.addWidget(self.contrast_min_slider)
         self.contrast_min_value_label = QtWidgets.QLabel(self)
