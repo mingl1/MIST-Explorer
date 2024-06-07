@@ -1,3 +1,7 @@
 start_template.ui
 brightness_contrast_dialog.ui
 rotationdialog.ui
+rotationdialog.py
+app_test.py
+brightness_and_contrast.py
+__pycache__/

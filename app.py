@@ -1,16 +1,17 @@
 from PyQt5 import QtCore, QtGui, QtWidgets
-import tool, protein_selection, canvas, dialogs
+import tool, protein_selection, canvas, Dialogs
 
 class Ui_MainWindow(object):
-    def __init__(self, MainWindow):
+    def __init__(self, MainWindow:QtWidgets.QMainWindow):
+        self.MainWindow = MainWindow
         self.setupUi(MainWindow)
 
     def setupUi(self, MainWindow):
 
-        MainWindow.setObjectName("MainWindow")
-        MainWindow.resize(1920, 1080)
-        MainWindow.setMinimumSize(QtCore.QSize(1920, 1080))
-        self.centralwidget = QtWidgets.QWidget(MainWindow) # central widget inside main window
+        self.MainWindow.setObjectName("MainWindow")
+        self.MainWindow.resize(1920, 1080)
+        self.MainWindow.setMinimumSize(QtCore.QSize(1920, 1080))
+        self.centralwidget = QtWidgets.QWidget(self.MainWindow) # central widget inside main window
         self.centralwidget.setObjectName("centralwidget")
         self.central_widget_layout = QtWidgets.QHBoxLayout(self.centralwidget) # add a layout to centralwidget so window can resize properly
         self.central_widget_layout.setObjectName("central_widget_layout")
@@ -52,7 +53,7 @@ class Ui_MainWindow(object):
         self.thresholding_components_vlayout.addWidget(self.thresholding_label2)
         self.thresholding_slider2 = QtWidgets.QSlider(self.thresholding_groupBox)
         self.thresholding_slider2.setMinimumSize(QtCore.QSize(100, 0))
-        self.thresholding_slider2.setOrientation(QtCore.Qt.Horizontal)
+        self.thresholding_slider2.setOrientation(QtCore.Qt.Orientation.Horizontal)
         self.thresholding_slider2.setObjectName("thresholding_slider2")
         self.thresholding_components_vlayout.addWidget(self.thresholding_slider2)
         self.thresholding_run_button = QtWidgets.QPushButton(self.thresholding_groupBox)
@@ -160,27 +161,27 @@ class Ui_MainWindow(object):
         self.canvas.setObjectName("canvas")
         self.main_layout.addWidget(self.canvas) 
         self.central_widget_layout.addLayout(self.main_layout)
-        MainWindow.setCentralWidget(self.centralwidget)
+        self.MainWindow.setCentralWidget(self.centralwidget)
 
 
         # menubar
-        self.menubar = QtWidgets.QMenuBar(MainWindow)
+        self.menubar = QtWidgets.QMenuBar(self.MainWindow)
         self.menubar.setGeometry(QtCore.QRect(0, 0, 1061, 22))
         self.menubar.setObjectName("menubar")
         self.menuFile = QtWidgets.QMenu(self.menubar)
         self.menuFile.setObjectName("menuFile")
-        MainWindow.setMenuBar(self.menubar)
+        self.MainWindow.setMenuBar(self.menubar)
 
         # toolbar
-        self.toolBar = QtWidgets.QToolBar(MainWindow)
+        self.toolBar = QtWidgets.QToolBar(self.MainWindow)
         self.toolBar.setObjectName("toolBar")
-        MainWindow.addToolBar(QtCore.Qt.ToolBarArea.TopToolBarArea, self.toolBar)
-        self.actionOpen = tool.Tool(MainWindow, "actionOpen", "icons/folder.png")
-        self.actionSaveAs = tool.Tool(MainWindow, "actionSaveAs", "icons/save-as.png")
-        self.actionRotate = tool.Tool(MainWindow, "actionRotate", "icons/rotate-right.png")
-        self.actionSelect_ROI = tool.Tool(MainWindow, "actionSelect_ROI",  "icons/rectangle.png")
-        self.actionReset = tool.Tool(MainWindow, "actionReset", "icons/home.png")
-        self.action_BC = tool.Tool(MainWindow, "actionBC", "icons/brightness.png")
+        self.MainWindow.addToolBar(QtCore.Qt.ToolBarArea.TopToolBarArea, self.toolBar)
+        self.actionOpen = tool.Tool(self.MainWindow, "actionOpen", "icons/folder.png")
+        self.actionSaveAs = tool.Tool(self.MainWindow, "actionSaveAs", "icons/save-as.png")
+        self.actionRotate = tool.Tool(self.MainWindow, "actionRotate", "icons/rotate-right.png")
+        self.actionSelect_ROI = tool.Tool(self.MainWindow, "actionSelect_ROI",  "icons/rectangle.png")
+        self.actionReset = tool.Tool(self.MainWindow, "actionReset", "icons/home.png")
+        self.action_BC = tool.Tool(self.MainWindow, "actionBC", "icons/brightness.png")
 
 
         self.menuFile.addAction(self.actionOpen)
@@ -194,9 +195,9 @@ class Ui_MainWindow(object):
 
 
         # status bar
-        self.statusbar = QtWidgets.QStatusBar(MainWindow)
+        self.statusbar = QtWidgets.QStatusBar(self.MainWindow)
         self.statusbar.setObjectName("statusbar")
-        MainWindow.setStatusBar(self.statusbar)
+        self.MainWindow.setStatusBar(self.statusbar)
 
         self.retranslateUi(MainWindow)
         self.tabWidget.setCurrentIndex(0) # start from preprocessing tab
@@ -206,14 +207,13 @@ class Ui_MainWindow(object):
         self.actionRotate.triggered.connect(self.createRotateDialog)
         self.actionReset.triggered.connect(self.canvas.resetImage)
         self.action_BC.triggered.connect(self.createBCDialog)
-        QtCore.QMetaObject.connectSlotsByName(MainWindow)
+        QtCore.QMetaObject.connectSlotsByName(self.MainWindow)
 
     def createRotateDialog(self):
-        self.rotation_dialog = dialogs.Rotate_Dialog(self.canvas, self.canvas.pixmap)
-        self.rotation_dialog.show()
+        self.rotation_dialog = Dialogs.RotateDialog(self.MainWindow, self.canvas, self.canvas.pixmap)
 
     def createBCDialog(self):
-        self.BC_dialog = dialogs.BrightnessContrastDialog()
+        self.BC_dialog = Dialogs.BrightnessContrastDialog(self.MainWindow)
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
