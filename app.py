@@ -1,6 +1,5 @@
 from PyQt5 import QtCore, QtGui, QtWidgets
-import tool, protein_selection, canvas, Dialogs
-
+import tool, protein_selection, canvas, Dialogs, tifffile as tiff
 class Ui_MainWindow(object):
     def __init__(self, MainWindow:QtWidgets.QMainWindow):
         self.MainWindow = MainWindow
@@ -45,7 +44,7 @@ class Ui_MainWindow(object):
         self.thresholding_components_vlayout.addWidget(self.thresholding_label1)
         self.thresholding_slider1 = QtWidgets.QSlider(self.thresholding_groupBox)
         self.thresholding_slider1.setMinimumSize(QtCore.QSize(100, 0))
-        self.thresholding_slider1.setOrientation(QtCore.Qt.Horizontal)
+        self.thresholding_slider1.setOrientation(QtCore.Qt.Orientation.Horizontal)
         self.thresholding_slider1.setObjectName("thresholding_slider1")
         self.thresholding_components_vlayout.addWidget(self.thresholding_slider1)
         self.thresholding_label2 = QtWidgets.QLabel(self.thresholding_groupBox)
@@ -159,6 +158,12 @@ class Ui_MainWindow(object):
         self.canvas = canvas.ImageGraphicsView(self.centralwidget)
         self.canvas.setMinimumSize(QtCore.QSize(800, 500))
         self.canvas.setObjectName("canvas")
+
+
+        self.small_view = canvas.ReferenceGraphicsView(self.MainWindow)
+        self.small_view.setGeometry(600, 200, 200, 150)  # Position over the large view
+
+
         self.main_layout.addWidget(self.canvas) 
         self.central_widget_layout.addLayout(self.main_layout)
         self.MainWindow.setCentralWidget(self.centralwidget)
@@ -170,7 +175,10 @@ class Ui_MainWindow(object):
         self.menubar.setObjectName("menubar")
         self.menuFile = QtWidgets.QMenu(self.menubar)
         self.menuFile.setObjectName("menuFile")
+        self.menuOpen = QtWidgets.QMenu(self.menuFile)
+        self.menuOpen.setObjectName("menuOpen")
         self.MainWindow.setMenuBar(self.menubar)
+
 
         # toolbar
         self.toolBar = QtWidgets.QToolBar(self.MainWindow)
@@ -182,18 +190,19 @@ class Ui_MainWindow(object):
         self.actionSelect_ROI = tool.Tool(self.MainWindow, "actionSelect_ROI",  "icons/rectangle.png")
         self.actionReset = tool.Tool(self.MainWindow, "actionReset", "icons/home.png")
         self.action_BC = tool.Tool(self.MainWindow, "actionBC", "icons/brightness.png")
+        self.action_reference = tool.Tool(self.MainWindow, "action_reference")
 
-
-        self.menuFile.addAction(self.actionOpen)
+        self.menuOpen.addAction(self.action_reference)
+        self.menuOpen.addAction(self.actionOpen)
         self.menuFile.addAction(self.actionSaveAs)
+
         self.menubar.addAction(self.menuFile.menuAction())
+        self.menuFile.addAction(self.menuOpen.menuAction())
         self.toolBar.addAction(self.actionSelect_ROI)
         self.toolBar.addAction(self.actionRotate)
         self.toolBar.addAction(self.actionReset)
         self.toolBar.addAction(self.action_BC)
         
-
-
         # status bar
         self.statusbar = QtWidgets.QStatusBar(self.MainWindow)
         self.statusbar.setObjectName("statusbar")
@@ -201,12 +210,13 @@ class Ui_MainWindow(object):
 
         self.retranslateUi(MainWindow)
         self.tabWidget.setCurrentIndex(0) # start from preprocessing tab
-
-        self.actionOpen.triggered.connect(self.openFileDialog)
         self.rotation_dialog=None
         self.actionRotate.triggered.connect(self.createRotateDialog)
         self.actionReset.triggered.connect(self.canvas.resetImage)
         self.action_BC.triggered.connect(self.createBCDialog)
+        self.action_reference.triggered.connect(self.on_action_reference_triggered)
+        self.actionOpen.triggered.connect(self.on_actionOpen_triggered)
+
         QtCore.QMetaObject.connectSlotsByName(self.MainWindow)
 
     def createRotateDialog(self):
@@ -234,7 +244,9 @@ class Ui_MainWindow(object):
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.view_tab), _translate("MainWindow", "View"))
         self.menuFile.setTitle(_translate("MainWindow", "File"))
         self.toolBar.setWindowTitle(_translate("MainWindow", "toolBar"))
-        self.actionOpen.setText(_translate("MainWindow", "Open"))
+        self.action_reference.setText(_translate("MainWindow", "Open Reference"))
+        self.menuOpen.setTitle(_translate("MainWindow", "Open"))
+        self.actionOpen.setText(_translate("MainWindow", "Open Image"))
         self.actionSaveAs.setText(_translate("MainWindow", "Save As..."))
         self.actionRotate.setText(_translate("MainWindow", "Rotate"))
         self.actionRotate.setToolTip(_translate("MainWindow", "Rotate"))
@@ -244,13 +256,19 @@ class Ui_MainWindow(object):
         self.actionReset.setToolTip(_translate("MainWindow", "Reset Image"))
 
 
-    def openFileDialog(self):
+    def openFileDialog(self, view):
         options = QtWidgets.QFileDialog.Options()
         fileName, _ = QtWidgets.QFileDialog.getOpenFileName(None, "Open Image File", "", "Images (*.png *.xpm *.jpg *.bmp *.gif *.tif);;All Files (*)", options=options)
+        
         if fileName:
+            # if fileName.endswith((".tiff", ".tif")):
+            #     image = tiff.imread(fileName)
+            #     num_channels, _, _ = image.shape
             pixmap = QtGui.QPixmap(fileName)
             if not pixmap.isNull():
-                self.canvas.addImage(pixmap)
-
-
-
+                view.addImage(pixmap)
+    def on_action_reference_triggered(self):
+       self.openFileDialog(self.small_view)
+    def on_actionOpen_triggered(self):
+       self.openFileDialog(self.canvas)
+       

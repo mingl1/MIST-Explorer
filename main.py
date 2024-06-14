@@ -2,7 +2,6 @@ from PyQt5 import  QtWidgets
 import sys, app
 
 
-
 if __name__ == "__main__":
     import sys
     app_ = QtWidgets.QApplication(sys.argv)

@@ -1,5 +1,70 @@
 from PyQt5 import QtCore, QtGui, QtWidgets
 
+
+class ReferenceGraphicsView(QtWidgets.QGraphicsView):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        self.reset_referencepixmap=None
+        self.reset_reference_pixmapItem=None
+        self.reference_pixmap=None
+        self.reference_pixmapItem=None
+
+        self.setMinimumSize(QtCore.QSize(300, 300))
+        self.setObjectName("reference_canvas")
+        self.setScene(QtWidgets.QGraphicsScene(self))
+        self.setSceneRect(0, 0, 200, 150)
+
+    def dragEnterEvent(self, event: QtGui.QDragEnterEvent):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dragMoveEvent(self, event: QtGui.QDragEnterEvent):
+        event.acceptProposedAction()
+
+    def dropEvent(self, event: QtGui.QDropEvent):
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                file_path = url.toLocalFile()
+                pixmap = QtGui.QPixmap(file_path) 
+                if not pixmap.isNull():
+                    self.addImage(pixmap)
+            event.acceptProposedAction()
+
+    def addImage(self, pixmap: QtGui.QPixmap):
+        # check if canvas already has an image
+        self.resetTransform()
+        if self.reference_pixmapItem:
+            self.deleteImage() 
+        # else 
+        self.reset_reference_pixmap=pixmap
+        self.reference_pixmap = pixmap
+        self.reset_reference_pixmapItem = QtWidgets.QGraphicsPixmapItem(pixmap)
+        self.reference_pixmapItem = QtWidgets.QGraphicsPixmapItem(pixmap)
+
+        # center the image
+
+        self.scene().addItem(self.reference_pixmapItem)
+
+        item_rect = self.reference_pixmapItem.boundingRect()
+        self.setSceneRect(item_rect)
+        self.fitInView(self.reference_pixmapItem, QtCore.Qt.AspectRatioMode.KeepAspectRatio)
+        self.centerOn(self.reference_pixmapItem)
+
+        
+
+    def deleteImage(self):
+        self.scene().removeItem(self.reference_pixmapItem)
+        self.reset_reference_pixmapItem = None
+        self.reference_pixmapItem=None
+
+    def resetImage(self):
+        if self.reference_pixmapItem:
+            self.reference_pixmapItem.setPixmap(self.reset_reference_pixmap)
+            self.scene().update()
+
+
+
 class ImageGraphicsView(QtWidgets.QGraphicsView):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -45,12 +110,13 @@ class ImageGraphicsView(QtWidgets.QGraphicsView):
         self.reset_pixmapItem = QtWidgets.QGraphicsPixmapItem(pixmap)
         self.pixmapItem = QtWidgets.QGraphicsPixmapItem(pixmap)
 
-        # check if the item has multiple channels
+        # center image
         self.scene().addItem(self.pixmapItem)
+        item_rect = self.pixmapItem.boundingRect()
+        self.setSceneRect(item_rect)
         self.fitInView(self.pixmapItem, QtCore.Qt.AspectRatioMode.KeepAspectRatio)
+        self.centerOn(self.pixmapItem)
 
-
-        self.pixmapItem.setPos(0, 0)  # You can set position as needed
         self.pixmapItem.setFlag(QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
         
     def wheelEvent(self, event):
