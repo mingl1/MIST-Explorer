@@ -1,10 +1,10 @@
-from PyQt5 import QtCore, QtGui, QtWidgets
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QPixmap
+from PyQt6 import QtCore, QtGui, QtWidgets
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPixmap
 import sys, os, canvas
 
 
-class Tool(QtWidgets.QAction):
+class Tool(QtGui.QAction):
     def __init__(self, window, tool_name, icon_file_path="", is_checkable=False):
         super().__init__(window)
         self.setCheckable(is_checkable)

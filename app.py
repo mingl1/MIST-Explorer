@@ -1,15 +1,16 @@
-from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt6 import QtCore, QtGui, QtWidgets
 import tool, protein_selection, canvas, Dialogs, tifffile as tiff
 class Ui_MainWindow(object):
     def __init__(self, MainWindow:QtWidgets.QMainWindow):
+        QtGui.QImageReader.setAllocationLimit(0)
         self.MainWindow = MainWindow
         self.setupUi(MainWindow)
 
     def setupUi(self, MainWindow):
 
         self.MainWindow.setObjectName("MainWindow")
-        self.MainWindow.resize(1920, 1080)
-        self.MainWindow.setMinimumSize(QtCore.QSize(1920, 1080))
+        self.MainWindow.resize(1280, 800)
+        self.MainWindow.setMinimumSize(QtCore.QSize(1024, 768))
         self.centralwidget = QtWidgets.QWidget(self.MainWindow) # central widget inside main window
         self.centralwidget.setObjectName("centralwidget")
         self.central_widget_layout = QtWidgets.QHBoxLayout(self.centralwidget) # add a layout to centralwidget so window can resize properly
@@ -17,14 +18,109 @@ class Ui_MainWindow(object):
         self.main_layout = QtWidgets.QHBoxLayout() # main layout to add align canvas and the tab
         self.main_layout.setObjectName("main_layout") 
         
-        # tabs
+        # initialize tabs
         self.tabWidget = QtWidgets.QTabWidget(self.centralwidget)
         self.tabWidget.setMinimumSize(QtCore.QSize(400, 500))
         self.tabWidget.setMaximumSize(QtCore.QSize(500, 2000))
         self.tabWidget.setAutoFillBackground(False)
         self.tabWidget.setObjectName("tabWidget")
 
-        # preprocessing tab
+        ####### preprocess tab ###################################
+        self.preprocessUISetup()
+
+        ####### view tab #######################################
+        self.tabWidget.addTab(self.preprocessing_tab, "")
+        self.view_tab = QtWidgets.QWidget()
+        self.view_tab.setObjectName("view_tab")
+        self.protein_hlayout = QtWidgets.QHBoxLayout(self.view_tab)
+        self.protein_hlayout.setObjectName("horizontalLayout_3")
+
+        
+        # add the protein selection boxes
+        self.proteinWidget_main_vlayout = QtWidgets.QVBoxLayout()
+        self.proteinWidget_main_vlayout.setObjectName("proteinWidget_main_vlayout")
+        self.protein1_groupbox = protein_selection.Protein_Selector(self.view_tab)
+        self.protein2_groupbox = protein_selection.Protein_Selector(self.view_tab)
+        self.protein3_groupbox = protein_selection.Protein_Selector(self.view_tab)
+        self.proteinWidget_main_vlayout.addWidget(self.protein1_groupbox)
+        self.proteinWidget_main_vlayout.addWidget(self.protein2_groupbox)
+        self.proteinWidget_main_vlayout.addWidget(self.protein3_groupbox)
+        self.protein_hlayout.addLayout(self.proteinWidget_main_vlayout) # allow expansion of the groupbox when you resize
+        self.tabWidget.addTab(self.view_tab, "")
+        self.main_layout.addWidget(self.tabWidget)
+
+        ########################################################
+
+        # canvas
+        self.canvas = canvas.ImageGraphicsView(self.centralwidget)
+        self.canvas.setMinimumSize(QtCore.QSize(800, 500))
+        self.canvas.setObjectName("canvas")
+
+
+        self.small_view = canvas.ReferenceGraphicsView(self.MainWindow)
+        self.small_view.setGeometry(600, 200, 200, 150)  # Position over the large view
+
+
+        self.main_layout.addWidget(self.canvas) 
+        self.central_widget_layout.addLayout(self.main_layout)
+        self.MainWindow.setCentralWidget(self.centralwidget)
+
+
+        # menubar
+        self.menubar = QtWidgets.QMenuBar(self.MainWindow)
+        self.menubar.setGeometry(QtCore.QRect(0, 0, 1061, 22))
+        self.menubar.setObjectName("menubar")
+        self.menuFile = QtWidgets.QMenu(self.menubar)
+        self.menuFile.setObjectName("menuFile")
+        self.menuOpen = QtWidgets.QMenu(self.menuFile)
+        self.menuOpen.setObjectName("menuOpen")
+        self.MainWindow.setMenuBar(self.menubar)
+
+
+        # toolbar
+        self.toolBar = QtWidgets.QToolBar(self.MainWindow)
+        self.toolBar.setObjectName("toolBar")
+        self.MainWindow.addToolBar(QtCore.Qt.ToolBarArea.TopToolBarArea, self.toolBar)
+        self.actionOpen = tool.Tool(self.MainWindow, "actionOpen", "icons/folder.png")
+        self.actionSaveAs = tool.Tool(self.MainWindow, "actionSaveAs", "icons/save-as.png")
+        self.actionRotate = tool.Tool(self.MainWindow, "actionRotate", "icons/rotate-right.png")
+        self.actionSelect_ROI = tool.Tool(self.MainWindow, "actionSelect_ROI",  "icons/rectangle.png")
+        self.actionReset = tool.Tool(self.MainWindow, "actionReset", "icons/home.png")
+        self.action_BC = tool.Tool(self.MainWindow, "actionBC", "icons/brightness.png")
+        self.action_reference = tool.Tool(self.MainWindow, "action_reference")
+
+        self.menuOpen.addAction(self.action_reference)
+        self.menuOpen.addAction(self.actionOpen)
+        self.menuFile.addAction(self.actionSaveAs)
+
+        self.menubar.addAction(self.menuFile.menuAction())
+        self.menuFile.addAction(self.menuOpen.menuAction())
+        self.toolBar.addAction(self.actionSelect_ROI)
+        self.toolBar.addAction(self.actionRotate)
+        self.toolBar.addAction(self.actionReset)
+        self.toolBar.addAction(self.action_BC)
+        
+        # status bar
+        self.statusbar = QtWidgets.QStatusBar(self.MainWindow)
+        self.statusbar.setObjectName("statusbar")
+        self.MainWindow.setStatusBar(self.statusbar)
+
+        self.retranslateUi(MainWindow)
+        self.tabWidget.setCurrentIndex(0) # start from preprocessing tab
+
+
+        self.rotation_dialog=None
+
+
+        self.actionRotate.triggered.connect(self.createRotateDialog)
+        self.actionReset.triggered.connect(self.canvas.resetImage)
+        self.action_BC.triggered.connect(self.createBCDialog)
+        self.action_reference.triggered.connect(self.on_action_reference_triggered)
+        self.actionOpen.triggered.connect(self.on_actionOpen_triggered)
+
+        QtCore.QMetaObject.connectSlotsByName(self.MainWindow)
+
+    def preprocessUISetup(self):
         self.preprocessing_tab = QtWidgets.QWidget()
         self.preprocessing_tab.setMinimumSize(QtCore.QSize(0, 0))
         self.preprocessing_tab.setObjectName("preprocessing_tab")
@@ -132,93 +228,6 @@ class Ui_MainWindow(object):
         self.preprocessing_dockwidget_main_vlayout.addWidget(self.stardist_groupbox)
         self.horizontalLayout.addLayout(self.preprocessing_dockwidget_main_vlayout)
 
-        # view tab
-        self.tabWidget.addTab(self.preprocessing_tab, "")
-        self.view_tab = QtWidgets.QWidget()
-        self.view_tab.setObjectName("view_tab")
-        self.protein_hlayout = QtWidgets.QHBoxLayout(self.view_tab)
-        self.protein_hlayout.setObjectName("horizontalLayout_3")
-
-        
-        # add the protein selection boxes
-        self.proteinWidget_main_vlayout = QtWidgets.QVBoxLayout()
-        self.proteinWidget_main_vlayout.setObjectName("proteinWidget_main_vlayout")
-        self.protein1_groupbox = protein_selection.Protein_Selector(self.view_tab)
-        self.protein2_groupbox = protein_selection.Protein_Selector(self.view_tab)
-        self.protein3_groupbox = protein_selection.Protein_Selector(self.view_tab)
-        self.proteinWidget_main_vlayout.addWidget(self.protein1_groupbox)
-        self.proteinWidget_main_vlayout.addWidget(self.protein2_groupbox)
-        self.proteinWidget_main_vlayout.addWidget(self.protein3_groupbox)
-        self.protein_hlayout.addLayout(self.proteinWidget_main_vlayout) # allow expansion of the groupbox when you resize
-        self.tabWidget.addTab(self.view_tab, "")
-        self.main_layout.addWidget(self.tabWidget)
-
-
-        # canvas
-        self.canvas = canvas.ImageGraphicsView(self.centralwidget)
-        self.canvas.setMinimumSize(QtCore.QSize(800, 500))
-        self.canvas.setObjectName("canvas")
-
-
-        self.small_view = canvas.ReferenceGraphicsView(self.MainWindow)
-        self.small_view.setGeometry(600, 200, 200, 150)  # Position over the large view
-
-
-        self.main_layout.addWidget(self.canvas) 
-        self.central_widget_layout.addLayout(self.main_layout)
-        self.MainWindow.setCentralWidget(self.centralwidget)
-
-
-        # menubar
-        self.menubar = QtWidgets.QMenuBar(self.MainWindow)
-        self.menubar.setGeometry(QtCore.QRect(0, 0, 1061, 22))
-        self.menubar.setObjectName("menubar")
-        self.menuFile = QtWidgets.QMenu(self.menubar)
-        self.menuFile.setObjectName("menuFile")
-        self.menuOpen = QtWidgets.QMenu(self.menuFile)
-        self.menuOpen.setObjectName("menuOpen")
-        self.MainWindow.setMenuBar(self.menubar)
-
-
-        # toolbar
-        self.toolBar = QtWidgets.QToolBar(self.MainWindow)
-        self.toolBar.setObjectName("toolBar")
-        self.MainWindow.addToolBar(QtCore.Qt.ToolBarArea.TopToolBarArea, self.toolBar)
-        self.actionOpen = tool.Tool(self.MainWindow, "actionOpen", "icons/folder.png")
-        self.actionSaveAs = tool.Tool(self.MainWindow, "actionSaveAs", "icons/save-as.png")
-        self.actionRotate = tool.Tool(self.MainWindow, "actionRotate", "icons/rotate-right.png")
-        self.actionSelect_ROI = tool.Tool(self.MainWindow, "actionSelect_ROI",  "icons/rectangle.png")
-        self.actionReset = tool.Tool(self.MainWindow, "actionReset", "icons/home.png")
-        self.action_BC = tool.Tool(self.MainWindow, "actionBC", "icons/brightness.png")
-        self.action_reference = tool.Tool(self.MainWindow, "action_reference")
-
-        self.menuOpen.addAction(self.action_reference)
-        self.menuOpen.addAction(self.actionOpen)
-        self.menuFile.addAction(self.actionSaveAs)
-
-        self.menubar.addAction(self.menuFile.menuAction())
-        self.menuFile.addAction(self.menuOpen.menuAction())
-        self.toolBar.addAction(self.actionSelect_ROI)
-        self.toolBar.addAction(self.actionRotate)
-        self.toolBar.addAction(self.actionReset)
-        self.toolBar.addAction(self.action_BC)
-        
-        # status bar
-        self.statusbar = QtWidgets.QStatusBar(self.MainWindow)
-        self.statusbar.setObjectName("statusbar")
-        self.MainWindow.setStatusBar(self.statusbar)
-
-        self.retranslateUi(MainWindow)
-        self.tabWidget.setCurrentIndex(0) # start from preprocessing tab
-        self.rotation_dialog=None
-        self.actionRotate.triggered.connect(self.createRotateDialog)
-        self.actionReset.triggered.connect(self.canvas.resetImage)
-        self.action_BC.triggered.connect(self.createBCDialog)
-        self.action_reference.triggered.connect(self.on_action_reference_triggered)
-        self.actionOpen.triggered.connect(self.on_actionOpen_triggered)
-
-        QtCore.QMetaObject.connectSlotsByName(self.MainWindow)
-
     def createRotateDialog(self):
         self.rotation_dialog = Dialogs.RotateDialog(self.MainWindow, self.canvas, self.canvas.pixmap)
 
@@ -227,7 +236,7 @@ class Ui_MainWindow(object):
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
-        MainWindow.setWindowTitle(_translate("MainWindow", "MainWindow"))
+        self.MainWindow.setWindowTitle(_translate("MainWindow", "MainWindow"))
         self.thresholding_groupBox.setTitle(_translate("MainWindow", "Thresholding"))
         self.thresholding_label1.setText(_translate("MainWindow", "Block Size"))
         self.thresholding_label2.setText(_translate("MainWindow", "Offset"))
@@ -257,8 +266,7 @@ class Ui_MainWindow(object):
 
 
     def openFileDialog(self, view):
-        options = QtWidgets.QFileDialog.Options()
-        fileName, _ = QtWidgets.QFileDialog.getOpenFileName(None, "Open Image File", "", "Images (*.png *.xpm *.jpg *.bmp *.gif *.tif);;All Files (*)", options=options)
+        fileName, _ = QtWidgets.QFileDialog.getOpenFileName(None, "Open Image File", "", "Images (*.png *.xpm *.jpg *.bmp *.gif *.tif);;All Files (*)")
         
         if fileName:
             # if fileName.endswith((".tiff", ".tif")):

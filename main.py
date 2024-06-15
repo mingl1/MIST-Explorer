@@ -1,4 +1,4 @@
-from PyQt5 import  QtWidgets
+from PyQt6 import  QtWidgets
 import sys, app
 
 
@@ -8,4 +8,4 @@ if __name__ == "__main__":
     MainWindow = QtWidgets.QMainWindow()
     ui = app.Ui_MainWindow(MainWindow)
     MainWindow.show()
-    sys.exit(app_.exec_())
+    sys.exit(app_.exec())
