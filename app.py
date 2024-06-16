@@ -1,12 +1,12 @@
 from PyQt6 import QtCore, QtGui, QtWidgets
-import tool, protein_selection, canvas, Dialogs, tifffile as tiff
+import tool, protein_selection, canvas, Dialogs, tifffile as tiff, numpy as np
 class Ui_MainWindow(object):
     def __init__(self, MainWindow:QtWidgets.QMainWindow):
         QtGui.QImageReader.setAllocationLimit(0)
         self.MainWindow = MainWindow
-        self.setupUi(MainWindow)
+        self.setupUi()
 
-    def setupUi(self, MainWindow):
+    def setupUi(self):
 
         self.MainWindow.setObjectName("MainWindow")
         self.MainWindow.resize(1280, 800)
@@ -34,7 +34,6 @@ class Ui_MainWindow(object):
         self.view_tab.setObjectName("view_tab")
         self.protein_hlayout = QtWidgets.QHBoxLayout(self.view_tab)
         self.protein_hlayout.setObjectName("horizontalLayout_3")
-
         
         # add the protein selection boxes
         self.proteinWidget_main_vlayout = QtWidgets.QVBoxLayout()
@@ -58,7 +57,7 @@ class Ui_MainWindow(object):
 
 
         self.small_view = canvas.ReferenceGraphicsView(self.MainWindow)
-        self.small_view.setGeometry(600, 200, 200, 150)  # Position over the large view
+        self.small_view.setGeometry(520, 85, 200, 150)  # Position over the large view
 
 
         self.main_layout.addWidget(self.canvas) 
@@ -102,15 +101,20 @@ class Ui_MainWindow(object):
         
         # status bar
         self.statusbar = QtWidgets.QStatusBar(self.MainWindow)
-        self.statusbar.setObjectName("statusbar")
-        self.MainWindow.setStatusBar(self.statusbar)
 
-        self.retranslateUi(MainWindow)
+        self.MainWindow.setStatusBar(self.statusbar)
+        self.statusbar.setObjectName("statusbar")
+
+        self.progressBar = QtWidgets.QProgressBar()
+        self.progressBar.setMaximum(100)
+        self.statusbar.addPermanentWidget(self.progressBar)
+        self.progressBar.setValue(20)
+
+
+        self.retranslateUi()
         self.tabWidget.setCurrentIndex(0) # start from preprocessing tab
 
-
         self.rotation_dialog=None
-
 
         self.actionRotate.triggered.connect(self.createRotateDialog)
         self.actionReset.triggered.connect(self.canvas.resetImage)
@@ -232,9 +236,9 @@ class Ui_MainWindow(object):
         self.rotation_dialog = Dialogs.RotateDialog(self.MainWindow, self.canvas, self.canvas.pixmap)
 
     def createBCDialog(self):
-        self.BC_dialog = Dialogs.BrightnessContrastDialog(self.MainWindow)
+        self.BC_dialog = Dialogs.BrightnessContrastDialog(self.MainWindow, self.canvas.channels, self.canvas)
 
-    def retranslateUi(self, MainWindow):
+    def retranslateUi(self):
         _translate = QtCore.QCoreApplication.translate
         self.MainWindow.setWindowTitle(_translate("MainWindow", "MainWindow"))
         self.thresholding_groupBox.setTitle(_translate("MainWindow", "Thresholding"))
@@ -266,15 +270,10 @@ class Ui_MainWindow(object):
 
 
     def openFileDialog(self, view):
-        fileName, _ = QtWidgets.QFileDialog.getOpenFileName(None, "Open Image File", "", "Images (*.png *.xpm *.jpg *.bmp *.gif *.tif);;All Files (*)")
-        
-        if fileName:
-            # if fileName.endswith((".tiff", ".tif")):
-            #     image = tiff.imread(fileName)
-            #     num_channels, _, _ = image.shape
-            pixmap = QtGui.QPixmap(fileName)
-            if not pixmap.isNull():
-                view.addImage(pixmap)
+        file_name, _ = QtWidgets.QFileDialog.getOpenFileName(None, "Open Image File", "", "Images (*.png *.xpm *.jpg *.bmp *.gif *.tif);;All Files (*)")
+        view.addImage(file_name)
+
+
     def on_action_reference_triggered(self):
        self.openFileDialog(self.small_view)
     def on_actionOpen_triggered(self):

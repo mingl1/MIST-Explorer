@@ -7,12 +7,19 @@ import sys, os, canvas
 # classes for dialog pop-ups
 
 class BrightnessContrastDialog(QtWidgets.QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, channels:dict=None, canvas:canvas.ImageGraphicsView=None,):
+        self.channels= channels
+        self.canvas = canvas
         super().__init__(parent)
-        self.setObjectName("self")
+        self.setupUI()
+        self.updateChannels()
+
+
+    def setupUI(self):
+        self.setObjectName("BrightnessContrastDialog")
         self.resize(700, 1000)
-        self.setMinimumSize(QtCore.QSize(700, 1000))
-        self.setMaximumSize(QtCore.QSize(700, 1000))
+        self.setMinimumSize(QtCore.QSize(500, 750))
+        self.setMaximumSize(QtCore.QSize(500, 750))
         font = QtGui.QFont()
         font.setPointSize(8)
         font.setBold(False)
@@ -25,7 +32,6 @@ class BrightnessContrastDialog(QtWidgets.QDialog):
         self.main_layout = QtWidgets.QVBoxLayout()
         self.main_layout.setObjectName("main_layout")
         self.channel_list_widget = QtWidgets.QListWidget(self)
-        self.channel_list_widget.viewport().setProperty("cursor", QtGui.QCursor(QtCore.Qt.ArrowCursor))
         self.channel_list_widget.setObjectName("channel_list_widget")
         self.main_layout.addWidget(self.channel_list_widget)
         self.checkbox_layout = QtWidgets.QGridLayout()
@@ -105,9 +111,28 @@ class BrightnessContrastDialog(QtWidgets.QDialog):
         QtCore.QMetaObject.connectSlotsByName(self)
         self.show()
 
+
+    def updateChannels(self):
+        if self.channels is not None:
+            for channel_name in self.channels.keys():
+                item = QtWidgets.QListWidgetItem(channel_name)
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)  # Make the item checkable
+                item.setCheckState(Qt.CheckState.Unchecked)  # Set initial state to unchecked
+                self.channel_list_widget.addItem(item)
+
+            self.channel_list_widget.itemClicked.connect(self.on_channel_clicked)
+    def on_channel_clicked(self, item:QtWidgets.QListWidgetItem):
+        item.setSelected(True)
+        if (item.checkState() == Qt.CheckState.Checked):
+            print(item.text())
+            self.canvas.updateCanvas(self.channels[item.text()])
+        elif (item.checkState() == Qt.CheckState.Unchecked):
+            self.canvas.deleteImage()
+            
+                
+
     def on_gamma_slider_valueChanged(self, value):
         self.gamma_value_label.setText(str(value))
-
 
     def on_contrast_max_slider_valueChanged(self, value):
         self.contrast_max_value_label.setText(str(value))
@@ -126,8 +151,6 @@ class BrightnessContrastDialog(QtWidgets.QDialog):
         self.gamma_label.setText(_translate("self", "Gamma"))
         self.auto_button.setText(_translate("self", "Auto"))
         self.reset_button.setText(_translate("self", "Reset"))
-
-
 
 class RotateDialog(QtWidgets.QDialog):
     def __init__(self, parent=None, canvas:canvas.ImageGraphicsView=None, pixmap:QtGui.QPixmap = None):
