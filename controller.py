@@ -78,5 +78,5 @@ class Controller:
             channel_pixmap = QPixmap.fromImage(self.model.channels[self.view.toolBar.channelSelector.itemText(index)])
             self.model.toPixmapItem(channel_pixmap)
 
-    def update_param(self, key, value):
-        self.model_stardist.set_param(key, value)
+    # def update_param(self, key, value):
+    #     self.model_stardist.set_param(key, value)

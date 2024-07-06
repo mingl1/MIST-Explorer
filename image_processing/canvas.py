@@ -2,6 +2,7 @@ from PyQt6.QtWidgets import QGraphicsView, QRubberBand, QGraphicsScene, QGraphic
 from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QPixmap, QDragMoveEvent, QMouseEvent, QCursor, QImage, QTransform
 from PyQt6.QtCore import Qt, QRect, QSize, QPoint, pyqtSignal
 import Dialogs, tifffile as tiff, numpy as np
+from PIL import Image, ImageSequence
 
 
 
@@ -121,25 +122,30 @@ class ImageGraphicsView(QGraphicsView):
     def __filename_to_pixmap(self, file_name:str):
         if file_name.endswith((".tiff", ".tif")):
 
-            image_data = tiff.imread(file_name) # 16 bit #10 sec 
+            # image_data = tiff.imread(file_name) # 16 bit #10 sec 
+            Image.MAX_IMAGE_PIXELS = 9999999999999
+            image_data = Image.open(file_name)
+            num_channels = sum(1 for _ in ImageSequence.Iterator(image_data))
 
             bytesPerPixel = 1 # only supports uint8 and uint16
             format = QImage.Format.Format_Grayscale8
 
-            if (image_data.ndim == 3):
-                num_channels, height, width = image_data.shape
-                resultSize = QSize(width, height)
+            if (num_channels > 1):
+                # num_channels, height, width = image_data.shape
+                resultSize = QSize(image_data.width, image_data.height)
                 self.resultImage = QImage(resultSize, QImage.Format.Format_ARGB32_Premultiplied)
 
                 self.channels = {}
                 for channel_num in range(num_channels):
+                    image_data.seek(channel_num)
+                    image_data_np = np.array(image_data)
                     channel_name = f'Channel {channel_num + 1}'
-
+                    
                     # self.channel_selector_combobox.addItem(channel_name)
-                    __scaled = self.scale_adjust(image_data[channel_num,:,:]) # 8 bit
+                    __scaled = self.scale_adjust(image_data_np) # 8 bit
                     image_adjusted = self.adjustContrast(__scaled) # 8 bit
 
-                    qimage_channel = QImage(image_adjusted, width, height, width*bytesPerPixel, format)
+                    qimage_channel = QImage(image_adjusted, image_data.width, image_data.height, image_data.width*bytesPerPixel, format)
                     # qpixmap_channel = QtGui.QPixmap(qimage_channel)
                     self.channels[channel_name] = qimage_channel
 
@@ -147,8 +153,10 @@ class ImageGraphicsView(QGraphicsView):
                 self.channelLoaded.emit(self.channels)
                 
             else:
-                height, width = image_data.shape
-                channel_one_qimage = QImage(image_data, width, height, width*bytesPerPixel, format)
+                image_data_np = np.array(image_data)
+                __scaled = self.scale_adjust(image_data_np) # 8 bit
+                image_adjusted = self.adjustContrast(__scaled) # 8 bit
+                channel_one_qimage = QImage(image_adjusted, image_data.width, image_data.height, image_data.width*bytesPerPixel, format)
                 self.channelNotLoaded.emit()
 
             pixmap = QPixmap(channel_one_qimage)
