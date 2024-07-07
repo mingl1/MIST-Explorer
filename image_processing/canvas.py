@@ -73,8 +73,8 @@ class ImageGraphicsView(QGraphicsView):
     
     canvasUpdated = pyqtSignal(QGraphicsPixmapItem)
     newImageAdded = pyqtSignal(QGraphicsPixmapItem)
-    channelLoaded = pyqtSignal(dict)
-    channelNotLoaded = pyqtSignal()
+    channelLoaded = pyqtSignal(dict, dict)
+    channelNotLoaded = pyqtSignal(np.ndarray)
 
     def __init__(self):
 
@@ -122,7 +122,7 @@ class ImageGraphicsView(QGraphicsView):
     def __filename_to_pixmap(self, file_name:str):
         if file_name.endswith((".tiff", ".tif")):
 
-            # image_data = tiff.imread(file_name) # 16 bit #10 sec 
+            # image_data = tiff.imread(file_name) 
             Image.MAX_IMAGE_PIXELS = 9999999999999
             image_data = Image.open(file_name)
             num_channels = sum(1 for _ in ImageSequence.Iterator(image_data))
@@ -136,28 +136,29 @@ class ImageGraphicsView(QGraphicsView):
                 self.resultImage = QImage(resultSize, QImage.Format.Format_ARGB32_Premultiplied)
 
                 self.channels = {}
+                self.np_channels = {}
                 for channel_num in range(num_channels):
                     image_data.seek(channel_num)
                     image_data_np = np.array(image_data)
                     channel_name = f'Channel {channel_num + 1}'
                     
                     # self.channel_selector_combobox.addItem(channel_name)
-                    __scaled = self.scale_adjust(image_data_np) # 8 bit
-                    image_adjusted = self.adjustContrast(__scaled) # 8 bit
-
+                    __scaled = self.scale_adjust(image_data_np) # uint8
+                    image_adjusted = self.adjustContrast(__scaled) # uint8
+                    self.np_channels[channel_name] = image_adjusted # for stardist and other image processing, maybe consider keeping it as uint16
                     qimage_channel = QImage(image_adjusted, image_data.width, image_data.height, image_data.width*bytesPerPixel, format)
                     # qpixmap_channel = QtGui.QPixmap(qimage_channel)
-                    self.channels[channel_name] = qimage_channel
+                    self.channels[channel_name] = qimage_channel # for displaying on canvas
 
                 channel_one_qimage = next(iter(self.channels.values()))
-                self.channelLoaded.emit(self.channels)
+                self.channelLoaded.emit(self.channels, self.np_channels)
                 
             else:
                 image_data_np = np.array(image_data)
-                __scaled = self.scale_adjust(image_data_np) # 8 bit
-                image_adjusted = self.adjustContrast(__scaled) # 8 bit
+                __scaled = self.scale_adjust(image_data_np) # uint8
+                image_adjusted = self.adjustContrast(__scaled) # uint8
                 channel_one_qimage = QImage(image_adjusted, image_data.width, image_data.height, image_data.width*bytesPerPixel, format)
-                self.channelNotLoaded.emit()
+                self.channelNotLoaded.emit(image_adjusted)
 
             pixmap = QPixmap(channel_one_qimage)
 
