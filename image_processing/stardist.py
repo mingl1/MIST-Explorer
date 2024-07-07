@@ -1,22 +1,25 @@
 
-from PyQt6.QtGui import QImage
-from PyQt6.QtCore import Qt, QRect, QSize, QPoint, pyqtSignal
-import tifffile as tiff, numpy as np
+from PyQt6.QtGui import QImage, QPixmap
+from PyQt6.QtCore import pyqtSignal, QObject
+import numpy as np
 # STARDIST
-import image_processing.canvas
+import os
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 from stardist.models import StarDist2D
 from csbdeep.utils import normalize
 
-class StarDist():
+class StarDist(QObject):
+    stardistDone = pyqtSignal(QPixmap)
     def __init__(self):
-        
-        self.channels = None
+        super().__init__()
+        self.np_channels = None
+        self.np_image = None
         self.params = {
         'channel': 'Channel 1',
         'model': '2D_versatile_fluo',
         'percentile_low' : 1.00,
         'percentile_high': 99.80,
-        'prob_theshold': 0.48,
+        'prob_threshold': 0.48,
         'nms_threshold': 0.3,
         'n_tiles': 0
         }
@@ -24,33 +27,65 @@ class StarDist():
     def runStarDist(self):
         model = StarDist2D.from_pretrained(str(self.params['model']))
 
-        qimage = self.channels[self.params['channel']]
-        arr = self.qimage_to_numpy(qimage)
-        stardist_labels, _ = model.predict_instances(normalize(arr), prob_thresh=.48, nms_thresh=.3)
+        # case 1: canvas is empty
 
-    # def set_param(self, key, value):
-    #     if key in self.params:
-    #         self.params[key] = value
+        # case 2: image has only one channel
+        if not self.np_channels:
+            arr = self.np_image
+        # case 3: image has multiple channels
+        else:
+            arr = self.np_channels[self.params['channel']]
+        # arr = self.qimage_to_numpy(qimage)
 
-    # def get_param(self, key):
-    #     return self.params.get(key, None)
+        if self.params['n_tiles'] == 0:
+            stardist_labels, _ = model.predict_instances(normalize(arr, self.params['percentile_low'], self.params['percentile_high']), prob_thresh=self.params['prob_threshold'], nms_thresh=self.params['nms_threshold'])
+        else:
+            stardist_labels, _ = model.predict_instances(normalize(arr, self.params['percentile_low'], self.params['percentile_high']), prob_thresh=.48, nms_thresh=.3, n_tiles =self.params['n_tiles'])
+        stardist_pixmap = QPixmap(self.int32_to_uint8_qimage(stardist_labels))
+        self.stardistDone.emit(stardist_pixmap)
 
-    # def get_all_params(self):
-    #     return self.params
+    def int32_to_uint8_qimage(self, int32_data: np.ndarray) -> QImage:
+        normalized_data = 255 * (int32_data - np.min(int32_data)) / (np.max(int32_data) - np.min(int32_data))
+        normalized_data = normalized_data.astype(np.uint8)
+        height, width = normalized_data.shape
+        qimage = QImage(normalized_data.data, width, height, width, QImage.Format.Format_Grayscale8)
+        return qimage
 
-    def updateChannels(self, channels):
-        self.channels = channels
+    def updateChannels(self,_, channels):
+        self.np_channels = channels
+
+    def numpy_to_qimage(self, array:np.ndarray) -> QImage:
+        if len(array.shape) == 2:
+            # Grayscale image
+            height, width = array.shape
+            qimage =  QImage(array.data, width, height, width, QImage.Format.Format_Grayscale8)
+        elif len(array.shape) == 3:
+            height, width, channels = array.shape
+            if channels == 3:
+                # RGB image
+                qimage = QImage(array.data, width, height, width * channels, QImage.Format.Format_RGB888)
+            elif channels == 4:
+                # RGBA image
+                qimage = QImage(array.data, width, height, width * channels, QImage.Format.Format_RGBA8888)
+        else:
+            raise ValueError("Unsupported array shape: {}".format(array.shape))
+        return qimage
 
     def qimage_to_numpy(self, qimage:QImage):
-        qimage = qimage.convertToFormat(QImage.Format.Format_Grayscale8)
-
-        width = qimage.width()
-        height = qimage.height()
-
-        ptr = qimage.bits()
-        ptr.setsize(height * width * 4)
-        arr = np.frombuffer(ptr, np.uint8).reshape((height, width, 4))
-        return arr
+        # Ensure the QImage format is suitable for conversion
+        if qimage.format() == QImage.Format.Format_Grayscale8:
+            width = qimage.width()
+            height = qimage.height()
+            ptr = qimage.constBits()
+            ptr.setsize(qimage.sizeInBytes())  # Ensure the pointer size matches the image byte count
+            
+            # Convert QImage to a 2D numpy array
+            arr = np.ndarray(shape=(height, width), buffer=ptr, dtype=np.uint8)
+            return arr
+        else:
+            raise ValueError("Unsupported QImage format for conversion to NumPy array")
+    def setImageToProcess(self, np_image):
+        self.np_image = np_image
 
     def setChannel(self, channel):
         self.params['channel'] = channel
