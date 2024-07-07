@@ -33,6 +33,8 @@ class Controller:
         self.model.channelLoaded.connect(self.model_stardist.updateChannels)
         self.model.channelNotLoaded.connect(self.view.toolBar.clearChannelSelector)
         self.model.channelNotLoaded.connect(self.view.stardist_groupbox.clearChannelSelector)
+        self.model.channelNotLoaded.connect(self.model_stardist.setImageToProcess)
+
         
         # crop signals
         self.view.crop_groupbox.crop_button.triggered.connect(self.view.canvas.startCrop)
@@ -53,6 +55,9 @@ class Controller:
 
         #run stardist
         self.view.stardist_groupbox.stardist_run_button.pressed.connect(self.model_stardist.runStarDist)
+
+        # display stardist result
+        self.model_stardist.stardistDone.connect(self.model.toPixmapItem)
 
     def on_action_openFiles_triggered(self):
         self.openFilesDialog = Dialogs.OpenFilesDialog(self.view)
