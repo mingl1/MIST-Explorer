@@ -7,6 +7,7 @@ class StarDistUI(QWidget):
         self.setupUI(parent, containing_layout)
 
     def setupUI(self, parent, containing_layout:QVBoxLayout):
+
         self.stardist_groupbox = QGroupBox(parent)
         self.stardist_groupbox.setMinimumSize(QSize(300, 300))
         self.stardist_groupbox.setObjectName("stardist_groupbox")
@@ -15,6 +16,7 @@ class StarDistUI(QWidget):
         self.stardist_components_vlayout = QVBoxLayout()
         self.stardist_components_vlayout.setObjectName("stardist_components_vlayout")
 
+        # channel selector
         self.stardist_channel_selector_layout = QHBoxLayout()
         self.stardist_channel_selector = QComboBox(self.stardist_groupbox)
         self.stardist_channel_selector_label = QLabel()
@@ -23,19 +25,19 @@ class StarDistUI(QWidget):
         self.stardist_channel_selector_layout.addWidget(self.stardist_channel_selector)
         self.stardist_components_vlayout.addLayout(self.stardist_channel_selector_layout)
 
+        # pretrained 2D Model
         self.stardist_hlayout1 = QHBoxLayout()
         self.stardist_hlayout1.setObjectName("stardist_hlayout1")
         self.stardist_label1 = QLabel(self.stardist_groupbox)
         self.stardist_label1.setObjectName("stardist_label1")
         self.stardist_hlayout1.addWidget(self.stardist_label1)
-
-
         self.stardist_pretrained_models = QComboBox(self.stardist_groupbox)
         self.stardist_pretrained_models.setObjectName("pretrained_models")
         self.stardist_pretrained_models.addItems(["2D_versatile_fluo", "2D_paper_dsb2018", "2D_versatile_he"])
-        
         self.stardist_hlayout1.addWidget(self.stardist_pretrained_models)
         self.stardist_components_vlayout.addLayout(self.stardist_hlayout1)
+
+        # percentile low
         self.stardist_hlayout2 = QHBoxLayout()
         self.stardist_hlayout2.setObjectName("stardist_hlayout2")
         self.stardist_label2 = QLabel(self.stardist_groupbox)
@@ -46,6 +48,8 @@ class StarDistUI(QWidget):
         self.percentile_low.setObjectName("percentile_low")
         self.stardist_hlayout2.addWidget(self.percentile_low)
         self.stardist_components_vlayout.addLayout(self.stardist_hlayout2)
+
+        # percentile high
         self.stardist_hlayout3 = QHBoxLayout()
         self.stardist_hlayout3.setObjectName("stardist_hlayout3")
         self.stardist_label3 = QLabel(self.stardist_groupbox)
@@ -56,6 +60,8 @@ class StarDistUI(QWidget):
         self.percentile_high.setObjectName("percentile_high")
         self.stardist_hlayout3.addWidget(self.percentile_high)
         self.stardist_components_vlayout.addLayout(self.stardist_hlayout3)
+
+        # prob threshold
         self.stardist_hlayout4 = QHBoxLayout()
         self.stardist_hlayout4.setObjectName("stardist_hlayout4")
         self.stardist_label4 =  QLabel(self.stardist_groupbox)
@@ -66,6 +72,8 @@ class StarDistUI(QWidget):
         self.prob_threshold.setObjectName("prob_threshold")
         self.stardist_hlayout4.addWidget(self.prob_threshold)
         self.stardist_components_vlayout.addLayout(self.stardist_hlayout4)
+
+        # nms threshold
         self.stardist_hlayout5 = QHBoxLayout()
         self.stardist_hlayout5.setObjectName("stardist_hlayout5")
         self.stardist_label5 = QLabel(self.stardist_groupbox)
@@ -76,6 +84,8 @@ class StarDistUI(QWidget):
         self.nms_threshold.setObjectName("nms_threshold")
         self.stardist_hlayout5.addWidget(self.nms_threshold)
         self.stardist_components_vlayout.addLayout(self.stardist_hlayout5)
+
+        # number of tiles
         self.stardist_hlayout6 = QHBoxLayout()
         self.stardist_hlayout6.setObjectName("stardist_hlayout6")
         self.stardist_label6 = QLabel(self.stardist_groupbox)
@@ -85,6 +95,16 @@ class StarDistUI(QWidget):
         self.n_tiles.setObjectName("n_tiles")
         self.stardist_hlayout6.addWidget(self.n_tiles)
         self.stardist_components_vlayout.addLayout(self.stardist_hlayout6)
+
+        # dilation
+        self.stardist_hlayout7 = QHBoxLayout()
+        self.stardist_label7 = QLabel(self.stardist_groupbox)
+        self.stardist_hlayout7.addWidget(self.stardist_label7)
+        self.pixel_size = QSpinBox(self.stardist_groupbox)
+        self.stardist_hlayout7.addWidget(self.pixel_size)
+        self.stardist_components_vlayout.addLayout(self.stardist_hlayout7)
+
+        # run button
         self.stardist_run_button = QPushButton(self.stardist_groupbox)
         self.stardist_run_button.setObjectName("stardist_run_button")
         self.stardist_components_vlayout.addWidget(self.stardist_run_button)
@@ -111,4 +131,5 @@ class StarDistUI(QWidget):
         self.stardist_label4.setText(_translate("MainWindow", "Probability/ Score Threshold"))
         self.stardist_label5.setText(_translate("MainWindow", "Overlap Threshold"))
         self.stardist_label6.setText(_translate("MainWindow", "Number of Tiles"))
+        self.stardist_label7.setText(_translate("MainWindow", "Pixels to dilate"))
         self.stardist_run_button.setText(_translate("MainWindow", "Run"))
