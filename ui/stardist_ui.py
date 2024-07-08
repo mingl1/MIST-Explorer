@@ -100,8 +100,15 @@ class StarDistUI(QWidget):
         self.stardist_hlayout7 = QHBoxLayout()
         self.stardist_label7 = QLabel(self.stardist_groupbox)
         self.stardist_hlayout7.addWidget(self.stardist_label7)
-        self.pixel_size = QSpinBox(self.stardist_groupbox)
-        self.stardist_hlayout7.addWidget(self.pixel_size)
+        self.kernel_size = QSpinBox(self.stardist_groupbox)
+        self.kernel_size.setProperty("value", 3)
+        self.stardist_hlayout7.addWidget(self.kernel_size)
+
+        self.stardist_label8 = QLabel(self.stardist_groupbox)
+        self.iterations = QSpinBox(self.stardist_groupbox)
+        self.stardist_hlayout7.addWidget(self.stardist_label8)
+        self.stardist_hlayout7.addWidget(self.iterations)
+        self.iterations.setProperty("value", 1)
         self.stardist_components_vlayout.addLayout(self.stardist_hlayout7)
 
         # run button
@@ -131,5 +138,6 @@ class StarDistUI(QWidget):
         self.stardist_label4.setText(_translate("MainWindow", "Probability/ Score Threshold"))
         self.stardist_label5.setText(_translate("MainWindow", "Overlap Threshold"))
         self.stardist_label6.setText(_translate("MainWindow", "Number of Tiles"))
-        self.stardist_label7.setText(_translate("MainWindow", "Pixels to dilate"))
+        self.stardist_label7.setText(_translate("MainWindow", "Kernel Size"))
+        self.stardist_label8.setText(_translate("MainWindow", "Iterations"))
         self.stardist_run_button.setText(_translate("MainWindow", "Run"))

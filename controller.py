@@ -52,6 +52,9 @@ class Controller:
         self.view.stardist_groupbox.prob_threshold.valueChanged.connect(self.model_stardist.setProbThresh)
         self.view.stardist_groupbox.nms_threshold.valueChanged.connect(self.model_stardist.setNMSThresh)
         self.view.stardist_groupbox.n_tiles.valueChanged.connect(self.model_stardist.setNumberTiles)
+        self.view.stardist_groupbox.kernel_size.valueChanged.connect(self.model_stardist.setDilationKernelSize)
+        self.view.stardist_groupbox.iterations.valueChanged.connect(self.model_stardist.setDilationIterations)
+
 
         #run stardist
         self.view.stardist_groupbox.stardist_run_button.pressed.connect(self.model_stardist.runStarDist)

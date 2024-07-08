@@ -1,7 +1,7 @@
 
 from PyQt6.QtGui import QImage, QPixmap
 from PyQt6.QtCore import pyqtSignal, QObject
-import numpy as np
+import numpy as np, cv2 as cv
 # STARDIST
 import os
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
@@ -21,7 +21,9 @@ class StarDist(QObject):
         'percentile_high': 99.80,
         'prob_threshold': 0.48,
         'nms_threshold': 0.3,
-        'n_tiles': 0
+        'n_tiles': 0,
+        'kernel_size': 3,
+        'iterations': 1
         }
 
     def runStarDist(self):
@@ -41,15 +43,21 @@ class StarDist(QObject):
             stardist_labels, _ = model.predict_instances(normalize(arr, self.params['percentile_low'], self.params['percentile_high']), prob_thresh=self.params['prob_threshold'], nms_thresh=self.params['nms_threshold'])
         else:
             stardist_labels, _ = model.predict_instances(normalize(arr, self.params['percentile_low'], self.params['percentile_high']), prob_thresh=.48, nms_thresh=.3, n_tiles =self.params['n_tiles'])
-        stardist_pixmap = QPixmap(self.int32_to_uint8_qimage(stardist_labels))
+
+        kernel = np.ones((self.params['kernel_size'], self.params['kernel_size']), np.uint8)
+        stardist_labels = cv.dilate(self.int32_to_uint8(stardist_labels), kernel = kernel, iterations=self.params['iterations'])
+
+        height, width = stardist_labels.shape
+        stardist_qimage = QImage(stardist_labels.data, width, height, width, QImage.Format.Format_Grayscale8)
+        stardist_pixmap = QPixmap(stardist_qimage)
         self.stardistDone.emit(stardist_pixmap)
 
-    def int32_to_uint8_qimage(self, int32_data: np.ndarray) -> QImage:
+        
+    
+    def int32_to_uint8(self, int32_data: np.ndarray) -> QImage:
         normalized_data = 255 * (int32_data - np.min(int32_data)) / (np.max(int32_data) - np.min(int32_data))
         normalized_data = normalized_data.astype(np.uint8)
-        height, width = normalized_data.shape
-        qimage = QImage(normalized_data.data, width, height, width, QImage.Format.Format_Grayscale8)
-        return qimage
+        return normalized_data
 
     def updateChannels(self,_, channels):
         self.np_channels = channels
@@ -84,6 +92,8 @@ class StarDist(QObject):
             return arr
         else:
             raise ValueError("Unsupported QImage format for conversion to NumPy array")
+        
+
     def setImageToProcess(self, np_image):
         self.np_image = np_image
 
@@ -107,4 +117,10 @@ class StarDist(QObject):
 
     def setNumberTiles(self, value):
         self.params['n_tiles'] = value
-        print(self.params['n_tiles'])
+
+    def setDilationKernelSize(self, value):
+        self.params['kernel_size'] = value
+
+    def setDilationIterations(self, value):
+        self.params['iterations'] = value
+
