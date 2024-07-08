@@ -36,7 +36,7 @@ class StarDist(QObject):
             arr = self.np_image
         # case 3: image has multiple channels
         else:
-            arr = self.np_channels[self.params['channel']]
+            arr = self.np_channels[self.params['channel']] 
         # arr = self.qimage_to_numpy(qimage)
 
         if self.params['n_tiles'] == 0:
@@ -60,6 +60,7 @@ class StarDist(QObject):
         return normalized_data
 
     def updateChannels(self,_, channels):
+        self.np_image = None
         self.np_channels = channels
 
     def numpy_to_qimage(self, array:np.ndarray) -> QImage:
@@ -95,6 +96,7 @@ class StarDist(QObject):
         
 
     def setImageToProcess(self, np_image):
+        self.np_channels = None
         self.np_image = np_image
 
     def setChannel(self, channel):
