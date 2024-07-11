@@ -65,7 +65,6 @@ class Ui_MainWindow(QMainWindow):
         self.protein_hlayout.addLayout(self.proteinWidget_main_vlayout) # allow expansion of the groupbox when you resize
         self.tabWidget.addTab(self.view_tab, "")
         self.main_layout.addWidget(self.tabWidget)
-
         ########################################################
 
         self.main_layout.addWidget(self.canvas) 

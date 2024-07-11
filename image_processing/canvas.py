@@ -99,7 +99,6 @@ class ImageGraphicsView(QGraphicsView):
         self.pixmapItem = QGraphicsPixmapItem(pixmap)
         self.canvasUpdated.emit(self.pixmapItem)
 
-
     def addImage(self, file:str):
         '''add a new image'''
 
