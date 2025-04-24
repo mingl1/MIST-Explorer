@@ -33,41 +33,50 @@ class ToolBarUI(QWidget):
 
     def __createActions(self, parent):
         # Create tab selection buttons
-        self.preprocessingButton = QPushButton("Preprocessing")
+        self.imagesButton = QPushButton("Images")
+        self.preprocessingButton = QPushButton("Data Processing")
         self.viewButton = QPushButton("View")
         self.analysisButton = QPushButton("Analysis")
-        
+        self.metaDataButton = QPushButton("Details")
         # Style the buttons
         button_style = """
             QPushButton {
                 padding: 8px 16px;
                 border: none;
                 background: transparent;
+                font-size: 12px;
+
             }
             QPushButton:hover {
                 background: rgba(0, 0, 0, 0.1);
             }
             QPushButton:checked {
                 border-bottom: 2px solid #007AFF;
-                font-weight: bold;
+                font-weight: Bold;
             }
         """
+
+        self.imagesButton.setStyleSheet(button_style)
         self.preprocessingButton.setStyleSheet(button_style)
         self.viewButton.setStyleSheet(button_style)
         self.analysisButton.setStyleSheet(button_style)
-        
+        self.metaDataButton.setStyleSheet(button_style)
         # Make buttons checkable and exclusive
+        self.imagesButton.setCheckable(True)
         self.preprocessingButton.setCheckable(True)
         self.viewButton.setCheckable(True) 
         self.analysisButton.setCheckable(True)
+        self.metaDataButton.setCheckable(True)
         
         # Connect button signals
-        self.preprocessingButton.clicked.connect(lambda: self.onTabButtonClicked(0))
-        self.viewButton.clicked.connect(lambda: self.onTabButtonClicked(1))
-        self.analysisButton.clicked.connect(lambda: self.onTabButtonClicked(2))
+        self.imagesButton.clicked.connect(lambda: self.onTabButtonClicked(0))
+        self.preprocessingButton.clicked.connect(lambda: self.onTabButtonClicked(1))
+        self.viewButton.clicked.connect(lambda: self.onTabButtonClicked(2))
+        self.analysisButton.clicked.connect(lambda: self.onTabButtonClicked(3))
+        self.metaDataButton.clicked.connect(lambda: self.onTabButtonClicked(4))
         
-        # Check preprocessing by default
-        self.preprocessingButton.setChecked(True)
+        # Check imagesbutton by default
+        self.imagesButton.setChecked(True)
 
         # Create other actions
         self.actionRotate = Action(parent, "actionRotate", "assets/icons/rotate-right.png")
@@ -87,6 +96,7 @@ class ToolBarUI(QWidget):
 
         self.contrastSlider = QRangeSlider()
         self.contrastSlider.setOrientation(Qt.Orientation.Horizontal)
+        self.contrastSlider.setRange(0,255)
         self.contrastSlider.setMaximumWidth(200)
         # self.operatorComboBox.setMinimumContentsLength(15)
         self.channelSelector.setMinimumWidth(100)
@@ -131,9 +141,11 @@ class ToolBarUI(QWidget):
         
     def __addActions(self):
         # Add tab buttons first
+        self.toolbar.addWidget(self.imagesButton)
         self.toolbar.addWidget(self.preprocessingButton)
         self.toolbar.addWidget(self.viewButton)
         self.toolbar.addWidget(self.analysisButton)
+        self.toolbar.addWidget(self.metaDataButton)
         
         # Add separator
         self.toolbar.addSeparator()
@@ -153,10 +165,9 @@ class ToolBarUI(QWidget):
         self.toolbar.addWidget(self.contrastSlider)
 
     def update_contrast_slider(self, values):
-        min, max = values
 
         self.contrastSlider.blockSignals(True)
-
+        print("update_contrast_slider in interface", values)
         self.contrastSlider.setValue(values)
         self.contrastSlider.blockSignals(False)
 
@@ -187,13 +198,12 @@ class ToolBarUI(QWidget):
     cmapChanged = pyqtSignal(str)
     @pyqtSlot(str)
     def on_cmapTextChanged(self, cmap_str :str):
-        if self.channelSelector.count() != 0:
-            print("current cmap str: ", self.cmapSelector.currentText())
-            self.cmapChanged.emit(cmap_str)
+        self.cmapChanged.emit(cmap_str)
+
 
     def onTabButtonClicked(self, index):
         # Uncheck other buttons
-        buttons = [self.preprocessingButton, self.viewButton, self.analysisButton]
+        buttons = [self.imagesButton, self.preprocessingButton, self.viewButton, self.analysisButton, self.metaDataButton]
         for i, button in enumerate(buttons):
             if i != index:
                 button.setChecked(False)
