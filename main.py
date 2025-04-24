@@ -15,7 +15,7 @@ if __name__ == "__main__":
     window.show()
 
     # profiler = cProfile.Profile()
-    # profiler.enable()
+    # profiler.enable()``
 
     __app.exec()
 

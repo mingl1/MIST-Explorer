@@ -1,0 +1,259 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Analysis &mdash; MIST-Explorer March 2025 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=30eb7d5b"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="prev" title="View" href="view.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            MIST-Explorer
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="install.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="preprocessing.html">Preprocessing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="view.html">View</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Analysis</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#interface-overview">Interface Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#region-of-interest-roi-management">Region of Interest (ROI) Management</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#region-selection-tools">Region Selection Tools</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#data-selection">Data Selection</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#navigation-between-regions">Navigation Between Regions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#visualization-options">Visualization Options</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#boxplot">Boxplot</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#z-scores-heatmap">Z-Scores Heatmap</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#spatial-heatmap">Spatial Heatmap</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pie-chart">Pie Chart</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#histogram">Histogram</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#umap">UMAP</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#working-with-visualizations">Working with Visualizations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#data-analysis-workflow">Data Analysis Workflow</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#technical-details">Technical Details</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#usage-tips">Usage Tips</a></li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">MIST-Explorer</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Analysis</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/analysis.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="analysis">
+<h1>Analysis<a class="headerlink" href="#analysis" title="Link to this heading"></a></h1>
+<p>The Analysis tab provides advanced statistical and visual analysis tools for exploring protein expression data within specific regions of interest. This interface allows researchers to select areas of the image, analyze protein expression patterns, and generate a variety of visualizations to gain deeper insights.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>To include the analysis tab image in this documentation, save a screenshot of the analysis tab to the docs/source/_static directory with the filename “analysis_tab.png”.</p>
+</div>
+<a class="reference internal image-reference" href="_images/analysis_tab.png"><img alt="Analysis tab interface" src="_images/analysis_tab.png" style="width: 600px;" />
+</a>
+<section id="interface-overview">
+<h2>Interface Overview<a class="headerlink" href="#interface-overview" title="Link to this heading"></a></h2>
+<p>The Analysis tab consists of two main sections:</p>
+<ol class="arabic simple">
+<li><p><strong>Navigation Controls</strong>: Buttons for navigating between different regions of interest and saving plots</p></li>
+<li><p><strong>Content Area</strong>: A scrollable area displaying the current region analysis and associated visualizations</p></li>
+</ol>
+</section>
+<section id="region-of-interest-roi-management">
+<h2>Region of Interest (ROI) Management<a class="headerlink" href="#region-of-interest-roi-management" title="Link to this heading"></a></h2>
+<p>The Analysis tab allows you to define and analyze specific regions within your image. Each region becomes a separate analysis view that you can navigate between.</p>
+<section id="region-selection-tools">
+<h3>Region Selection Tools<a class="headerlink" href="#region-selection-tools" title="Link to this heading"></a></h3>
+<p>The View tab provides selection tools that integrate with the Analysis tab:</p>
+<ul class="simple">
+<li><p><strong>Rectangle Selection</strong>: Select rectangular regions for analysis</p></li>
+<li><p><strong>Circle/Ellipse Selection</strong>: Select circular/oval regions for analysis</p></li>
+<li><p><strong>Polygon Selection</strong>: Draw custom shapes to isolate complex structures</p></li>
+</ul>
+</section>
+<section id="data-selection">
+<h3>Data Selection<a class="headerlink" href="#data-selection" title="Link to this heading"></a></h3>
+<p>For each region of interest, you can select which proteins to include in your analysis:</p>
+<ul class="simple">
+<li><p><strong>Protein Selection Dropdown</strong>: Multi-select dropdown that allows you to choose specific proteins for analysis</p></li>
+<li><p><strong>Select All/Deselect All</strong>: Quickly select or deselect all proteins</p></li>
+<li><p><strong>Apply Button</strong>: Update visualizations based on your protein selection</p></li>
+</ul>
+</section>
+</section>
+<section id="navigation-between-regions">
+<h2>Navigation Between Regions<a class="headerlink" href="#navigation-between-regions" title="Link to this heading"></a></h2>
+<p>The Analysis tab provides intuitive navigation controls for working with multiple regions:</p>
+<ul class="simple">
+<li><p><strong>Back Button</strong>: Navigate to the previous region of interest</p></li>
+<li><p><strong>Next Button</strong>: Navigate to the next region of interest</p></li>
+<li><p><strong>Save Plot</strong>: Save the current visualization as an image file</p></li>
+</ul>
+<p>Each region of interest shows:
+* Region bounds information
+* Color indicator representing the region selection
+* Delete button to remove the current region</p>
+</section>
+<section id="visualization-options">
+<h2>Visualization Options<a class="headerlink" href="#visualization-options" title="Link to this heading"></a></h2>
+<p>The Analysis tab provides multiple visualization types for analyzing protein expression data:</p>
+<section id="boxplot">
+<h3>Boxplot<a class="headerlink" href="#boxplot" title="Link to this heading"></a></h3>
+<p>Displays the distribution of protein expression levels within the selected region. This visualization shows:</p>
+<ul class="simple">
+<li><p>Median expression level (center line)</p></li>
+<li><p>Interquartile range (box)</p></li>
+<li><p>Outliers (points)</p></li>
+<li><p>Range of non-outlier data (whiskers)</p></li>
+</ul>
+</section>
+<section id="z-scores-heatmap">
+<h3>Z-Scores Heatmap<a class="headerlink" href="#z-scores-heatmap" title="Link to this heading"></a></h3>
+<p>Visualizes standardized expression values (z-scores) across proteins and cells within the selected region. This helps identify proteins with unusually high or low expression.</p>
+</section>
+<section id="spatial-heatmap">
+<h3>Spatial Heatmap<a class="headerlink" href="#spatial-heatmap" title="Link to this heading"></a></h3>
+<p>Maps the spatial distribution of protein expression within the selected region, helping to identify localized expression patterns and hotspots.</p>
+</section>
+<section id="pie-chart">
+<h3>Pie Chart<a class="headerlink" href="#pie-chart" title="Link to this heading"></a></h3>
+<p>Shows the relative proportion of cells expressing different proteins within the selected region, helping to understand the cellular composition.</p>
+</section>
+<section id="histogram">
+<h3>Histogram<a class="headerlink" href="#histogram" title="Link to this heading"></a></h3>
+<p>Displays the frequency distribution of expression values for selected proteins, revealing expression patterns and populations.</p>
+</section>
+<section id="umap">
+<h3>UMAP<a class="headerlink" href="#umap" title="Link to this heading"></a></h3>
+<p>Implements Uniform Manifold Approximation and Projection for dimensionality reduction, allowing visualization of high-dimensional protein expression data in a 2D plot. This can reveal clusters of cells with similar expression profiles.</p>
+</section>
+</section>
+<section id="working-with-visualizations">
+<h2>Working with Visualizations<a class="headerlink" href="#working-with-visualizations" title="Link to this heading"></a></h2>
+<p>Each visualization offers additional capabilities:</p>
+<ul class="simple">
+<li><p><strong>Expand to New Window</strong>: Open any visualization in a separate window for detailed viewing</p></li>
+<li><p><strong>Return to Graph List</strong>: Go back to the main list of available visualizations</p></li>
+<li><p><strong>Add New Charts</strong>: Create additional custom visualizations</p></li>
+</ul>
+</section>
+<section id="data-analysis-workflow">
+<h2>Data Analysis Workflow<a class="headerlink" href="#data-analysis-workflow" title="Link to this heading"></a></h2>
+<p>A typical workflow for using the Analysis tab includes:</p>
+<ol class="arabic simple">
+<li><p><strong>Select Region</strong>: Use the selection tools in the View tab to define a region of interest</p></li>
+<li><p><strong>Choose Proteins</strong>: Select which proteins to include in your analysis</p></li>
+<li><p><strong>Explore Visualizations</strong>: Navigate through the different visualization types</p></li>
+<li><p><strong>Compare Regions</strong>: Use Back and Next buttons to compare analyses across different regions</p></li>
+<li><p><strong>Save Results</strong>: Save important visualizations for reporting or further analysis</p></li>
+</ol>
+</section>
+<section id="technical-details">
+<h2>Technical Details<a class="headerlink" href="#technical-details" title="Link to this heading"></a></h2>
+<p>The Analysis tab implements several advanced techniques for data analysis:</p>
+<ol class="arabic simple">
+<li><p><strong>Region Filtering</strong>: Implements geometric algorithms to precisely extract cell data from defined regions:
+* Rectangle filtering using coordinate bounds
+* Circle/oval filtering using elliptical equations
+* Polygon filtering using ray casting algorithm</p></li>
+<li><p><strong>Lazy Loading</strong>: Visualizations are generated on-demand to improve performance with large datasets.</p></li>
+<li><p><strong>Interactive Visualizations</strong>: Matplotlib integration provides high-quality, interactive scientific visualizations.</p></li>
+<li><p><strong>Multi-window Support</strong>: The ability to pop out visualizations into separate windows allows for detailed examination and side-by-side comparison.</p></li>
+</ol>
+</section>
+<section id="usage-tips">
+<h2>Usage Tips<a class="headerlink" href="#usage-tips" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p><strong>Strategic Region Selection</strong>: Select regions that contain interesting features or contrasting cell populations</p></li>
+<li><p><strong>Protein Comparison</strong>: Select related proteins to compare their expression patterns within the same region</p></li>
+<li><p><strong>Save Visualizations</strong>: Use the Save Plot button to capture important findings for publications or presentations</p></li>
+<li><p><strong>Multiple Windows</strong>: Use the expand feature to compare multiple visualizations side by side</p></li>
+<li><p><strong>Region Navigation</strong>: Create multiple regions to systematically analyze different areas of your image</p></li>
+</ul>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="view.html" class="btn btn-neutral float-left" title="View" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Clark Fischer, Jason Chen, Jun Wang.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

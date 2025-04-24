@@ -38,6 +38,23 @@ After preprocessing your images, you can visualize and explore protein expressio
 
 For comprehensive information on visualization features, refer to the :doc:`view` page.
 
+Analyzing Regions of Interest
+----------------------------
+
+Once you've visualized your data and identified interesting regions, you can perform advanced analysis using the Analysis tab.
+
+1. **Region Selection**: Use the selection tools in the View tab to define regions of interest for analysis.
+
+2. **Protein Selection**: Choose which proteins to include in your analysis using the multi-select dropdown.
+
+3. **Exploring Visualizations**: Navigate through different visualization options (boxplots, heatmaps, etc.) to gain insights.
+
+4. **Comparing Regions**: Use the navigation controls to compare analyses across different regions of interest.
+
+5. **Saving Results**: Save important visualizations for reporting or publication.
+
+For in-depth information on analysis capabilities, see the :doc:`analysis` page.
+
 Analysis
 -------
 

@@ -128,8 +128,9 @@ class Ui_MainWindow(QMainWindow):
         
         self.view_tab = ImageOverlay(self.canvas, enc=self)
         self.view_tab.setObjectName("view_tab")
-        self.view_tab.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        self.view_tab.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         view_scroll.setWidget(self.view_tab)
+        view_scroll.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.stackedWidget.addWidget(view_scroll)
         
         ####### analysis tab #######################################

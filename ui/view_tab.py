@@ -525,7 +525,12 @@ class ImageOverlay(QWidget):
         )
 
         self.scroll_content = QWidget()
+        # Set minimum size to ensure content is properly scrollable
+        self.scroll_content.setMinimumHeight(500)
         self.scroll_layout = QVBoxLayout(self.scroll_content)
+        self.scroll_layout.setAlignment(Qt.AlignmentFlag.AlignTop)  # Align content to top
+        self.scroll_layout.setSpacing(10)  # Add some spacing between widgets
+        self.scroll_layout.setContentsMargins(10, 10, 10, 20)  # Add margins for better appearance
 
         self.scroll_content.setLayout(self.scroll_layout)
         self.scroll_area.setWidget(self.scroll_content)
@@ -580,14 +585,12 @@ class ImageOverlay(QWidget):
         self.apply_button = QPushButton("Apply")
         self.apply_button.clicked.connect(self.start_build_all_worker)
         main_layout.addWidget(self.apply_button)
-        main_layout.addStretch()
-        # main_layout.setDirection(QVBoxLayout.BottomToTop)
-
-        # self.main_btn = QPushButton('run main')
-        # self.main_btn.clicked.connect(self.main)
-        # main_layout.addWidget(self.main_btn)
-
+        
+        # Add a spacer to ensure content can scroll all the way down
+        main_layout.addStretch(1)  # Add stretch at the end to push content up
+        
         self.setLayout(main_layout)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.update_image()
 
     def open_other_image(self):
@@ -748,8 +751,10 @@ class ImageOverlay(QWidget):
         idx = len(self.controls) - 1
 
         group_box = QGroupBox(f"Layer {idx + 1}: {c.name}")
+        group_box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
         group_layout = QFormLayout()
+        group_layout.setSpacing(8)  # Add spacing between form rows
 
         opacity_slider = QSlider(Qt.Orientation.Horizontal)
         opacity_slider.setMinimum(0)

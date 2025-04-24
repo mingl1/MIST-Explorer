@@ -35,6 +35,7 @@ Requirements
    tutorial
    preprocessing
    view
+   analysis
    .. :caption: 
    .. Contents:
 
