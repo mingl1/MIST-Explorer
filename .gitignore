@@ -6,3 +6,4 @@ local/
 docs/build
 Makefile
 make.bat
+.DS_Store
