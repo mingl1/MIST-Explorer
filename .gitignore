@@ -7,3 +7,5 @@ docs/build
 Makefile
 make.bat
 .DS_Store
+
+assets/sample_data/demo/overlay.tif
