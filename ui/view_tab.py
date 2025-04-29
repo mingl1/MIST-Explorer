@@ -523,19 +523,23 @@ class ImageOverlay(QWidget):
         self.scroll_area.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
+        self.scroll_area.setMinimumHeight(450)  # Set a reasonable minimum height
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)  # Disable horizontal scroll
 
         self.scroll_content = QWidget()
-        # Set minimum size to ensure content is properly scrollable
-        self.scroll_content.setMinimumHeight(500)
+        self.scroll_content.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
         self.scroll_layout = QVBoxLayout(self.scroll_content)
-        self.scroll_layout.setAlignment(Qt.AlignmentFlag.AlignTop)  # Align content to top
-        self.scroll_layout.setSpacing(10)  # Add some spacing between widgets
-        self.scroll_layout.setContentsMargins(10, 10, 10, 20)  # Add margins for better appearance
+        self.scroll_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.scroll_layout.setSpacing(10)
+        self.scroll_layout.setContentsMargins(10, 10, 10, 20)
 
         self.scroll_content.setLayout(self.scroll_layout)
         self.scroll_area.setWidget(self.scroll_content)
 
         main_layout.addWidget(self.scroll_area)
+        main_layout.setStretch(0, 1)  # Make the scroll area take up available space
 
         self.add_layer_button = QPushButton("Add Layer")
         self.add_layer_button.clicked.connect(self.show_layer_dialog)

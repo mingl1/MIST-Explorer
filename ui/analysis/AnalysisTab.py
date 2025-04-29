@@ -370,10 +370,9 @@ class AnalysisTab(QWidget):
         apply_button.clicked.connect(
             lambda: self.handleComboBoxChanged(self.multiComboBox.get_checked_items())
         )
-
         
         delete_button = QPushButton("Delete")
-        delete_button.clicked.connect(lambda: self.delete_current_view)
+        delete_button.clicked.connect(self.delete_current_view)
         
         # Add region info
         bounds_label = QLabel(f"Bounds: {region}")
@@ -386,15 +385,19 @@ class AnalysisTab(QWidget):
             f"background-color: rgb({rgb[0]}, {rgb[1]}, {rgb[2]});"
         )
         
-        # Arrange controls
+        # Create button layout
         button_layout = QVBoxLayout()
-        button_layout.addWidget(bounds_label)
+        # button_layout.addWidget(bounds_label)
         button_layout.addWidget(delete_button)
         
-        controls_layout.addWidget(QWidget().setLayout(button_layout))
-        controls_layout.addWidget(self.multiComboBox)
-        controls_layout.addWidget(apply_button)
-        # controls_layout.addWidget(delete_button)
+        # Create combo and apply layout
+        combo_apply_layout = QVBoxLayout()
+        combo_apply_layout.addWidget(self.multiComboBox)
+        combo_apply_layout.addWidget(apply_button)
+        
+        # Add all layouts to main controls layout
+        controls_layout.addLayout(button_layout)
+        controls_layout.addLayout(combo_apply_layout)
         controls_layout.addWidget(color_label)
         
         return controls_layout
