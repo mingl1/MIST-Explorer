@@ -287,6 +287,24 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMouseTracking(True)
 
+    def flip_horizontal(self):
+        """Flip the image horizontally"""
+        if self.pixmapItem:
+            img = self.pixmapItem.pixmap().toImage()
+            flipped_img = img.mirrored(horizontal=True, vertical=False)
+            flipped_pixmap = QPixmap.fromImage(flipped_img)
+            self.pixmapItem.setPixmap(flipped_pixmap)
+            self.scene().update()
+
+    def flip_vertical(self):
+        """Flip the image vertically"""
+        if self.pixmapItem:
+            img = self.pixmapItem.pixmap().toImage()
+            flipped_img = img.mirrored(horizontal=False, vertical=True)
+            flipped_pixmap = QPixmap.fromImage(flipped_img)
+            self.pixmapItem.setPixmap(flipped_pixmap)
+            self.scene().update()
+
     def setupUI(self):
         self.setMinimumSize(QSize(600, 600))
         self.setObjectName("canvas")

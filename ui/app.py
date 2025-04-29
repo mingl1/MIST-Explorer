@@ -125,6 +125,23 @@ class Ui_MainWindow(QMainWindow):
         self.rotate_crop_hlayout.setSpacing(3)
         
         self.preprocessing_dockwidget_main_vlayout.addLayout(self.rotate_crop_hlayout)
+
+        # Add flip buttons
+        self.flip_groupbox = QGroupBox("Flip Image")
+        self.flip_layout = QHBoxLayout()
+        
+        self.flip_horizontal_btn = QPushButton("Flip Horizontal")
+        self.flip_vertical_btn = QPushButton("Flip Vertical")
+        
+        self.flip_horizontal_btn.clicked.connect(self.canvas.flip_horizontal)
+        self.flip_vertical_btn.clicked.connect(self.canvas.flip_vertical)
+        
+        self.flip_layout.addWidget(self.flip_horizontal_btn)
+        self.flip_layout.addWidget(self.flip_vertical_btn)
+        self.flip_groupbox.setLayout(self.flip_layout)
+        
+        self.preprocessing_dockwidget_main_vlayout.addWidget(self.flip_groupbox)
+
         self.register_groupbox = RegisterUI(self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout)
         self.gaussian_blur = GaussianBlur(self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout)
 

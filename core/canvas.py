@@ -685,13 +685,31 @@ class ImageGraphicsView(__BaseGraphicsView):
                 if not hasattr(self, "cropped_wrappers"):
                     self.cropped_wrappers = {}
 
-
                 self.np_channels[channel_name].data = cropped_array
 
             return self.np_channels
             
         else: return {}
     
+    def flip_horizontal(self):
+        """Flip the image horizontally"""
+        if self.is_layered:
+            for channel_name, wrapper in self.np_channels.items():
+                wrapper.data = cv2.flip(wrapper.data, 1)  # 1 for horizontal flip
+            self.update_image()
+        else:
+            self.image_wrapper.data = cv2.flip(self.image_wrapper.data, 1)
+            self.update_image()
+
+    def flip_vertical(self):
+        """Flip the image vertically"""
+        if self.is_layered:
+            for channel_name, wrapper in self.np_channels.items():
+                wrapper.data = cv2.flip(wrapper.data, 0)  # 0 for vertical flip
+            self.update_image()
+        else:
+            self.image_wrapper.data = cv2.flip(self.image_wrapper.data, 0)
+            self.update_image()
 
 class MetaData(QWidget):
     '''Class to handle metadata of images'''
