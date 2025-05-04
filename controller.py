@@ -179,9 +179,16 @@ class Controller:
         width = qimage.width()
         height = qimage.height()
         ptr = qimage.bits()
-        ptr.setsize(height * width*3)
-        arr = np.array(ptr).reshape(height, width, 3)  # 4 for RGBA
-
+        ptr.setsize(height * width * 4)
+        arr = np.array(ptr).reshape(height, width, 4)  # 4 for RGBA
+        
+        # Convert from BGRA to RGB by dropping alpha channel and reversing BGR
+        if arr.shape[2] == 4:  # If the image has an alpha channel
+            arr = arr[:, :, :3]  # Remove the alpha channel
+        
+        # Convert BGR to RGB (OpenCV uses BGR, but most other libraries use RGB)
+        arr = arr[:, :, ::-1]  
+        
         return arr
     
     def is_grayscale(image: np.ndarray) -> bool:
