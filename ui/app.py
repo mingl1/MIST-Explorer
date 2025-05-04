@@ -10,6 +10,7 @@ from ui.analysis.AnalysisTab import AnalysisTab
 from ui.processing.gaussian_blur import GaussianBlur
 from core.canvas import MetaData
 from ui.ImageManager import Manager
+from ui.alignment.cell_layer_alignment_ui import CellLayerAlignmentUI
 
 
 class Ui_MainWindow(QMainWindow):
@@ -84,10 +85,9 @@ class Ui_MainWindow(QMainWindow):
         
         self.images_tab = Manager(self.canvas)
         self.images_tab.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        
         images_scroll.setWidget(self.images_tab)
         self.stackedWidget.addWidget(images_scroll)
-
-
 
         ####### preprocess tab ###################################
         # Create scroll area for preprocessing tab
@@ -145,6 +145,18 @@ class Ui_MainWindow(QMainWindow):
         self.register_groupbox = RegisterUI(self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout)
         self.gaussian_blur = GaussianBlur(self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout)
 
+        # Add the cell layer alignment UI
+        self.cell_layer_alignment = CellLayerAlignmentUI(self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout)
+        
+        # Now that cell_layer_alignment exists, connect the signals
+        self.images_tab.tissue_target_selected.connect(self.cell_layer_alignment.set_target_image)
+        self.images_tab.tissue_unaligned_selected.connect(self.cell_layer_alignment.set_unaligned_image)
+        self.cell_layer_alignment.alignmentCompleteSignal.connect(self.add_item_to_manager)
+        self.cell_layer_alignment.replaceLayerSignal.connect(self.replace_layer_in_canvas)
+        
+        # Connect to progress bar
+        self.cell_layer_alignment.aligner.progress.connect(self.update_progress_bar)
+        
         # stardist UI
         self.stardist_groupbox = StarDistUI(self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout)
 
@@ -290,11 +302,19 @@ class Ui_MainWindow(QMainWindow):
         file_name, _ = QFileDialog.getSaveFileName(None, "Save File", "image.png", "*.png;;*.jpg;;*.tif;; All Files(*)")
         
         if file_name:
-            pixmap = self.canvas.grab().toImage()
-            buffer = pixmap.bits().asstring(pixmap.width() * pixmap.height() * pixmap.depth() // 8)
-            image = np.frombuffer(buffer, dtype=np.uint8).reshape((pixmap.height(), pixmap.width(), pixmap.depth() // 8))
+            # Instead of calling grab(), use pixmapItem directly if available
+            if hasattr(self.canvas, 'pixmapItem') and self.canvas.pixmapItem:
+                pixmap = self.canvas.pixmapItem.pixmap()
+            else:
+                pixmap = self.canvas.grab()
+            
+            qimage = pixmap.toImage()
+            buffer = qimage.bits().asstring(qimage.width() * qimage.height() * qimage.depth() // 8)
+            image = np.frombuffer(buffer, dtype=np.uint8).reshape((qimage.height(), qimage.width(), qimage.depth() // 8))
+            
             if image.shape[2] == 4:  # If the image has an alpha channel
                 image = image[:, :, :3]  # Remove the alpha channel
+            
             image = image[:, :, ::-1]  # Convert BGR to RGB
             Image.fromarray(image).save(file_name)
 
@@ -312,3 +332,23 @@ class Ui_MainWindow(QMainWindow):
 
     def add_item_to_manager(self, data, name):
         self.images_tab.add_item(data, name)
+
+    def replace_layer_in_canvas(self, target_image, aligned_image):
+        """Replace the second layer in the target image with the aligned image"""
+        if self.canvas.is_layered and self.canvas.np_channels:
+            # Find the current active channel
+            current_channel = f"Channel {self.canvas.currentChannelNum + 1}"
+            
+            # Replace the channel data with the aligned image
+            if current_channel in self.canvas.np_channels:
+                self.canvas.np_channels[current_channel].data = aligned_image
+                
+                # Update the display
+                self.canvas.image_cache.clear()
+                self.canvas.update_image(self.canvas.np_channels[current_channel].cmap)
+                
+                # Update the channels in the UI
+                self.canvas.updateChannels(self.canvas.np_channels, False)
+                
+                # Update progress bar
+                self.update_progress_bar(100, f"Replaced {current_channel} with aligned image")

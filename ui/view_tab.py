@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import os
 import threading
+import tifffile as tiff
 
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 from PIL import Image
@@ -464,6 +465,7 @@ class ImageOverlay(QWidget):
 
         self.apply_button.setVisible(False)
         self.cancel_reset.setVisible(True)
+        self.export_tif_button.setVisible(True)
 
         return (ims, layer_names)
 
@@ -512,8 +514,8 @@ class ImageOverlay(QWidget):
 
             self.add_layer_button.setVisible(False)
             self.cancel_reset.setVisible(False)
-
             self.add_other_image_button.setVisible(False)
+            self.export_tif_button.setVisible(False)
 
     def initUI(self):
         main_layout = QVBoxLayout()
@@ -589,6 +591,11 @@ class ImageOverlay(QWidget):
         self.apply_button = QPushButton("Apply")
         self.apply_button.clicked.connect(self.start_build_all_worker)
         main_layout.addWidget(self.apply_button)
+        
+        self.export_tif_button = QPushButton("Export to TIF")
+        self.export_tif_button.clicked.connect(self.export_to_tif)
+        self.export_tif_button.setVisible(False)
+        main_layout.addWidget(self.export_tif_button)
         
         # Add a spacer to ensure content can scroll all the way down
         main_layout.addStretch(1)  # Add stretch at the end to push content up
@@ -888,6 +895,69 @@ class ImageOverlay(QWidget):
 
         # commented out
         self.changePix.emit(QGraphicsPixmapItem(QPixmap.fromImage(q_image)))
+
+    def export_to_tif(self):
+        if len(self.controls) == 0:
+            QMessageBox.warning(None, "Warning", "No layers to export")
+            return
+            
+        file_name, _ = QFileDialog.getSaveFileName(
+            None, "Save TIF File", "protein_layers.tif", "*.tif;;All Files (*)"
+        )
+        
+        if not file_name:
+            return
+            
+        # Create an array to hold all the protein layer images as grayscale
+        layers_data = []
+        layer_names = []
+        
+        for i, c in enumerate(self.controls):
+            if c.current_visibility:
+                img = c.image.copy()
+                
+                # Get original protein data in grayscale
+                # If the image has 3 channels (RGB), convert to grayscale
+                if len(img.shape) == 3 and img.shape[2] == 3:
+                    img_gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+                else:
+                    img_gray = img
+                
+                # Apply contrast adjustment if needed
+                if type(c.current_contrast) == type([]):
+                    img_gray = np.clip(img_gray, c.current_contrast[0], c.current_contrast[1])
+                
+                # Scale to 0-255 range
+                img_gray = scale_image_to_255(img_gray)
+                
+                # Add to our stack
+                layers_data.append(img_gray)
+                layer_names.append(c.name)
+        
+        if not layers_data:
+            QMessageBox.warning(None, "Warning", "No visible layers to export")
+            return
+            
+        # Stack all layers into a single 3D array (Z,Y,X) where Z is the protein layer
+        tif_data = np.stack(layers_data)
+        
+        # Save as multi-layer TIF file
+        try:
+            # Use tifffile to save with ImageJ compatibility
+            tiff.imwrite(file_name, tif_data.astype(np.uint8), imagej=True)
+            
+            # Save layer names to a text file
+            txt_file = os.path.splitext(file_name)[0] + "_protein_order.txt"
+            with open(txt_file, 'w') as f:
+                for i, name in enumerate(layer_names):
+                    f.write(f"Layer {i+1}: {name}\n")
+                    
+            QMessageBox.information(None, "Success", 
+                f"Multi-layered TIF file saved to {file_name}\n"
+                f"Each layer contains a separate protein in grayscale\n"
+                f"Protein order saved to {txt_file}")
+        except Exception as e:
+            QMessageBox.critical(None, "Error", f"Failed to save TIF file: {str(e)}")
 
 
 def numpy_to_qimage(array):
