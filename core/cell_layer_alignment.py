@@ -6,7 +6,7 @@ class CellLayerAligner(QThread):
     """Worker thread for aligning cell layers"""
     progress = pyqtSignal(int, str)
     error = pyqtSignal(str)
-    aligned_image_signal = pyqtSignal(np.ndarray)
+    aligned_image_signal = pyqtSignal(np.ndarray, np.ndarray, np.ndarray)  # Full aligned image, downscaled target, downscaled aligned
     
     def __init__(self, target_image=None, unaligned_image=None):
         super().__init__()
@@ -70,7 +70,7 @@ class CellLayerAligner(QThread):
                 
             self.result = aligned_image
             self.progress.emit(100, "Alignment complete")
-            self.aligned_image_signal.emit(aligned_image)
+            self.aligned_image_signal.emit(aligned_image, target_small, unaligned_small)
             
         except Exception as e:
             self.error.emit(f"Error during alignment: {str(e)}")

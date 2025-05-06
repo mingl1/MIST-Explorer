@@ -263,6 +263,8 @@ class ImageGraphicsViewUI(QGraphicsView):
     """Main image view with support for selection, cropping and other operations"""
     imageDropped = pyqtSignal(str)
     showCrop = pyqtSignal(QRect)
+    requestFlipHorizontal = pyqtSignal()  # Signal to request horizontal flip
+    requestFlipVertical = pyqtSignal()  # Signal to request vertical flip
     
     def __init__(self, parent=None, enc=None):
         super().__init__(parent)
@@ -295,6 +297,8 @@ class ImageGraphicsViewUI(QGraphicsView):
             flipped_pixmap = QPixmap.fromImage(flipped_img)
             self.pixmapItem.setPixmap(flipped_pixmap)
             self.scene().update()
+            # Emit signal to update the underlying data model
+            self.requestFlipHorizontal.emit()
 
     def flip_vertical(self):
         """Flip the image vertically"""
@@ -304,6 +308,8 @@ class ImageGraphicsViewUI(QGraphicsView):
             flipped_pixmap = QPixmap.fromImage(flipped_img)
             self.pixmapItem.setPixmap(flipped_pixmap)
             self.scene().update()
+            # Emit signal to update the underlying data model
+            self.requestFlipVertical.emit()
 
     def setupUI(self):
         self.setMinimumSize(QSize(600, 600))
@@ -749,6 +755,41 @@ class ImageGraphicsViewUI(QGraphicsView):
     def setCurrentChannel(self, channel_num: int) -> None:
         """Set the current channel to display"""
         self.currentChannelNum = channel_num
+        
+    def update_image(self, cmap=None):
+        """Update the displayed image with current channel data"""
+        if hasattr(self, 'np_channels') and self.np_channels and hasattr(self, 'currentChannelNum'):
+            channel_key = f"Channel {self.currentChannelNum + 1}"
+            if channel_key in self.np_channels:
+                # Convert numpy data to QImage
+                channel_data = self.np_channels[channel_key].data
+                from utils import numpy_to_qimage
+                from PyQt6.QtGui import QPixmap
+                
+                # Make sure channel data is in the right format
+                if channel_data.dtype != np.uint8:
+                    # Scale to 8-bit for display if needed
+                    if channel_data.max() > 255:
+                        channel_data = ((channel_data / channel_data.max()) * 255).astype(np.uint8)
+                    else:
+                        channel_data = channel_data.astype(np.uint8)
+                
+                q_image = numpy_to_qimage(channel_data)
+                pixmap = QPixmap(q_image)
+                
+                # Update the pixmap
+                if self.pixmapItem:
+                    self.pixmapItem.setPixmap(pixmap)
+                    
+                return True
+        return False
+        
+    def swap_channel(self, channel_num):
+        """Switch to a different channel"""
+        if hasattr(self, 'np_channels') and self.np_channels:
+            self.setCurrentChannel(channel_num)
+            return self.update_image()
+        return False
 
 
 class ResizableRect(QGraphicsRectItem):

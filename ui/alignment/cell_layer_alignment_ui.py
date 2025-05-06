@@ -8,6 +8,7 @@ class CellLayerAlignmentUI(QWidget):
     errorSignal = pyqtSignal(str)
     alignmentCompleteSignal = pyqtSignal(object, str)
     replaceLayerSignal = pyqtSignal(object, object)  # Target image, aligned image
+    loadOnCanvasSignal = pyqtSignal(object)  # Aligned image to load directly onto canvas
     
     def __init__(self, parent=None, containing_layout:QVBoxLayout=None):
         super().__init__()
@@ -157,24 +158,30 @@ class CellLayerAlignmentUI(QWidget):
         if self.unaligned_image is not None:
             self.image2_status.setStyleSheet("font-weight: bold; color: #FF0000;")  # Red to indicate error
     
-    def _handle_aligned_image(self, aligned_image):
+    def _handle_aligned_image(self, aligned_image, target_small, aligned_small):
         """Handle the aligned image result"""
         # Store the aligned image
         self.aligned_image = aligned_image
+        self.target_small = target_small
+        self.aligned_small = aligned_small
         
         # Show the preview dialog
-        self._show_preview_dialog(aligned_image)
+        self._show_preview_dialog(aligned_image, target_small, aligned_small)
     
-    def _show_preview_dialog(self, aligned_image):
+    def _show_preview_dialog(self, aligned_image, target_small, aligned_small):
         """Show the preview dialog with red/green overlay"""
-        preview_dialog = AlignmentPreviewDialog(self.target_image, aligned_image, self)
+        # Use the downscaled images for the preview dialog
+        preview_dialog = AlignmentPreviewDialog(target_small, aligned_small, self)
         result = preview_dialog.exec()
         
         if result == 1 and preview_dialog.result_accepted:  # User clicked Confirm
             # Generate a name for the aligned image
             aligned_name = f"Aligned_{self.unaligned_name}_to_{self.target_name}"
             
-            # Emit the signal to replace the layer
+            # First, load the aligned image directly onto the canvas
+            self.loadOnCanvasSignal.emit(aligned_image)
+            
+            # Then, emit the signal to replace the layer
             self.replaceLayerSignal.emit(self.target_image, aligned_image)
             
             # Also emit the signal to add the aligned image to the manager
@@ -182,13 +189,19 @@ class CellLayerAlignmentUI(QWidget):
             
             # Show success message
             QMessageBox.information(self, "Alignment Complete", 
-                                   f"Successfully aligned and replaced layer in {self.target_name}")
+                                   f"Successfully aligned and loaded image onto canvas. Layer 2 in {self.target_name} was also replaced.")
         else:
-            # User canceled, no replacement - just add to the manager
+            # User canceled, but still load onto canvas and add to manager
             aligned_name = f"Aligned_{self.unaligned_name}_to_{self.target_name}"
+            
+            # Load directly onto the canvas
+            self.loadOnCanvasSignal.emit(aligned_image)
+            
+            # Add to the manager
             self.alignmentCompleteSignal.emit(aligned_image, aligned_name)
+            
             QMessageBox.information(self, "Alignment Complete", 
-                                   f"Alignment completed but not applied. The aligned image has been added to your workspace.")
+                                   f"Alignment successful. The aligned image has been loaded onto the canvas and added to your workspace.")
     
     def _handle_finished(self):
         """Handle when the alignment thread finishes"""

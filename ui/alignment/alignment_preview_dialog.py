@@ -1,9 +1,15 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
-                             QLabel, QGraphicsView, QGraphicsScene)
-from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QPixmap, QImage, QColor
+                             QLabel)
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPixmap, QImage
 import numpy as np
+import sys
+import os
+import tempfile
 import cv2
+
+# Add path to import microfilm
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'lib')))
 
 class AlignmentPreviewDialog(QDialog):
     """Dialog to preview the alignment before confirming or canceling"""
@@ -23,11 +29,12 @@ class AlignmentPreviewDialog(QDialog):
         # Create preview image
         self.preview_label = QLabel("Red = Target, Green = Aligned")
         self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.preview_label.setStyleSheet("font-weight: bold; font-size: 14px;")
         
-        # Create graphics view for the overlay image
-        self.graphics_view = QGraphicsView()
-        self.graphics_scene = QGraphicsScene()
-        self.graphics_view.setScene(self.graphics_scene)
+        # Create image display label
+        self.image_label = QLabel()
+        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.image_label.setMinimumSize(600, 400)
         
         # Create buttons
         self.button_layout = QHBoxLayout()
@@ -69,54 +76,102 @@ class AlignmentPreviewDialog(QDialog):
         
         # Add widgets to layout
         self.layout.addWidget(self.preview_label)
-        self.layout.addWidget(self.graphics_view)
+        self.layout.addWidget(self.image_label)
         self.layout.addLayout(self.button_layout)
         
-        # Create the overlay image
-        self.create_overlay()
+        # Create the overlay image directly
+        self.create_direct_overlay()
     
-    def create_overlay(self):
-        """Create the red/green overlay image for preview"""
+    def create_direct_overlay(self):
+        """Create and display the overlay directly without using external libraries"""
         try:
-            # Ensure both images are of the same size
-            h, w = self.target_image.shape[:2]
-            target_resized = self.target_image
-            aligned_resized = self.aligned_image
+            print("Creating direct overlay visualization...")
+            # Ensure the images are available
+            if self.target_image is None or self.aligned_image is None:
+                raise ValueError("Missing one or both images for alignment preview")
             
-            # Convert to 8-bit if needed
-            if target_resized.dtype != np.uint8:
-                target_resized = self.to_uint8(target_resized)
-            if aligned_resized.dtype != np.uint8:
-                aligned_resized = self.to_uint8(aligned_resized)
+            # Crop to same dimensions
+            target_img, aligned_img = self._ensure_same_size(self.target_image, self.aligned_image)
+            print(f"After cropping: target={target_img.shape}, aligned={aligned_img.shape}")
             
-            # Create an RGB image with the red and green channels
-            overlay = np.zeros((h, w, 3), dtype=np.uint8)
-            
-            # Make sure we handle both grayscale and color images
-            if len(target_resized.shape) == 2:
-                overlay[:, :, 0] = target_resized  # Target is red
+            # Convert to grayscale if color
+            if len(target_img.shape) > 2 and target_img.shape[2] > 1:
+                target_gray = cv2.cvtColor(target_img, cv2.COLOR_BGR2GRAY)
             else:
-                overlay[:, :, 0] = cv2.cvtColor(target_resized, cv2.COLOR_BGR2GRAY)
+                target_gray = target_img
                 
-            if len(aligned_resized.shape) == 2:
-                overlay[:, :, 1] = aligned_resized  # Aligned is green
+            if len(aligned_img.shape) > 2 and aligned_img.shape[2] > 1:
+                aligned_gray = cv2.cvtColor(aligned_img, cv2.COLOR_BGR2GRAY)
             else:
-                overlay[:, :, 1] = cv2.cvtColor(aligned_resized, cv2.COLOR_BGR2GRAY)
+                aligned_gray = aligned_img
             
-            # Convert to QImage and display
+            # Convert to uint8 if needed
+            if target_gray.dtype != np.uint8:
+                target_gray = self.to_uint8(target_gray)
+            if aligned_gray.dtype != np.uint8:
+                aligned_gray = self.to_uint8(aligned_gray)
+            
+            # Adjust contrast
+            target_gray = self.adjust_contrast(target_gray)
+            aligned_gray = self.adjust_contrast(aligned_gray)
+            
+            # Create RGB overlay
+            h, w = target_gray.shape
+            overlay = np.zeros((h, w, 3), dtype=np.uint8)
+            overlay[:, :, 0] = target_gray   # Red channel = target
+            overlay[:, :, 1] = aligned_gray  # Green channel = aligned
+            
+            # Save to debug file
+            try:
+                print("Saving debug file...")
+                cv2.imwrite("micro.png", overlay)
+                print("Saved overlay to micro.png")
+            except Exception as save_error:
+                print(f"Warning: Could not save debug file: {save_error}")
+            
+            # Convert to QImage
+            print("Converting to QImage...")
             height, width, channels = overlay.shape
             bytes_per_line = channels * width
             q_image = QImage(overlay.data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
-            pixmap = QPixmap.fromImage(q_image)
             
-            # Add the pixmap to the scene
-            self.graphics_scene.clear()
-            self.graphics_scene.addPixmap(pixmap)
-            self.graphics_view.fitInView(self.graphics_scene.sceneRect(), 
-                                         Qt.AspectRatioMode.KeepAspectRatio)
+            # Convert to QPixmap and display
+            print("Setting pixmap...")
+            pixmap = QPixmap.fromImage(q_image)
+            self.image_label.setPixmap(pixmap.scaled(
+                self.image_label.width(), self.image_label.height(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            ))
+            print("Overlay displayed successfully!")
             
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             print(f"Error creating overlay: {str(e)}")
+            self.image_label.setText(f"Error creating overlay: {str(e)}")
+    
+    def _ensure_same_size(self, img1, img2):
+        """Ensure both images have the same dimensions by cropping to the smallest common size"""
+        print(f"Original shapes: img1={img1.shape}, img2={img2.shape}")
+        
+        # Get the minimum width and height
+        min_height = min(img1.shape[0], img2.shape[0])
+        min_width = min(img1.shape[1], img2.shape[1])
+        
+        # Crop both images to these dimensions
+        img1_cropped = img1[:min_height, :min_width]
+        img2_cropped = img2[:min_height, :min_width]
+        
+        # If images are RGB (3 channels), make sure to keep the channel dimension
+        if len(img1.shape) > 2:
+            img1_cropped = img1_cropped[:min_height, :min_width, :img1.shape[2]]
+        if len(img2.shape) > 2:
+            img2_cropped = img2_cropped[:min_height, :min_width, :img2.shape[2]]
+        
+        print(f"Cropped shapes: img1={img1_cropped.shape}, img2={img2_cropped.shape}")
+        
+        return img1_cropped, img2_cropped
     
     def to_uint8(self, image):
         """Convert image to uint8 with proper scaling"""
@@ -132,11 +187,23 @@ class AlignmentPreviewDialog(QDialog):
         else:
             return np.zeros_like(image, dtype=np.uint8)
     
+    def adjust_contrast(self, img, min_percentile=2, max_percentile=98):
+        """Adjust image contrast using percentile-based clipping"""
+        # Calculate percentiles
+        minval = np.percentile(img, min_percentile)
+        maxval = np.percentile(img, max_percentile)
+        
+        # Clip and rescale
+        img_adjusted = np.clip(img, minval, maxval)
+        if maxval > minval:
+            img_adjusted = ((img_adjusted - minval) / (maxval - minval)) * 255
+        return img_adjusted.astype(np.uint8)
+    
     def resizeEvent(self, event):
-        """Handle resize to keep the image properly scaled"""
+        """Handle resize events to resize the displayed image"""
         super().resizeEvent(event)
-        self.graphics_view.fitInView(self.graphics_scene.sceneRect(), 
-                                    Qt.AspectRatioMode.KeepAspectRatio)
+        # Recreate the overlay on resize
+        self.create_direct_overlay()
     
     def accept_alignment(self):
         """Set result as accepted and close dialog"""

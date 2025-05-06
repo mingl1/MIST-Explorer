@@ -11,6 +11,7 @@ from ui.processing.gaussian_blur import GaussianBlur
 from core.canvas import MetaData
 from ui.ImageManager import Manager
 from ui.alignment.cell_layer_alignment_ui import CellLayerAlignmentUI
+import numpy as np
 
 
 class Ui_MainWindow(QMainWindow):
@@ -133,6 +134,7 @@ class Ui_MainWindow(QMainWindow):
         self.flip_horizontal_btn = QPushButton("Flip Horizontal")
         self.flip_vertical_btn = QPushButton("Flip Vertical")
         
+        # Use the canvas methods directly - this will update the UI pixmap and emit the signals
         self.flip_horizontal_btn.clicked.connect(self.canvas.flip_horizontal)
         self.flip_vertical_btn.clicked.connect(self.canvas.flip_vertical)
         
@@ -153,6 +155,7 @@ class Ui_MainWindow(QMainWindow):
         self.images_tab.tissue_unaligned_selected.connect(self.cell_layer_alignment.set_unaligned_image)
         self.cell_layer_alignment.alignmentCompleteSignal.connect(self.add_item_to_manager)
         self.cell_layer_alignment.replaceLayerSignal.connect(self.replace_layer_in_canvas)
+        self.cell_layer_alignment.loadOnCanvasSignal.connect(self.load_image_on_canvas)
         
         # Connect to progress bar
         self.cell_layer_alignment.aligner.progress.connect(self.update_progress_bar)
@@ -335,20 +338,182 @@ class Ui_MainWindow(QMainWindow):
 
     def replace_layer_in_canvas(self, target_image, aligned_image):
         """Replace the second layer in the target image with the aligned image"""
-        if self.canvas.is_layered and self.canvas.np_channels:
-            # Find the current active channel
-            current_channel = f"Channel {self.canvas.currentChannelNum + 1}"
+        # Access the correct attributes from the image_tab which holds the channels
+        try:
+            # Debug prints
+            print("Canvas attributes:", dir(self.canvas))
+            print("Has np_channels:", hasattr(self.canvas, 'np_channels'))
+            if hasattr(self.canvas, 'np_channels'):
+                print("np_channels keys:", self.canvas.np_channels.keys())
             
-            # Replace the channel data with the aligned image
-            if current_channel in self.canvas.np_channels:
-                self.canvas.np_channels[current_channel].data = aligned_image
+            # If we don't have channels yet, we'll need to create them
+            channel_to_replace = "Channel 2"
+            
+            # Check if we have image channels (layered image)
+            if not hasattr(self.canvas, 'np_channels') or not self.canvas.np_channels:
+                # Initialize channels if they don't exist
+                print("Initializing channels")
+                from dataclasses import dataclass
                 
-                # Update the display
-                self.canvas.image_cache.clear()
-                self.canvas.update_image(self.canvas.np_channels[current_channel].cmap)
+                @dataclass
+                class ChannelInfo:
+                    data: np.ndarray
+                    cmap: str = 'gray'
                 
-                # Update the channels in the UI
-                self.canvas.updateChannels(self.canvas.np_channels, False)
+                # Initialize np_channels if it doesn't exist
+                self.canvas.np_channels = {}
+                
+                # If we have a pixmap in the canvas, use it as Channel 1
+                if hasattr(self.canvas, 'pixmapItem') and self.canvas.pixmapItem:
+                    print("Using existing pixmap for Channel 1")
+                    # Convert pixmap to numpy array
+                    pixmap = self.canvas.pixmapItem.pixmap()
+                    image = pixmap.toImage()
+                    width = image.width()
+                    height = image.height()
+                    
+                    # Convert QImage to numpy array
+                    ptr = image.bits()
+                    ptr.setsize(height * width * 4)  # 4 for RGBA
+                    arr = np.frombuffer(ptr, np.uint8).reshape((height, width, 4))
+                    
+                    # Add as Channel 1
+                    self.canvas.np_channels["Channel 1"] = ChannelInfo(arr[:,:,:3])  # RGB only
+                
+                # Add aligned image as Channel 2
+                self.canvas.np_channels[channel_to_replace] = ChannelInfo(aligned_image)
+                
+                # Set current channel number
+                self.canvas.currentChannelNum = 1  # Index 1 corresponds to Channel 2
+                
+                # Make sure the canvas has the methods it needs
+                if not hasattr(self.canvas, 'update_image'):
+                    print("Warning: Canvas doesn't have update_image method")
+                    # Fall back to using our load_image_on_canvas function instead
+                    self.load_image_on_canvas(aligned_image)
+                    return True
+                
+                # Update the canvas
+                self.canvas.update_image('gray')
                 
                 # Update progress bar
-                self.update_progress_bar(100, f"Replaced {current_channel} with aligned image")
+                self.update_progress_bar(100, f"Added {channel_to_replace} as a new layer")
+                return True
+            
+            # We have channels, so try to replace or add Channel 2
+            # Get current active channel (or default to 0 if not found)
+            current_active_channel = 0
+            if hasattr(self.canvas, 'currentChannelNum'):
+                current_active_channel = self.canvas.currentChannelNum
+                print("Current active channel:", current_active_channel)
+            
+            # Check if Channel 2 exists already
+            if channel_to_replace in self.canvas.np_channels:
+                print(f"Replacing {channel_to_replace} with aligned image")
+                # Replace the data in Channel 2
+                self.canvas.np_channels[channel_to_replace].data = aligned_image
+            else:
+                print(f"Adding {channel_to_replace} as a new channel")
+                # Add Channel 2 if it doesn't exist
+                from dataclasses import dataclass
+                
+                @dataclass
+                class ChannelInfo:
+                    data: np.ndarray
+                    cmap: str = 'gray'
+                
+                self.canvas.np_channels[channel_to_replace] = ChannelInfo(aligned_image)
+            
+            # Clear any image caches
+            if hasattr(self.canvas, 'image_cache'):
+                self.canvas.image_cache.clear()
+            
+            # Temporarily switch to Channel 2 and update it
+            self.canvas.currentChannelNum = 1  # Index 1 corresponds to Channel 2
+            
+            # Check if update_image method exists
+            if not hasattr(self.canvas, 'update_image'):
+                print("Warning: Canvas doesn't have update_image method")
+                # Fall back to using our load_image_on_canvas function instead
+                self.load_image_on_canvas(aligned_image)
+                return True
+            
+            # Get colormap from channel if available, otherwise use gray
+            cmap = 'gray'
+            if hasattr(self.canvas.np_channels[channel_to_replace], 'cmap'):
+                cmap = self.canvas.np_channels[channel_to_replace].cmap
+            
+            # Update the image
+            self.canvas.update_image(cmap)
+            
+            # Update the channels in the UI
+            self.canvas.loadChannels(self.canvas.np_channels)
+            
+            # Restore original active channel if different
+            if current_active_channel != 1 and hasattr(self.canvas, 'swap_channel'):
+                self.canvas.swap_channel(current_active_channel)
+            
+            # Update progress bar
+            self.update_progress_bar(100, f"Replaced {channel_to_replace} with aligned image")
+            return True
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error replacing layer: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    def load_image_on_canvas(self, image):
+        """Load the given image directly onto the canvas"""
+        try:
+            if image is None:
+                return
+
+            # Convert the image to a pixmap and display it on the canvas
+            from utils import numpy_to_qimage
+            from PyQt6.QtGui import QPixmap
+            
+            # Make sure image is in the right format for display
+            if image.dtype != np.uint8:
+                # Scale to 8-bit for display if needed
+                if image.max() > 255:
+                    image_for_display = ((image / image.max()) * 255).astype(np.uint8)
+                else:
+                    image_for_display = image.astype(np.uint8)
+            else:
+                image_for_display = image
+            
+            # Convert to QImage and then QPixmap
+            q_image = numpy_to_qimage(image_for_display)
+            pixmap = QPixmap(q_image)
+            
+            # Check if we already have a pixmapItem
+            if hasattr(self.canvas, 'pixmapItem') and self.canvas.pixmapItem:
+                # Update existing pixmap
+                self.canvas.pixmapItem.setPixmap(pixmap)
+                self.canvas.pixmap = pixmap
+            else:
+                # Create new pixmapItem
+                pixmap_item = QGraphicsPixmapItem(pixmap)
+                self.canvas.pixmap = pixmap
+                self.canvas.pixmapItem = pixmap_item
+                self.canvas.scene().addItem(pixmap_item)
+                
+                # Center and fit in view
+                item_rect = pixmap_item.boundingRect()
+                self.canvas.setSceneRect(item_rect)
+                self.canvas.fitInView(item_rect, Qt.AspectRatioMode.KeepAspectRatio)
+            
+            # Signal the canvas to update
+            self.canvas.canvasUpdated.emit(pixmap)
+            
+            # Update progress bar
+            self.update_progress_bar(100, f"Loaded aligned image onto canvas")
+            
+            return True
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error loading image onto canvas: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return False

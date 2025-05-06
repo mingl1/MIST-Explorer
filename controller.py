@@ -76,6 +76,10 @@ class Controller:
         self.view.crop_groupbox.cancel_crop_button.triggered.connect(lambda: self.view.canvas.set_crop_status(False))
         self.view.crop_groupbox.cancel_crop_button.triggered.connect(lambda: self.view.small_view.setVisible(True))
 
+        # flip signals
+        self.view.canvas.requestFlipHorizontal.connect(self.model_canvas.flip_horizontal)
+        self.view.canvas.requestFlipVertical.connect(self.model_canvas.flip_vertical)
+
         # confirm rotate signal
 
         self.view.saveSignal.connect(self.controlSave)

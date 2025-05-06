@@ -913,7 +913,7 @@ class ImageOverlay(QWidget):
         layer_names = []
         
         for i, c in enumerate(self.controls):
-            if c.current_visibility:
+            if True:
                 img = c.image.copy()
                 
                 # Get original protein data in grayscale

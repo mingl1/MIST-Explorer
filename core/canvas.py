@@ -374,10 +374,13 @@ class ImageGraphicsView(__BaseGraphicsView):
     def label2rgb(self, labels, lut):
         '''applys the look-up table and merges r, g, b channels to form colored image '''
         print(type(labels))
-        if len(labels) == 3:
-            r,g,b = labels
+        if len(labels.shape) == 3 and labels.shape[2] == 3:
+            r, g, b = cv2.split(labels)
             return cv2.LUT(cv2.merge((r, g, b)), lut)
         else:
+            # Ensure labels is 2D before merging
+            if len(labels.shape) > 2:
+                labels = labels[:,:,0]  # Take first channel if multi-channel
             return cv2.LUT(cv2.merge((labels, labels, labels)), lut) # gray to color
     
 
@@ -696,20 +699,26 @@ class ImageGraphicsView(__BaseGraphicsView):
         if self.is_layered:
             for channel_name, wrapper in self.np_channels.items():
                 wrapper.data = cv2.flip(wrapper.data, 1)  # 1 for horizontal flip
+            self.image_cache.clear()  # Clear cache to force redraw
             self.update_image()
         else:
             self.image_wrapper.data = cv2.flip(self.image_wrapper.data, 1)
+            self.image_cache.clear()  # Clear cache to force redraw
             self.update_image()
+        print("Image flipped horizontally")
 
     def flip_vertical(self):
         """Flip the image vertically"""
         if self.is_layered:
             for channel_name, wrapper in self.np_channels.items():
                 wrapper.data = cv2.flip(wrapper.data, 0)  # 0 for vertical flip
+            self.image_cache.clear()  # Clear cache to force redraw
             self.update_image()
         else:
             self.image_wrapper.data = cv2.flip(self.image_wrapper.data, 0)
+            self.image_cache.clear()  # Clear cache to force redraw
             self.update_image()
+        print("Image flipped vertically")
 
 class MetaData(QWidget):
     '''Class to handle metadata of images'''
