@@ -513,6 +513,8 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.starting_y = int(self.image_pos.y())
 
     def mousePressEvent(self, event: QMouseEvent):
+        if self.isEmpty():
+            return
         if event.button() == Qt.MouseButton.LeftButton:
             if self.begin_crop or self.select:
                 self.origin = event.pos()
@@ -668,6 +670,8 @@ class ImageGraphicsViewUI(QGraphicsView):
                 r.mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent):
+        if self.isEmpty():
+            return
         super().mouseReleaseEvent(event)
 
         self.rubber_band_positions = []
