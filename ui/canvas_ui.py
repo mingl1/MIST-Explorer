@@ -418,6 +418,8 @@ class ImageGraphicsViewUI(QGraphicsView):
         return self.pixmapItem is None
     
     def mouseDoubleClickEvent(self, event):
+        if self.isEmpty():
+            return
         self.__centerImage(self.pixmapItem)
 
     
@@ -714,7 +716,6 @@ class ImageGraphicsViewUI(QGraphicsView):
                     scene_pos = self.mapToScene(event.pos())
                     image_pos = self.pixmapItem.mapFromScene(scene_pos)
                     image_rect = (self.select, (self.starting_x, self.starting_y, int(image_pos.x()), int(image_pos.y())))
-                
                     self.enc.analysis_tab.analyze_region(rubberband, image_rect)
 
                     self.select = False
