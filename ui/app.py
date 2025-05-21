@@ -2,6 +2,7 @@ from PyQt6.QtGui import *
 from PyQt6.QtCore import *
 from PyQt6.QtWidgets import *
 import os
+import argparse
 from ui.toolbar.menubar_ui import MenuBarUI; from ui.toolbar.toolbar_ui import ToolBarUI; from ui.stardist.stardist_ui import StarDistUI; from ui.alignment.cell_intensity_ui import CellIntensityUI
 from ui.processing.crop_ui import CropUI; from ui.processing.rotation_ui import RotateUI; from ui.canvas_ui import ImageGraphicsViewUI, ReferenceGraphicsViewUI
 from ui.alignment.register_ui import RegisterUI
@@ -15,21 +16,13 @@ import numpy as np
 
 
 class Ui_MainWindow(QMainWindow):
+    
+    
     def __init__(self, parent=None):
         QImageReader.setAllocationLimit(0)
         super().__init__()
-        
-        self.analysis_shortcut = QShortcut(QKeySequence("Ctrl+R"), self) # A for analysis
-        self.analysis_shortcut.activated.connect(self.select)
-
-        self.analysis_shortcut = QShortcut(QKeySequence("Ctrl+C"), self) # C for circle select
-        self.analysis_shortcut.activated.connect(self.circle_select)
-
-        self.analysis_shortcut = QShortcut(QKeySequence("Ctrl+P"), self) # C for circle select
-        self.analysis_shortcut.activated.connect(self.poly_select)
-        
-        self.save_shortcut = QShortcut(QKeySequence("Ctrl+S"), self)
-        self.save_shortcut.activated.connect(self.save)
+        self.args = self.__parse_arguments()
+        self.__add_shortcuts()
         
         ### Formerly set up ui
 
@@ -262,8 +255,30 @@ class Ui_MainWindow(QMainWindow):
         self.stackedWidget.setCurrentIndex(0)
 
         QMetaObject.connectSlotsByName(self)
-        
+    
+    def __parse_arguments(self):
+        parser = argparse.ArgumentParser(
+                    prog='MIST-Explorer',
+                    description='Working on it...',
+                    epilog='Intended for testing')
+        parser.add_argument('-i', '--image') # image path
+        parser.add_argument('-r', '--reference') # reference path
+        args = parser.parse_args()
+        return args
+    
+    def __add_shortcuts(self):
+        self.analysis_shortcut = QShortcut(QKeySequence("Ctrl+R"), self) # A for analysis
+        self.analysis_shortcut.activated.connect(self.select)
 
+        self.analysis_shortcut = QShortcut(QKeySequence("Ctrl+C"), self) # C for circle select
+        self.analysis_shortcut.activated.connect(self.circle_select)
+
+        self.analysis_shortcut = QShortcut(QKeySequence("Ctrl+P"), self) # C for circle select
+        self.analysis_shortcut.activated.connect(self.poly_select)
+        
+        self.save_shortcut = QShortcut(QKeySequence("Ctrl+S"), self)
+        self.save_shortcut.activated.connect(self.save)
+    
     def updateMousePositionLabel(self, text):
         self.toolBar.statusLine.setText(text)
     

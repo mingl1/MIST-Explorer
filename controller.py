@@ -151,7 +151,12 @@ class Controller:
         self.view.register_groupbox.cancel_button.clicked.connect(self.model_register.cancel)
         self.view.cellIntensity_groupbox.cancel_button.clicked.connect(self.model_cellIntensity.cancel)
         self.view.stardist_groupbox.cancel_button.clicked.connect(self.model_stardist.cancel)
-
+        
+        initial_args = vars(app.args) # Converts namespace to dict
+        if initial_args['image'] is not None:
+            self.model_canvas.addImage(initial_args['image'])
+        if initial_args['reference'] is not None:
+            self.reference_view.addImage(initial_args['reference'])
     def handleError(self, error_message):
         QMessageBox.critical(self.view,"Error", error_message)
 
