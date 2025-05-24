@@ -176,12 +176,14 @@ class Ui_MainWindow(QMainWindow):
         # Flip components
         self._setup_flip_components()
         
+        # Cell layer alignment
+        self._setup_cell_layer_alignment()
+        
         # Other processing components
         self.register_groupbox = RegisterUI(self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout)
         self.gaussian_blur = GaussianBlur(self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout)
         
-        # Cell layer alignment
-        self._setup_cell_layer_alignment()
+        
         
         # StarDist and Cell Intensity
         self.stardist_groupbox = StarDistUI(self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout)
