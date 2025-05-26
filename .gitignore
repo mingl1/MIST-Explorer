@@ -11,5 +11,8 @@ make.bat
 .python-version
 pyproject.toml
 uv.lock
+.vscode
+*.ipynb
+test.sh
 
 assets/sample_data/demo/overlay.tif
