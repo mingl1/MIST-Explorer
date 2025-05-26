@@ -634,31 +634,45 @@ class ImageGraphicsView(__BaseGraphicsView):
         bottom = image_rect.bottom()
 
         cropped_array = self.image_wrapper.data[top:bottom+1, left:right+1] # this is the current image. if layered then its the current channel
-        cropped_array_copy = cropped_array.copy()
+        # cropped_array_copy = cropped_array.copy()
 
         if not cropped_array.data.contiguous:
             cropped_array = np.ascontiguousarray(cropped_array, dtype=cropped_array.dtype)
 
-        cropped_array_copy = cropped_array.copy()
+        # Save cropped image to disk
+        filename = f"cropped_output_{uuid.uuid4().hex[:8]}.tiff"
+        output_path = os.path.join(os.getcwd(), filename)
+        tiff.imwrite(output_path, cropped_array)
+        print(f"[✔] Cropped image saved to: {output_path}")
 
-        contrast = (self.image_wrapper.contrast_min, self.image_wrapper.contrast_max)
+        # cropped_array_copy = cropped_array.copy()
+
+        # contrast = (self.image_wrapper.contrast_min, self.image_wrapper.contrast_max)
             
-        self.crop_dialog = ImageDialog(self, cropped_array_copy, contrast, self.image_wrapper.cmap)
-        self.crop_dialog.exec()
+        # self.crop_dialog = ImageDialog(self, cropped_array_copy, contrast, self.image_wrapper.cmap)
+        # self.crop_dialog.exec()
 
         if not self.is_layered:
-            self.image_wrapper.data = cropped_array_copy
+            self.image_wrapper.data = cropped_array
+            # self.image_wrapper.data = cropped_array_copy
             self.cropSignal.emit(False) #set crop status
             return # return if there are no other layers or is not a tiff
+        
+        # If layered, launch crop worker (same as before)
+        self.crop_worker = Worker(self.cropImageTask, image_rect)
+        self.crop_worker.signal.connect(self.onCropCompleted)
+        self.crop_worker.finished.connect(self.crop_worker.quit)
+        self.crop_worker.finished.connect(self.crop_worker.deleteLater)
+        self.crop_worker.start()
 
-        if self.crop_dialog.confirm_crop:
-            self.crop_worker = Worker(self.cropImageTask, image_rect)
-            self.crop_worker.signal.connect(self.onCropCompleted) 
-            self.crop_worker.finished.connect(self.crop_worker.quit)
-            self.crop_worker.finished.connect(self.crop_worker.deleteLater)
-            self.crop_worker.start()
-        else:
-            self.cropSignal.emit(False)
+        # if self.crop_dialog.confirm_crop:
+        #     self.crop_worker = Worker(self.cropImageTask, image_rect)
+        #     self.crop_worker.signal.connect(self.onCropCompleted) 
+        #     self.crop_worker.finished.connect(self.crop_worker.quit)
+        #     self.crop_worker.finished.connect(self.crop_worker.deleteLater)
+        #     self.crop_worker.start()
+        # else:
+        #     self.cropSignal.emit(False)
 
     cropSignal = pyqtSignal(bool)
     @pyqtSlot(dict)
