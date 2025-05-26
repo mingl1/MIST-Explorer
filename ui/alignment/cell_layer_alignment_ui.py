@@ -3,14 +3,16 @@ from PyQt6.QtCore import QCoreApplication, QMetaObject, pyqtSignal
 import numpy as np
 from core.cell_layer_alignment import CellLayerAligner
 from ui.alignment.alignment_preview_dialog import AlignmentPreviewDialog
-
+from utils import numpy_to_qimage, scale_adjust
+from PyQt6.QtGui import QPixmap
+from PyQt6.QtWidgets import QGraphicsPixmapItem
 class CellLayerAlignmentUI(QWidget):
     errorSignal = pyqtSignal(str)
     alignmentCompleteSignal = pyqtSignal(object, str)
-    replaceLayerSignal = pyqtSignal(object, object)  # Target image, aligned image
+    replaceLayerSignal = pyqtSignal(object)  # Target image, aligned image
     loadOnCanvasSignal = pyqtSignal(object)  # Aligned image to load directly onto canvas
     
-    def __init__(self, parent=None, containing_layout:QVBoxLayout=None):
+    def __init__(self,  containing_layout:QVBoxLayout, parent=None):
         super().__init__()
         self.target_image = None
         self.unaligned_image = None
@@ -107,6 +109,8 @@ class CellLayerAlignmentUI(QWidget):
     def set_target_image(self, image_data, name):
         """Set the target image for alignment"""
         self.target_image = image_data
+        self.aligner.set_target_image(image_data)
+        
         self.target_name = name
         self.image1_status.setText(name)
         self.image1_status.setStyleSheet("font-weight: bold; color: #007700;")  # Green to indicate it's loaded
@@ -115,6 +119,7 @@ class CellLayerAlignmentUI(QWidget):
     def set_unaligned_image(self, image_data, name):
         """Set the unaligned image that will be registered to the target"""
         self.unaligned_image = image_data
+        self.aligner.set_unaligned_image(image_data)
         self.unaligned_name = name
         self.image2_status.setText(name)
         self.image2_status.setStyleSheet("font-weight: bold; color: #007700;")  # Green to indicate it's loaded
@@ -133,9 +138,6 @@ class CellLayerAlignmentUI(QWidget):
             # Disable the register button during processing
             self.register_button.setEnabled(False)
             self.register_button.setText("Processing...")
-            
-            # Set up the aligner with our images
-            self.aligner.set_images(self.target_image, self.unaligned_image)
             
             # Start the alignment process in a separate thread
             self.aligner.start()
@@ -179,11 +181,18 @@ class CellLayerAlignmentUI(QWidget):
             aligned_name = f"Aligned_{self.unaligned_name}_to_{self.target_name}"
             
             # First, load the aligned image directly onto the canvas
-            self.loadOnCanvasSignal.emit(aligned_image)
+            self.replaceLayerSignal.emit(aligned_image)
             
             # Then, emit the signal to replace the layer
-            self.replaceLayerSignal.emit(self.target_image, aligned_image)
             
+            if aligned_image.dtype != np.uint8:
+                aligned_image = scale_adjust(aligned_image)
+
+            qimage = numpy_to_qimage(aligned_image)
+            pixmap = QPixmap(qimage)
+            pixmap = pixmap
+            pixmapItem = QGraphicsPixmapItem(pixmap)
+            self.loadOnCanvasSignal.emit(pixmapItem)
             # Also emit the signal to add the aligned image to the manager
             self.alignmentCompleteSignal.emit(aligned_image, aligned_name)
             

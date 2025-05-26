@@ -165,6 +165,7 @@ class __BaseGraphicsView(QWidget):
             self.lut_cache.clear()
             self.updateProgress.emit(100, "Image Loaded")
 
+            print("MING",channel_one_image.dtype)
             self.update_manager.emit(channel_one_image, "Image"  + " " + str(self.image_count))
             self.image_count+=1
 

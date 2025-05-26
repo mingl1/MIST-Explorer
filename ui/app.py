@@ -226,17 +226,9 @@ class Ui_MainWindow(QMainWindow):
     def _setup_cell_layer_alignment(self):
         """Setup cell layer alignment component and its connections"""
         self.cell_layer_alignment = CellLayerAlignmentUI(
-            self.preprocessing_tab, 
-            self.preprocessing_dockwidget_main_vlayout
+            self.preprocessing_dockwidget_main_vlayout,
+            self.preprocessing_tab
         )
-        
-        # Connect signals
-        self.images_tab.tissue_target_selected.connect(self.cell_layer_alignment.set_target_image)
-        self.images_tab.tissue_unaligned_selected.connect(self.cell_layer_alignment.set_unaligned_image)
-        self.cell_layer_alignment.alignmentCompleteSignal.connect(self.add_item_to_manager)
-        self.cell_layer_alignment.replaceLayerSignal.connect(self.replace_layer_in_canvas)
-        self.cell_layer_alignment.loadOnCanvasSignal.connect(self.load_image_on_canvas)
-        self.cell_layer_alignment.aligner.progress.connect(self.update_progress_bar)
     
     def _setup_view_tab(self):
         """Setup the view tab"""
@@ -411,11 +403,7 @@ class Ui_MainWindow(QMainWindow):
         self.metadata = metadata
         self.metadata_tab.populate_table(self.metadata)
     
-    def add_item_to_manager(self, data, name):
-        """Add item to image manager"""
-        self.images_tab.add_item(data, name)
-    
-    def replace_layer_in_canvas(self, target_image, aligned_image):
+    def replace_layer_in_canvas(self, aligned_image):
         """Replace the second layer in the target image with the aligned image"""
         try:
             # Debug prints
@@ -505,16 +493,16 @@ class Ui_MainWindow(QMainWindow):
         # Update Channel 2
         self.canvas.currentChannelNum = 1  # Index 1 corresponds to Channel 2
         
-        if hasattr(self.canvas, 'update_image'):
-            cmap = getattr(self.canvas.np_channels[channel_name], 'cmap', 'gray')
-            self.canvas.update_image(cmap)
-            self.canvas.loadChannels(self.canvas.np_channels)
+        # if hasattr(self.canvas, 'update_image'):
+        #     cmap = getattr(self.canvas.np_channels[channel_name], 'cmap', 'gray')
+        #     self.canvas.update_image(cmap)
+        #     self.canvas.loadChannels(self.canvas.np_channels)
             
-            # Restore original active channel if different
-            if current_active_channel != 1 and hasattr(self.canvas, 'swap_channel'):
-                self.canvas.swap_channel(current_active_channel)
-        else:
-            self.load_image_on_canvas(aligned_image)
+        #     # Restore original active channel if different
+        #     if current_active_channel != 1 and hasattr(self.canvas, 'swap_channel'):
+        #         self.canvas.swap_channel(current_active_channel)
+        # else:
+        #     self.load_image_on_canvas(aligned_image)
         
         self.update_progress_bar(100, f"Replaced {channel_name} with aligned image")
     

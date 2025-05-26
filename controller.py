@@ -19,8 +19,17 @@ class Controller:
         self.reference_view = core.canvas.ReferenceGraphicsView()
         self.view = app
 
-        self.model_canvas.update_manager.connect(self.view.add_item_to_manager)
-        self.reference_view.update_manager.connect(self.view.add_item_to_manager)
+
+        # Alignment Section signals
+        self.view.images_tab.tissue_target_selected.connect(self.view.cell_layer_alignment.set_target_image)
+        self.view.images_tab.tissue_unaligned_selected.connect(self.view.cell_layer_alignment.set_unaligned_image)
+        self.view.cell_layer_alignment.alignmentCompleteSignal.connect(self.view.images_tab.add_item)
+        self.view.cell_layer_alignment.replaceLayerSignal.connect(self.view.replace_layer_in_canvas)
+        self.view.cell_layer_alignment.loadOnCanvasSignal.connect(self.view.canvas.addNewImage)
+        self.view.cell_layer_alignment.aligner.progress.connect(self.view.update_progress_bar)
+
+        self.model_canvas.update_manager.connect(self.view.images_tab.add_item)
+        self.reference_view.update_manager.connect(self.view.images_tab.add_item)
 
         self.openFilesDialog = None
         #menubar signals
