@@ -3,7 +3,7 @@ import numpy as np
 from PyQt6.QtCore import pyqtSignal, QThread, QObject
 from pystackreg import StackReg
 from skimage import transform
-from utils import build_optical_flow_pyramid_pure_numpy, adjust_contrast
+from utils import build_optical_flow_pyramid_pure_numpy, adjust_contrast, to_uint8
 class CellLayerAligner(QThread):
     """Worker thread for aligning cell layers"""
     progress = pyqtSignal(int, str)
@@ -23,21 +23,15 @@ class CellLayerAligner(QThread):
     def set_target_image(self,target_image):
         self.target_image = target_image
         # Ensure both images are uint8
-        self.progress.emit(20, "Converting images")
-        target_gray_8bit = self.to_uint8(self.target_image)
+        target_gray_8bit = to_uint8(self.target_image)
         # Downscale images for faster processing
-        self.progress.emit(50, "Downscaling images")
         self.target_pyramid = build_optical_flow_pyramid_pure_numpy(target_gray_8bit,self.pyramid_level)
-        self.progress.emit(100, "Done Setting Target Image")
     
     def set_unaligned_image(self,unaligned_image):
         
         self.unaligned_image = unaligned_image
-        self.progress.emit(20, "Converting images")
-        unaligned_gray_8bit = self.to_uint8(self.unaligned_image)
-        self.progress.emit(50, "Downscaling images")
+        unaligned_gray_8bit =to_uint8(self.unaligned_image)
         self.unaligned_pyramid = build_optical_flow_pyramid_pure_numpy(unaligned_gray_8bit,self.pyramid_level)
-        self.progress.emit(100, "Done Setting Unaligned Image")
     
     def run(self):
         """Main processing function that runs in the thread"""
@@ -65,26 +59,14 @@ class CellLayerAligner(QThread):
             # Apply homography to full-size image
             self.progress.emit(80, "Applying transformation to full image")
             aligned_image = self.warp_image(self.unaligned_image,H)
-            self.result = self.to_uint8(aligned_image)
+            self.result = to_uint8(aligned_image)
             self.progress.emit(100, "Alignment complete")
             self.aligned_image_signal.emit(self.result, target_small, aligned_small)
             
         except Exception as e:
             self.error.emit(f"Error during alignment: {str(e)}")
     
-    def to_uint8(self, image):
-        """Convert image to uint8 with proper scaling"""
-        # Check if image is already uint8
-        if image.dtype == np.uint8:
-            return image
-            
-        # Convert to float and scale to 0-255
-        img_float = image.astype(np.float32)
-        if img_float.max() > img_float.min():  # Check to avoid division by zero
-            img_norm = ((img_float - img_float.min()) * (255.0 / (img_float.max() - img_float.min())))
-            return img_norm.astype(np.uint8)
-        else:
-            return np.zeros_like(image, dtype=np.uint8)
+
     
     def align_images(self, unaligned, target):
         sr = StackReg(StackReg.AFFINE)

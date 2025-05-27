@@ -6,12 +6,13 @@ from PyQt6.QtWidgets import QFileDialog, QMessageBox
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtCore import pyqtSignal
 from PIL import Image
-from ui.ImageManager import Manager
+import uuid
 class Controller:
     controllerSignal = pyqtSignal(object)
     def __init__(self, app: Ui_MainWindow):
-        
-
+        # temporary, can change later to be based on reference's and model's image count
+        # to get "Image 0", "Reference 0" differentiation
+        self.image_count = 0
         self.model_canvas = core.canvas.ImageGraphicsView()
         self.model_stardist = core.stardist.StarDist()
         self.model_register = core.register.Register()
@@ -23,14 +24,13 @@ class Controller:
         # Alignment Section signals
         self.view.images_tab.tissue_target_selected.connect(self.view.cell_layer_alignment.set_target_image)
         self.view.images_tab.tissue_unaligned_selected.connect(self.view.cell_layer_alignment.set_unaligned_image)
-        self.view.cell_layer_alignment.alignmentCompleteSignal.connect(self.view.images_tab.add_item)
+        self.view.cell_layer_alignment.alignmentCompleteSignal.connect(self.handle_new_image)
         self.view.cell_layer_alignment.replaceLayerSignal.connect(self.view.replace_layer_in_canvas)
         self.view.cell_layer_alignment.loadOnCanvasSignal.connect(self.view.canvas.addNewImage)
         self.view.cell_layer_alignment.aligner.progress.connect(self.view.update_progress_bar)
 
-        self.model_canvas.update_manager.connect(self.view.images_tab.add_item)
-        self.reference_view.update_manager.connect(self.view.images_tab.add_item)
-
+        self.model_canvas.update_manager.connect(self.handle_new_image)
+        self.reference_view.update_manager.connect(self.handle_new_image)
         self.openFilesDialog = None
         #menubar signals
         # self.view.menubar.actionOpenFiles.triggered.connect(self.on_action_openFiles_triggered)
@@ -248,3 +248,12 @@ class Controller:
     def on_actionOpen_triggered(self):
        self.openFileDialog(self.model_canvas)
 
+    def handle_new_image(self, data, file_name):
+        storage_item = {}
+        storage_item['name'] = f"Image {self.image_count}"
+        self.image_count += 1
+        storage_item['data'] = data
+        my_uuid = str(uuid.uuid4())
+        self.view.images_tab.add_to_storage(my_uuid,storage_item)
+        self.view.images_tab.add_item(my_uuid)
+        

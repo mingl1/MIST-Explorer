@@ -96,7 +96,19 @@ def is_grayscale(image: np.ndarray) -> bool:
         return True
     else:
         raise ValueError("Image format not recognized")
-
+def to_uint8(image):
+    """Convert image to uint8 with proper scaling"""
+    # Check if image is already uint8
+    if image.dtype == np.uint8:
+        return image
+        
+    # Convert to float and scale to 0-255
+    img_float = image.astype(np.float32)
+    if img_float.max() > img_float.min():  # Check to avoid division by zero
+        img_norm = ((img_float - img_float.min()) * (255.0 / (img_float.max() - img_float.min())))
+        return img_norm.astype(np.uint8)
+    else:
+        return np.zeros_like(image, dtype=np.uint8)
 
 def normalize_to_uint8(data: np.ndarray) -> np.ndarray:
     normalized_data = 255 * (data - np.min(data)) / (np.max(data) - np.min(data))

@@ -1,28 +1,29 @@
 from PyQt6.QtWidgets import QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QPushButton, QWidget, QMessageBox
-from PyQt6.QtCore import QCoreApplication, QMetaObject, pyqtSignal
+from PyQt6.QtCore import QCoreApplication, QMetaObject, pyqtSignal, pyqtSlot
 import numpy as np
 from core.cell_layer_alignment import CellLayerAligner
 from ui.alignment.alignment_preview_dialog import AlignmentPreviewDialog
 from utils import numpy_to_qimage, scale_adjust
 from PyQt6.QtGui import QPixmap
-from PyQt6.QtWidgets import QGraphicsPixmapItem
+from PyQt6.QtWidgets import QGraphicsPixmapItem,QComboBox
 class CellLayerAlignmentUI(QWidget):
     errorSignal = pyqtSignal(str)
     alignmentCompleteSignal = pyqtSignal(object, str)
-    replaceLayerSignal = pyqtSignal(object)  # Target image, aligned image
-    loadOnCanvasSignal = pyqtSignal(object)  # Aligned image to load directly onto canvas
-    
+    replaceLayerSignal = pyqtSignal(object)  
+    loadOnCanvasSignal = pyqtSignal(object)  
+    channelChanged = pyqtSignal(int)
     def __init__(self,  containing_layout:QVBoxLayout, parent=None):
         super().__init__()
+        self.image_channels = [1,1]
         self.target_image = None
         self.unaligned_image = None
         self.target_name = "not loaded"
         self.unaligned_name = "not loaded"
         self.aligner = CellLayerAligner()
-        self.setupUI(parent, containing_layout)
+        self._setup_ui(parent, containing_layout)
         self._setup_connections()
 
-    def setupUI(self, parent, containing_layout:QVBoxLayout):
+    def _setup_ui(self, parent, containing_layout:QVBoxLayout):
         self.alignment_groupbox = QGroupBox(parent)
         
         # Main layout for the groupbox
@@ -41,6 +42,9 @@ class CellLayerAlignmentUI(QWidget):
         self.image1_layout.addWidget(self.image1_label)
         self.image1_layout.addWidget(self.image1_status)
         self.image1_layout.setStretch(1, 1)  # Make the status label expand
+        self.image_1_channel_selector = QComboBox(self)
+        self.image1_layout.addWidget(self.image_1_channel_selector)
+        self.image_1_channel_selector.setVisible(False)
         
         # Image 2 layout
         self.image2_layout = QHBoxLayout()
@@ -50,6 +54,9 @@ class CellLayerAlignmentUI(QWidget):
         self.image2_status.setStyleSheet("font-weight: bold; color: #555;")
         self.image2_layout.addWidget(self.image2_label)
         self.image2_layout.addWidget(self.image2_status)
+        self.image_2_channel_selector = QComboBox(self)
+        self.image2_layout.addWidget(self.image_2_channel_selector)
+        self.image_2_channel_selector.setVisible(False)
         self.image2_layout.setStretch(1, 1)  # Make the status label expand
         
         # Register button
@@ -95,8 +102,20 @@ class CellLayerAlignmentUI(QWidget):
         self.aligner.aligned_image_signal.connect(self._handle_aligned_image)
         self.aligner.finished.connect(self._handle_finished)
         
+        self.image_1_channel_selector.currentIndexChanged.connect(self.change_image1_channel)
+        self.image_2_channel_selector.currentIndexChanged.connect(self.change_image2_channel)
+        
+        
         # Also connect our errorSignal to pass errors to the parent
         self.aligner.error.connect(self.errorSignal)
+    
+    @pyqtSlot(int)
+    def change_image1_channel(self, index):
+        self.image_channels[0] = index
+    
+    @pyqtSlot(int)
+    def change_image2_channel(self, index):
+        self.image_channels[1] = index
     
     def __retranslate_UI(self):
         _translate = QCoreApplication.translate
@@ -106,23 +125,27 @@ class CellLayerAlignmentUI(QWidget):
         self.image2_label.setText(_translate("MainWindow", "Unaligned Image:"))
         self.register_button.setText(_translate("MainWindow", "Register Images"))
     
-    def set_target_image(self, image_data, name):
+    def set_target_image(self, obj, name):
         """Set the target image for alignment"""
-        self.target_image = image_data
-        self.aligner.set_target_image(image_data)
+        self.target_image = obj
         
         self.target_name = name
         self.image1_status.setText(name)
         self.image1_status.setStyleSheet("font-weight: bold; color: #007700;")  # Green to indicate it's loaded
+        self.image_1_channel_selector.setVisible(True)
+        self.image_1_channel_selector.clear()
+        self.image_1_channel_selector.addItems(obj.keys())
         self._check_can_register()
     
-    def set_unaligned_image(self, image_data, name):
+    def set_unaligned_image(self, obj, name):
         """Set the unaligned image that will be registered to the target"""
-        self.unaligned_image = image_data
-        self.aligner.set_unaligned_image(image_data)
+        self.unaligned_image = obj
         self.unaligned_name = name
         self.image2_status.setText(name)
         self.image2_status.setStyleSheet("font-weight: bold; color: #007700;")  # Green to indicate it's loaded
+        self.image_2_channel_selector.setVisible(True)
+        self.image_2_channel_selector.addItems(obj.keys())
+
         self._check_can_register()
     
     def _check_can_register(self):
@@ -138,7 +161,9 @@ class CellLayerAlignmentUI(QWidget):
             # Disable the register button during processing
             self.register_button.setEnabled(False)
             self.register_button.setText("Processing...")
-            
+            self.aligner.progress.emit(10, "Creating Pyramids")
+            self.aligner.set_target_image(target_image=self.target_image[f"Channel {self.image_channels[0]+1}"].data)
+            self.aligner.set_unaligned_image(unaligned_image=self.unaligned_image[f"Channel {self.image_channels[1]+1}"].data)
             # Start the alignment process in a separate thread
             self.aligner.start()
     
@@ -211,7 +236,7 @@ class CellLayerAlignmentUI(QWidget):
             
             QMessageBox.information(self, "Alignment Complete", 
                                    f"Alignment successful. The aligned image has been loaded onto the canvas and added to your workspace.")
-    
+            
     def _handle_finished(self):
         """Handle when the alignment thread finishes"""
         self.register_button.setEnabled(True)

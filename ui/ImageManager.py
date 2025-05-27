@@ -7,7 +7,7 @@ from PyQt6.QtCore import pyqtSignal
 
 class Manager(QWidget):
     # Add signals for tissue image selection
-    tissue_target_selected = pyqtSignal(object, str)
+    tissue_target_selected = pyqtSignal(dict, str)
     tissue_unaligned_selected = pyqtSignal(object, str)
     
     def __init__(self, parent=None):
@@ -16,13 +16,15 @@ class Manager(QWidget):
         self.setWindowTitle("Image List")
         self.__layout = QVBoxLayout(self)
         self.list_widget = ListWidget(self)
+        self.storage = ImageStorage()
         self.__layout.addWidget(self.list_widget)
 
-    def add_item(self, data, name):
+    def add_item(self, uuid):
         print("adding item")
         item = QListWidgetItem(self.list_widget)
         h_layout = QHBoxLayout()
-
+        name = self.storage.get_data(uuid)['name']
+        data = self.storage.get_data(uuid)['data']['Channel 1'].data
         thumbnail_label = QLabel(self)
         thumbnail_pixmap = QPixmap(numpy_to_qimage(data))
         thumbnail_label.setPixmap(thumbnail_pixmap.scaled(50, 50, Qt.AspectRatioMode.KeepAspectRatio))
@@ -40,19 +42,22 @@ class Manager(QWidget):
         self.list_widget.setItemWidget(item, item_widget)
         
         # Store the image data in the item's user role
-        item.setData(Qt.ItemDataRole.UserRole, data)
-        
+        item.setData(Qt.ItemDataRole.UserRole, uuid)
         item.setSizeHint(item_widget.sizeHint())
     
-    def set_tissue_target_image(self, data, name):
+    def add_to_storage(self, uuid, obj):
+        self.storage.add_data(uuid, obj)
+        print(uuid)
+    
+    def set_tissue_target_image(self, uuid):
         """Handle setting an image as tissue target image"""
-        # Emit signal so the main app can connect the image to the alignment UI
-        self.tissue_target_selected.emit(data, name)
+        item = self.storage.get_data(uuid)
+        self.tissue_target_selected.emit(item["data"], item['name'])
         
-    def set_tissue_unaligned_image(self, data, name):
+    def set_tissue_unaligned_image(self, uuid):
         """Handle setting an image as tissue unaligned image"""
-        # Emit signal so the main app can connect the image to the alignment UI
-        self.tissue_unaligned_selected.emit(data, name)
+        item = self.storage.get_data(uuid)
+        self.tissue_unaligned_selected.emit(item["data"], item['name'])
 
 class ListWidget(QListWidget):
     def __init__(self, parent=None):
@@ -112,9 +117,9 @@ class ListWidget(QListWidget):
         text_label = layout.itemAt(1).widget() 
         name = text_label.text()
         
-        data = item.data(Qt.ItemDataRole.UserRole)
+        uuid = item.data(Qt.ItemDataRole.UserRole)
         # Emit a signal with the image data and name
-        self.parent().set_tissue_target_image(data, name)
+        self.parent().set_tissue_target_image(uuid)
         
     def set_as_tissue_unaligned(self, item:QListWidgetItem):
         """Set the selected image as the tissue unaligned image for alignment"""
@@ -125,6 +130,6 @@ class ListWidget(QListWidget):
         text_label = layout.itemAt(1).widget() 
         name = text_label.text()
         
-        data = item.data(Qt.ItemDataRole.UserRole)
+        uuid = item.data(Qt.ItemDataRole.UserRole)
         # Emit a signal with the image data and name
-        self.parent().set_tissue_unaligned_image(data, name)
+        self.parent().set_tissue_unaligned_image(uuid)

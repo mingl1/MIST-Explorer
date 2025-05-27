@@ -1,3 +1,6 @@
+import gc
+from typing import Dict, OrderedDict
+import weakref
 from PyQt6.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsPixmapItem, QWidget, QTableWidget, QTableWidgetItem, QVBoxLayout
 from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QPixmap,  QCursor, QImage
 from PyQt6.QtCore import Qt, QSize, pyqtSignal, pyqtSlot, QThreadPool, QRunnable, QTimer, QObject
@@ -5,7 +8,182 @@ import tifffile as tiff, numpy as np, matplotlib as mpl, time, cv2, xml.etree.El
 from core.Worker import Worker
 from utils import *
 from ui.Dialogs import ImageDialog
-import uuid
+import numpy as np
+from typing import Dict, List, Optional
+import weakref
+
+class PyramidImageWrapper:
+    """Wrapper that stores Gaussian pyramid and provides memory-efficient access."""
+    
+    def __init__(self, image: np.ndarray, max_levels: int = 4, scale: float = 0.5, 
+                 sigma: float = 1.0, min_size: int = 32, convert_to_uint8: bool = True):
+        self.original_shape = image.shape
+        self.original_dtype = image.dtype
+        self.max_levels = max_levels
+        self.scale = scale
+        self.convert_to_uint8 = convert_to_uint8
+        
+        # Build pyramid first with original precision
+        self.pyramid = build_optical_flow_pyramid_pure_numpy(
+            image, max_levels, scale, sigma, min_size
+        )
+        
+        # Convert each pyramid level to uint8 after creation if requested
+        if convert_to_uint8:
+            self.pyramid = [to_uint8(level) for level in self.pyramid]
+            self.dtype = np.uint8
+        else:
+            self.dtype = image.dtype
+        
+        # Cache for frequently accessed levels
+        self._level_cache = weakref.WeakValueDictionary()
+    
+    @property
+    def data(self) -> np.ndarray:
+        """Returns the original full-resolution image."""
+        return self.pyramid[0]
+    
+    @property 
+    def coarsest(self) -> np.ndarray:
+        """Returns the coarsest (smallest) level of the pyramid."""
+        return self.pyramid[-1]
+    
+    def get_level(self, level: int) -> np.ndarray:
+        """Get specific pyramid level with caching."""
+        if level >= len(self.pyramid):
+            raise IndexError(f"Level {level} not available. Max level: {len(self.pyramid)-1}")
+        
+        # Use weak reference cache to avoid keeping multiple copies in memory
+        cache_key = f"level_{level}"
+        if cache_key in self._level_cache:
+            return self._level_cache[cache_key]
+        
+        level_data = self.pyramid[level]
+        self._level_cache[cache_key] = level_data
+        return level_data
+    
+    def get_memory_usage(self) -> Dict[str, int]:
+        """Calculate memory usage for each pyramid level."""
+        usage = {}
+        total = 0
+        for i, level in enumerate(self.pyramid):
+            size_bytes = level.nbytes
+            usage[f"level_{i}"] = size_bytes
+            total += size_bytes
+        usage["total"] = total
+        return usage
+    
+
+class MemoryEfficientImageCache:
+    """Memory-efficient cache with size limits and automatic cleanup."""
+    
+    def __init__(self, max_cache_size_mb=500, max_entries_per_channel=5):
+        self.max_cache_size_bytes = max_cache_size_mb * 1024 * 1024
+        self.max_entries_per_channel = max_entries_per_channel
+        self.cache = {}  # {channel: OrderedDict of {cache_key: image_data}}
+        self.current_size_bytes = 0
+    
+    def get(self, channel, cache_key):
+        """Get cached image if available."""
+        if channel not in self.cache:
+            return None
+        
+        channel_cache = self.cache[channel]
+        if cache_key in channel_cache:
+            # Move to end (most recently used)
+            image_data = channel_cache[cache_key]
+            del channel_cache[cache_key]
+            channel_cache[cache_key] = image_data
+            return image_data
+        return None
+    
+    def put(self, channel, cache_key, image_data):
+        """Cache image data with memory management."""
+        if channel not in self.cache:
+            self.cache[channel] = OrderedDict()
+        
+        channel_cache = self.cache[channel]
+        image_size_bytes = image_data.nbytes
+        
+        # Remove if already exists to update size tracking
+        if cache_key in channel_cache:
+            old_data = channel_cache[cache_key]
+            self.current_size_bytes -= old_data.nbytes
+            del channel_cache[cache_key]
+        
+        # Check if we need to free memory
+        while (self.current_size_bytes + image_size_bytes > self.max_cache_size_bytes or
+               len(channel_cache) >= self.max_entries_per_channel):
+            if not channel_cache:
+                break
+            
+            # Remove least recently used item
+            old_key, old_data = channel_cache.popitem(last=False)
+            self.current_size_bytes -= old_data.nbytes
+            del old_data  # Explicit deletion
+        
+        # Add new data
+        channel_cache[cache_key] = image_data
+        self.current_size_bytes += image_size_bytes
+        
+        # Force garbage collection if cache is getting large
+        if self.current_size_bytes > self.max_cache_size_bytes * 0.8:
+            gc.collect()
+    
+    def clear_channel(self, channel):
+        """Clear cache for specific channel."""
+        if channel in self.cache:
+            channel_cache = self.cache[channel]
+            for image_data in channel_cache.values():
+                self.current_size_bytes -= image_data.nbytes
+            channel_cache.clear()
+            gc.collect()
+    
+    def clear_all(self):
+        """Clear entire cache."""
+        for channel_cache in self.cache.values():
+            channel_cache.clear()
+        self.cache.clear()
+        self.current_size_bytes = 0
+        gc.collect()
+    
+    def get_memory_info(self):
+        """Get current memory usage info."""
+        return {
+            'current_size_mb': self.current_size_bytes / (1024*1024),
+            'max_size_mb': self.max_cache_size_bytes / (1024*1024),
+            'channels': len(self.cache),
+            'total_entries': sum(len(ch_cache) for ch_cache in self.cache.values())
+        }
+
+
+
+def clear_contrast_cache(self):
+    """Clear contrast cache when switching channels or loading new images."""
+    if hasattr(self, 'memory_cache'):
+        self.memory_cache.clear_all()
+        print("Cleared contrast cache")
+
+def get_cache_info(self):
+    """Get current cache information for debugging."""
+    if hasattr(self, 'memory_cache'):
+        return self.memory_cache.get_memory_info()
+    return {"status": "No cache initialized"}
+
+# Memory monitoring utility
+def monitor_memory_usage():
+    """Simple memory monitoring function."""
+    import psutil
+    import os
+    
+    process = psutil.Process(os.getpid())
+    memory_info = process.memory_info()
+    
+    return {
+        'rss_mb': memory_info.rss / (1024*1024),  # Resident Set Size
+        'vms_mb': memory_info.vms / (1024*1024),  # Virtual Memory Size
+        'percent': process.memory_percent()
+    }
 
 class ImageStorage:
     _instance = None
@@ -43,8 +221,8 @@ class __BaseGraphicsView(QWidget):
     updateProgress = pyqtSignal(int, str)
     errorSignal = pyqtSignal(str)
     fill_metadata = pyqtSignal(dict)
-    update_manager = pyqtSignal(np.ndarray, str)
-
+    update_manager = pyqtSignal(dict, str)
+    add_image_to_storage = pyqtSignal(str, object)
     def __init__(self, parent=None):
         super().__init__(parent)
 
@@ -63,6 +241,7 @@ class __BaseGraphicsView(QWidget):
         self.image_cache = {}
         self.lut_cache = {}
         self.image_count = 0
+        self.storage = ImageStorage()
 
     def dragEnterEvent(self, event: QDragEnterEvent):
         if event.mimeData().hasUrls():
@@ -72,25 +251,25 @@ class __BaseGraphicsView(QWidget):
         event.acceptProposedAction()
 
     def read_tiff_pages(self, file_path):
-        pages = []
+        """Generator that yields pages one at a time to avoid memory overload."""
         with tiff.TiffFile(file_path) as tif:
+            total_pages = len(tif.pages)
+            valid_page_count = 0
+            
             for i, page in enumerate(tif.pages):
                 try:
                     image = page.asarray()
                     # Check if the image is blank
                     if np.all(image == image.flat[0]):
                         continue
-                    pages.append(image)
-                    self.updateProgress.emit(int((i+1)/len(tif.pages)*100), "Loading image")
+                    
+                    valid_page_count += 1
+                    self.updateProgress.emit(int((i+1)/total_pages*50), "Loading image")  # Use 50% for reading
+                    yield image, valid_page_count
+                    
                 except Exception as e:
                     print(f"Error reading page {i}: {e}")
                     continue
-
-            if pages:
-                return np.stack(pages)
-        
-            else:
-                return np.stack([])
             
     def build_pyramid(self, image, levels=4):
         '''
@@ -109,73 +288,146 @@ class __BaseGraphicsView(QWidget):
             pyramid.append(image)
         return pyramid
 
-    def filename_to_image(self, file_name:str, adjust_contrast=False) -> np.ndarray:  
+    def subsample_for_display(self, image: np.ndarray, max_dimension: int = 1024) -> np.ndarray:
+        """Simple subsampling for display purposes."""
+        h, w = image.shape[:2]
+        
+        # Calculate subsample factor
+        scale_factor = min(max_dimension / h, max_dimension / w, 1.0)
+        
+        if scale_factor >= 1.0:
+            return image  # No need to subsample
+        
+        # Calculate new dimensions
+        new_h = int(h * scale_factor)
+        new_w = int(w * scale_factor)
+        
+        # Simple subsampling by taking every nth pixel
+        step_h = max(1, h // new_h)
+        step_w = max(1, w // new_w)
+        return image[::step_h, ::step_w]
 
-            self.storage = ImageStorage()
+    def filename_to_image(self, file_name: str, adjust_contrast=False, 
+                                subsample_for_emit=True, max_display_size=1024) -> np.ndarray:
+        """Memory-efficient version that processes TIFF pages one at a time with simple subsampling."""
+        
+        if file_name.endswith((".tiff", ".tif")):
+            # Handle metadata
+            metadata_widget = MetaData()
+            # metadata = metadata_widget.parse_metadata(file_name)
+            # self.fill_metadata.emit(metadata)
+            
+            print("Starting streaming page processing")
+            emit_data = {}  # Data to emit (subsampled versions)
+            channel_one_image = None
+            
+            # Process pages one at a time using generator
+            for image, channel_num in self.read_tiff_pages(file_name):
+                channel_name = f'Channel {channel_num}'
+                image_adjusted = image
 
+                if adjust_contrast:
+                    __scaled = scale_adjust(image) 
+                    image_adjusted = adjustContrast(__scaled)
 
+                print(f"Processing {channel_name}, shape: {image.shape}, dtype: {image.dtype}")
+                
+                # Convert to uint8 for storage (memory savings)
+                image_uint8 = to_uint8(image_adjusted)
+                
+                # Store full resolution version
+                self.np_channels[channel_name] = ImageWrapper(image_uint8)
+                self.reset_np_channels[channel_name] = ImageWrapper(image_uint8.copy())
+                
+                # Create subsampled version for emission/display
+                if subsample_for_emit:
+                    subsampled = self.subsample_for_display(image_uint8, max_display_size)
+                    emit_data[channel_name] = subsampled
+                    print(f"  Original: {image_uint8.shape}, Subsampled: {subsampled.shape}")
+                else:
+                    emit_data[channel_name] = image_uint8
+                
+                # Store first channel for return value
+                if channel_num == 1:
+                    channel_one_image = emit_data[channel_name]
+                
+                # Print memory info
+                full_size_mb = image_uint8.nbytes / (1024*1024)
+                if subsample_for_emit:
+                    display_size_mb = emit_data[channel_name].nbytes / (1024*1024)
+                    print(f'{channel_name} - Full: {full_size_mb:.2f} MB, Display: {display_size_mb:.2f} MB')
+                else:
+                    print(f'{channel_name} - Size: {full_size_mb:.2f} MB')
+                
+                # Update progress
+                progress = 50 + int(channel_num * 40 / max(1, channel_num))
+                self.updateProgress.emit(progress, f"Processing {channel_name}")
+                
+                # Force garbage collection after each channel
+                gc.collect()
 
-            if file_name.endswith((".tiff", ".tif")):
+            self.is_layered = True
+            
+            print("Done processing, preparing emission")
+            
+            # Emit subsampled data for display
+            if emit_data:
+                if subsample_for_emit:
+                    # Create wrappers for subsampled data
+                    display_wrappers = {
+                        name: ImageWrapper(data) for name, data in emit_data.items()
+                    }
+                    self.multi_layer.emit(display_wrappers, True)
+                else:
+                    # Emit full resolution
+                    self.multi_layer.emit(self.np_channels, True)
+                
+            if self.np_channels:
+                first_channel = next(iter(self.np_channels.values()))
+                print("Final stored dtype:", first_channel.data.dtype)
 
-                #handle meta data
-                metadata_widget = MetaData()
-                metadata = metadata_widget.parse_metadata(file_name)
-                self.fill_metadata.emit(metadata)
-                pages = self.read_tiff_pages(file_name)
-                num_channels = pages.shape[0]
-
-                # if (num_channels > 1):
-                for channel_num, image in enumerate(pages):
-
-                    channel_name = f'Channel {channel_num + 1}'
-                    image_adjusted = image
-
-                    if adjust_contrast:
-                        __scaled = scale_adjust(image) 
-                        image_adjusted = adjustContrast(__scaled) # uint8
-
-                    # bytesPerPixel = 2 if image_adjusted.dtype == np.uint16 else 1
-                    # format = QImage.Format.Format_Grayscale16 if image_adjusted.dtype == np.uint16 else QImage.Format.Format_Grayscale8
-
-                    self.np_channels[channel_name] = ImageWrapper(image_adjusted) 
-                    print('data type: ', image_adjusted.dtype)
-                    self.reset_np_channels[channel_name] = ImageWrapper(image_adjusted.copy()) 
-
-                self.is_layered = True
-                self.storage.add_data(str(uuid.uuid4()), self.np_channels)
-                channel_one_image = next(iter(self.np_channels.values())).data
-                self.multi_layer.emit(self.np_channels, True)
-                print("checking dtype", self.np_channels["Channel 1"].data.dtype)
-
-            else: # not a .tif image
-
-                self.is_layered = False
-                from PIL import Image
-                print("not a tif")
-                channel_one_image = np.array(Image.open(file_name))
-                self.storage.add_data(str(uuid.uuid4()), channel_one_image)
-                self.image_wrapper = ImageWrapper(channel_one_image)
+        else:  # not a .tif image
+            self.np_channels.clear()
+            self.reset_np_channels.clear()
+            self.is_layered = False
+            from PIL import Image
+            print("Processing single image")
+            
+            channel_one_image = np.array(Image.open(file_name))
+            channel_name = f'Channel 1'
+            
+            # Convert to uint8 for consistency
+            channel_one_image = to_uint8(channel_one_image)
+            
+            # Store full resolution
+            self.image_wrapper = ImageWrapper(channel_one_image)
+            self.np_channels[channel_name] = self.image_wrapper
+            
+            # Emit subsampled version for display if image is large
+            if subsample_for_emit and channel_one_image.size > max_display_size * max_display_size:
+                subsampled = self.subsample_for_display(channel_one_image, max_display_size)
+                self.single_layer.emit(subsampled)
+                channel_one_image = subsampled
+                print(f"Single image subsampled from {self.image_wrapper.data.shape} to {subsampled.shape}")
+            else:
                 self.single_layer.emit(channel_one_image)
+                
+        self.image_cache.clear()
+        self.lut_cache.clear()
+        self.updateProgress.emit(100, "Image Loaded")
+        
+        print("Emitting to update manager")
+        self.update_manager.emit(self.np_channels, file_name)
+        self.image_count += 1
 
-                self.np_channels.clear()
-                self.reset_np_channels.clear()
-
-
-            self.image_cache.clear()
-            self.lut_cache.clear()
-            self.updateProgress.emit(100, "Image Loaded")
-
-            print("MING",channel_one_image.dtype)
-            self.update_manager.emit(channel_one_image, "Image"  + " " + str(self.image_count))
-            self.image_count+=1
-
-            return channel_one_image
+        return channel_one_image
     
     def deleteImage(self):
         self.scene.scene().clear()
 
 
 class ReferenceGraphicsView(__BaseGraphicsView):
+    
 
     update_reference = pyqtSignal(QPixmap, bool)
     # referenceLoaded = pyqtSignal(dict)
@@ -230,6 +482,7 @@ class ImageGraphicsView(__BaseGraphicsView):
         self.begin_crop = False
         self.crop_cursor =  QCursor(Qt.CursorShape.CrossCursor)
         self.stardist_image_count = 0
+        self.memory_cache = MemoryEfficientImageCache(max_cache_size_mb=300)
 
     def toPixmapItem(self, data:QPixmap|np.ndarray|QImage):
         '''Sends a pixmap to the canvas for display'''
@@ -253,6 +506,8 @@ class ImageGraphicsView(__BaseGraphicsView):
 
             self.currentChannelNum = index
             channel_num = f'Channel {index+1}'
+            if hasattr(self, 'memory_cache'):
+                self.memory_cache.clear_channel(f"Channel {self.currentChannelNum + 1}")
             
             self.image_wrapper = self.np_channels.get(channel_num)# self.image always needs to be updated. this is the current image that is being operated on
 
@@ -260,73 +515,108 @@ class ImageGraphicsView(__BaseGraphicsView):
                 self.update_image(cmap_text = self.image_wrapper.cmap) # this also updates the contrast
 
         
+    
+    # def _apply_contrast_and_cache(self, channel_num, cache_key, contrast_min, contrast_max):
+    #     """
+    #     This helper function applies the contrast and caches the processed image.
+    #     If the contrast has already been applied, it uses the cached version.
+    #     """
 
-    def update_contrast(self, values):
-        '''displays the image between a lower and upper limit'''
+    #     if (channel_num is None and self.image_cache.get(cache_key) is None) or \
+    #     (channel_num is not None and self.image_cache[channel_num].get(cache_key) is None):
+
+    #         image_to_display = self.apply_contrast(contrast_min, contrast_max)
+            
+    #         if channel_num:
+
+    #             self.image_cache[channel_num][cache_key] = image_to_display
+
+    #         else:
+
+    #             self.image_cache[cache_key] = image_to_display
+
+    #         contrast_pixmap = QPixmap(numpy_to_qimage(image_to_display))  # Convert to pixmap for display
+
+    #         self.canvasUpdated.emit(contrast_pixmap)
+
+    #     else:
+    #         # use cached image if available
+
+    #         image_to_display = self.image_cache[channel_num][cache_key] if channel_num else self.image_cache[cache_key]
+            
+    #         contrast_pixmap = QPixmap(numpy_to_qimage(image_to_display))
+    #         self.canvasUpdated.emit(contrast_pixmap)
+    # Updated contrast update methods for your ImageGraphicsView class
+    def update_contrast_memory_efficient(self, values):
+        """Memory-efficient version of update_contrast method."""
         if self.image_wrapper is None:
             self.errorSignal.emit("Canvas is empty")
             return
 
         contrast_min, contrast_max = int(values[0]), int(values[1])
         self.image_wrapper.contrast_min = contrast_min
-        self.image_wrapper.contrast_max = contrast_max  # Save contrast settings
-        
+        self.image_wrapper.contrast_max = contrast_max
+
+        # Initialize memory-efficient cache if not exists
+        if not hasattr(self, 'memory_cache'):
+            self.memory_cache = MemoryEfficientImageCache()
+
         contrast_key = (contrast_min, contrast_max)
         cmap_key = self.image_wrapper.cmap
         cache_key = (cmap_key, contrast_key)
 
-        # Check if the current image (single-layer or multi-layer) is in the cache
-        if self.is_layered: 
-            print("Checking layered")
+        if self.is_layered:
+            print("Processing layered image with memory management")
             channel_num = f"Channel {self.currentChannelNum + 1}"
+            self.image_wrapper = self.np_channels[channel_num]
+            
+            # Check cache first
+            cached_image = self.memory_cache.get(channel_num, cache_key)
+            if cached_image is not None:
+                print(f"Using cached image for {channel_num}")
+                contrast_pixmap = QPixmap(numpy_to_qimage(cached_image))
+                self.canvasUpdated.emit(contrast_pixmap)
+            else:
+                print(f"Processing new contrast for {channel_num}")
+                self._apply_contrast_memory_efficient(channel_num, cache_key, contrast_min, contrast_max)
+        else:
+            # Single layer processing
+            cached_image = self.memory_cache.get("single", cache_key)
+            if cached_image is not None:
+                contrast_pixmap = QPixmap(numpy_to_qimage(cached_image))
+                self.canvasUpdated.emit(contrast_pixmap)
+            else:
+                self._apply_contrast_memory_efficient("single", cache_key, contrast_min, contrast_max)
 
-            # Initialize cache for this channel if it's not already initialized
-            if channel_num not in self.image_cache:
-                self.image_cache[channel_num] = {}
-
-
-            self.image_wrapper = self.np_channels[channel_num]  # Set the current channel wrapper
-
-
-            self._apply_contrast_and_cache(channel_num, cache_key, contrast_min, contrast_max)
-
-        else:  # Single-layer logic
-            self._apply_contrast_and_cache(None, cache_key, contrast_min, contrast_max)
-
-        # Update the contrast slider with the new settings
-        self.changeSlider.emit((self.image_wrapper.contrast_min, self.image_wrapper.contrast_max))  # Update the slider
-
-    def _apply_contrast_and_cache(self, channel_num, cache_key, contrast_min, contrast_max):
-        """
-        This helper function applies the contrast and caches the processed image.
-        If the contrast has already been applied, it uses the cached version.
-        """
-
-        if (channel_num is None and self.image_cache.get(cache_key) is None) or \
-        (channel_num is not None and self.image_cache[channel_num].get(cache_key) is None):
-
+        # Update slider
+        self.changeSlider.emit((self.image_wrapper.contrast_min, self.image_wrapper.contrast_max))
+        
+    def _apply_contrast_memory_efficient(self, channel_key, cache_key, contrast_min, contrast_max):
+        """Memory-efficient contrast application with caching."""
+        try:
+            # Apply contrast
             image_to_display = self.apply_contrast(contrast_min, contrast_max)
             
-            if channel_num:
-
-                self.image_cache[channel_num][cache_key] = image_to_display
-
-            else:
-
-                self.image_cache[cache_key] = image_to_display
-
-            contrast_pixmap = QPixmap(numpy_to_qimage(image_to_display))  # Convert to pixmap for display
-
-            self.canvasUpdated.emit(contrast_pixmap)
-
-        else:
-            # use cached image if available
-
-            image_to_display = self.image_cache[channel_num][cache_key] if channel_num else self.image_cache[cache_key]
+            # Cache the result
+            self.memory_cache.put(channel_key, cache_key, image_to_display.copy())
             
+            # Display
             contrast_pixmap = QPixmap(numpy_to_qimage(image_to_display))
             self.canvasUpdated.emit(contrast_pixmap)
-
+            
+            # Clean up local reference
+            del image_to_display
+            
+        except MemoryError:
+            print("Memory error - clearing cache and retrying")
+            self.memory_cache.clear_all()
+            gc.collect()
+            
+            # Retry with no caching
+            image_to_display = self.apply_contrast(contrast_min, contrast_max)
+            contrast_pixmap = QPixmap(numpy_to_qimage(image_to_display))
+            self.canvasUpdated.emit(contrast_pixmap)
+            del image_to_display
     def change_cmap(self, cmap_text="default"):
         '''changes the colormap given a colormap str valid in matplotlib'''
 
@@ -371,7 +661,10 @@ class ImageGraphicsView(__BaseGraphicsView):
         '''generate a 8 bit look-up table and converts to rgb space'''
         label_range = np.linspace(0, 1, 256)
         return np.uint8(mpl.colormaps[cmap](label_range)[:,2::-1]*256).reshape(256, 1, 3)
-
+    def update_contrast(self, values):
+        return self.update_contrast_memory_efficient(values)
+    def _apply_contrast_and_cache(self, channel_num, cache_key, contrast_min, contrast_max):
+        return self._apply_contrast_memory_efficient(channel_num, cache_key, contrast_min, contrast_max)
     def label2rgb(self, labels, lut):
         '''applys the look-up table and merges r, g, b channels to form colored image '''
         print(type(labels))
@@ -387,18 +680,20 @@ class ImageGraphicsView(__BaseGraphicsView):
 
     def loadStardistLabels(self, stardist: ImageWrapper):
 
-
         self.is_layered = False
         self.stardist_labels = stardist.data
         cmap = self.np_channels[f"Channel {self.currentChannelNum+1}"].cmap
         self.image_wrapper = ImageWrapper(self.stardist_labels.copy(), name="stardist_label", cmap=cmap)
         self.update_image(cmap_text=cmap)
-        self.update_manager.emit(self.stardist_labels, self.image_wrapper.name + " " + str(self.stardist_image_count))
+        # !TODO: need to fix; think is broken now after changing update_manger behavior
+        self.update_manager.emit(cmap, self.image_wrapper.name + " " + str(self.stardist_image_count))
         self.stardist_image_count+=1
     
     def addImage(self, file:str):
         '''add a new image'''
         self.np_channels.clear()
+        if hasattr(self, 'memory_cache'):
+            self.memory_cache.clear_all()
         self.scene.resetTransform()
 
         if isinstance(file, str):
