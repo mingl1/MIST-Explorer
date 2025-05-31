@@ -1,11 +1,11 @@
-from PyQt6.QtWidgets import QFileDialog
+from typing import List
 from PyQt6.QtGui import  QImage, QPixmap
 from PyQt6.QtCore import QTimer
 import tifffile as tiff, numpy as np
-from PIL import Image, ImageSequence
 import cv2
 import time
-
+from skimage import transform
+from numpy.typing import NDArray
 
 def numpy_to_qimage(array:np.ndarray) -> QImage:
 
@@ -145,6 +145,11 @@ def scale_adjust(arr:np.ndarray):
     else:
         print("unsupported array type: ",arr.dtype)
 
+# def to_float64(arr: np.ndarray):
+    # if arr.dtype == np.uint16:
+        
+
+
 def auto_contrast(img):
     return adjustContrast(scale_adjust(img))
 
@@ -160,7 +165,7 @@ def gaussian_kernel_1d(sigma, radius=None):
     return kernel
 
 
-def gaussian_blur_separable(image, sigma=1.0):
+def gaussian_blur_separable(image:NDArray[np.float64], sigma=1.0):
     """Apply separable Gaussian blur manually using numpy."""
     kernel = gaussian_kernel_1d(sigma)
     
@@ -182,19 +187,19 @@ def gaussian_blur_separable(image, sigma=1.0):
     
     return blurred
 
-def downsample(image, scale=0.5):
+def downsample(image:NDArray[np.float64], scale=0.5):
     """Downsample image by given scale factor."""
     step = int(round(1 / scale))
     return image[::step, ::step]
 
 
-def build_optical_flow_pyramid_pure_numpy(image, max_level=3, scale=0.5, sigma=1.0, min_size=16):
+def build_optical_flow_pyramid_pure_numpy(image:NDArray[np.uint16], max_level=3, scale=0.5, sigma=1.0, min_size=16) -> List[NDArray[np.float64]]:
     """Version using only numpy with manual separable convolution."""
     assert image.ndim == 2, "Only grayscale images supported"
-    image = image.astype(np.float32)
+    float_image = image.astype(np.float64)
     
-    pyramid = [image]
-    current = image
+    pyramid = [float_image]
+    current = float_image
     
     for level in range(max_level):
         if min(current.shape) < min_size:
@@ -206,13 +211,105 @@ def build_optical_flow_pyramid_pure_numpy(image, max_level=3, scale=0.5, sigma=1
     
     return pyramid
 
-def adjust_contrast(img, min_percentile=2, max_percentile=98):
-    """Adjust image contrast using percentile-based clipping"""
+def adjust_contrast(img:NDArray[np.float64], min_percentile=2, max_percentile=98):
+    """Adjust image contrast using percentile-based clipping for float images"""
     # Calculate percentiles
     minval = np.percentile(img, min_percentile)
     maxval = np.percentile(img, max_percentile)
     
-    # Clip and rescale
+    # Avoid division by zero
+    if maxval - minval < 1e-12:
+        return np.zeros_like(img)
+    
+    # Clip and rescale to [0.0, 1.0]
     img_adjusted = np.clip(img, minval, maxval)
-    img_adjusted = ((img_adjusted - minval) / (maxval - minval)) * 255
-    return img_adjusted.astype(np.uint8)
+    img_adjusted = (img_adjusted - minval) / (maxval - minval)
+    
+    return img_adjusted  # stays float64, values in [0.0, 1.0]
+
+def pad_to_shape(image, target_shape):
+    """Pad image to target_shape with zeros (symmetric padding)"""
+    pad_height = target_shape[0] - image.shape[0]
+    pad_width = target_shape[1] - image.shape[1]
+    
+    pad_top = pad_height // 2
+    pad_bottom = pad_height - pad_top
+    pad_left = pad_width // 2
+    pad_right = pad_width - pad_left
+    
+    return np.pad(image, ((pad_top, pad_bottom), (pad_left, pad_right)), mode='constant', constant_values=0)
+
+def make_same_shape(img1, img2):
+    if img1.shape == img2.shape:
+        return img1, img2
+    max_height = max(img1.shape[0],img2.shape[0])
+    max_width = max(img1.shape[1], img2.shape[1])
+
+    return pad_to_shape(img1,(max_height,max_width)), pad_to_shape(img2,(max_height,max_width))
+
+def remove_padding(padded_image, original_shape):
+    """Remove symmetric padding to restore original shape"""
+    current_shape = padded_image.shape
+    
+    # Calculate padding that was added
+    pad_height = current_shape[0] - original_shape[0]
+    pad_width = current_shape[1] - original_shape[1]
+    
+    # Calculate crop coordinates (reverse of padding)
+    pad_top = pad_height // 2
+    pad_left = pad_width // 2
+    
+    # Extract the original region
+    end_row = pad_top + original_shape[0]
+    end_col = pad_left + original_shape[1]
+    
+    return padded_image[pad_top:end_row, pad_left:end_col]
+
+def warp_image(img, transform_matrix):
+    """Enhanced image warping with better precision and boundary handling"""
+    if transform_matrix is None:
+        return img
+    
+    # Ensure input is float64 for precision
+    img_float = img.astype(np.float64) if img.dtype != np.float64 else img
+    
+    try:
+        if transform_matrix.shape == (2, 3):  # Affine
+            tform = transform.AffineTransform(matrix=transform_matrix)
+        elif transform_matrix.shape == (3, 3):  # Homography
+            tform = transform.ProjectiveTransform(matrix=transform_matrix)
+        else:
+            raise ValueError(f"Unsupported transform matrix shape: {transform_matrix.shape}")
+        
+        # Perform warping with high precision
+        warped = transform.warp(
+            img_float, 
+            tform.inverse, 
+            output_shape=img_float.shape,
+            preserve_range=True,
+            mode='constant',
+            cval=0,
+            order=3  # Bicubic interpolation for better quality
+        )
+        
+        return warped
+        
+    except Exception as e:
+        print(f"Warping error: {e}")
+        return img_float
+    
+    
+# Memory monitoring utility
+def monitor_memory_usage():
+    """Simple memory monitoring function."""
+    import psutil
+    import os
+    
+    process = psutil.Process(os.getpid())
+    memory_info = process.memory_info()
+    
+    return {
+        'rss_mb': memory_info.rss / (1024*1024),  # Resident Set Size
+        'vms_mb': memory_info.vms / (1024*1024),  # Virtual Memory Size
+        'percent': process.memory_percent()
+    }
