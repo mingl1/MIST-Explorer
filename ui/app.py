@@ -336,10 +336,17 @@ class Ui_MainWindow(QMainWindow):
     
     def update_progress_bar(self, value, text):
         """Update progress bar with value and text"""
-        if self.progressBar.value() == 100:
-            self.progressBar.reset()
         self.progressBar.setValue(value)
         self.progressBarLabel.setText(text + " ...")
+        if value >= 100:
+            self.progressBar.hide()
+            self.progressBarLabel.hide()
+        else:
+            self.progressBar.show()
+            self.progressBarLabel.show()
+
+        
+        
     
     def select(self):
         """Set rectangle selection mode"""
