@@ -798,29 +798,29 @@ class ImageGraphicsViewUI(QGraphicsView):
 
 
 class ResizableRect(QGraphicsRectItem):
-    """Resizable rectangle graphics item"""
     def __init__(self, x, y, width, height, onCenter=False):
         if onCenter:
             super().__init__(-width / 2, -height / 2, width, height)
         else:
             super().__init__(0, 0, width, height)
-            
+
         self.setPos(x, y)
-        self.setFlags(QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
+        self.setFlags(
+            QGraphicsRectItem.GraphicsItemFlag.ItemIsMovable |
+            QGraphicsRectItem.GraphicsItemFlag.ItemIsSelectable |
+            QGraphicsRectItem.GraphicsItemFlag.ItemIsFocusable
+        )
         self.setAcceptHoverEvents(True)
         self.setPen(QPen(QBrush(Qt.GlobalColor.blue), 3, Qt.PenStyle.DotLine))
         self.selected_edge = None
 
-        # Position display
-        self.posItem = QGraphicsSimpleTextItem(
-            f'{self.x()}, {self.y()}', parent=self)
+        self.posItem = QGraphicsSimpleTextItem(f'{self.x()}, {self.y()}', parent=self)
         self.posItem.setPos(
             self.boundingRect().x(), 
             self.boundingRect().y() - self.posItem.boundingRect().height()
         )
 
     def getEdges(self, pos):
-        """Determine which edges are under the cursor"""
         edges = Qt.Edge(0)
         rect = self.rect()
         border = self.pen().width() / 2
@@ -846,68 +846,46 @@ class ResizableRect(QGraphicsRectItem):
 
     def mouseMoveEvent(self, event):
         if self.selected_edge:
-            mouse_delta = event.pos() - event.buttonDownPos(Qt.MouseButton.LeftButton)
             rect = self.rect()
-            pos_delta = QPointF()
-            border = self.pen().width()
+            pos = event.pos()
+            new_rect = QRectF(rect)
 
-            # Handle horizontal resize
             if self.selected_edge & Qt.Edge.LeftEdge:
-                diff = min(mouse_delta.x() - self.offset.x(), rect.width() - border)
-                if rect.x() < 0:
-                    offset = diff / 2
-                    self.offset.setX(self.offset.x() + offset)
-                    pos_delta.setX(offset)
-                    rect.adjust(offset, 0, -offset, 0)
-                else:
-                    pos_delta.setX(diff)
-                    rect.setWidth(rect.width() - diff)
-            elif self.selected_edge & Qt.Edge.RightEdge:
-                if rect.x() < 0:
-                    diff = max(mouse_delta.x() - self.offset.x(), border - rect.width())
-                    offset = diff / 2
-                    self.offset.setX(self.offset.x() + offset)
-                    pos_delta.setX(offset)
-                    rect.adjust(-offset, 0, offset, 0)
-                else:
-                    rect.setWidth(max(border, event.pos().x() - rect.x()))
+                diff = pos.x()
+                new_width = rect.right() - diff
+                if new_width > 10:  # minimum width
+                    new_rect.setLeft(diff)
 
-            # Handle vertical resize
+            if self.selected_edge & Qt.Edge.RightEdge:
+                diff = pos.x()
+                new_width = diff - rect.left()
+                if new_width > 10:
+                    new_rect.setRight(diff)
+
             if self.selected_edge & Qt.Edge.TopEdge:
-                diff = min(mouse_delta.y() - self.offset.y(), rect.height() - border)
-                if rect.y() < 0:
-                    offset = diff / 2
-                    self.offset.setY(self.offset.y() + offset)
-                    pos_delta.setY(offset)
-                    rect.adjust(0, offset, 0, -offset)
-                else:
-                    pos_delta.setY(diff)
-                    rect.setHeight(rect.height() - diff)
-            elif self.selected_edge & Qt.Edge.BottomEdge:
-                if rect.y() < 0:
-                    diff = max(mouse_delta.y() - self.offset.y(), border - rect.height())
-                    offset = diff / 2
-                    self.offset.setY(self.offset.y() + offset)
-                    pos_delta.setY(offset)
-                    rect.adjust(0, -offset, 0, offset)
-                else:
-                    rect.setHeight(max(border, event.pos().y() - rect.y()))
+                diff = pos.y()
+                new_height = rect.bottom() - diff
+                if new_height > 10:
+                    new_rect.setTop(diff)
 
-            # Apply changes if rectangle has changed
-            if rect != self.rect():
-                self.setRect(rect)
-                if pos_delta:
-                    self.setPos(self.pos() + pos_delta)
+            if self.selected_edge & Qt.Edge.BottomEdge:
+                diff = pos.y()
+                new_height = diff - rect.top()
+                if new_height > 10:
+                    new_rect.setBottom(diff)
+
+            self.setRect(new_rect)
         else:
-            # Use default implementation for regular movement
             super().mouseMoveEvent(event)
 
-        # Update position display
-        self.posItem.setText(f'{self.x()},{self.y()} ({self.rect().getRect()})')
+        # Update the position label
+        self.posItem.setText(f'{self.x()}, {self.y()} ({self.rect().getRect()})')
         self.posItem.setPos(
             self.boundingRect().x(), 
             self.boundingRect().y() - self.posItem.boundingRect().height()
         )
+
+
 
     def mouseReleaseEvent(self, event):
         self.selected_edge = Qt.Edge(0)

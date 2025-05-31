@@ -233,4 +233,3 @@ class Controller:
 
     def on_actionOpen_triggered(self):
        self.openFileDialog(self.model_canvas)
-
