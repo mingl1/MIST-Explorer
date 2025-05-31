@@ -9,70 +9,9 @@ from core.Worker import Worker
 from utils import *
 from ui.Dialogs import ImageDialog
 import numpy as np
+from pystackreg.util import to_uint16
 from typing import Dict, List, Optional
 import weakref
-
-class PyramidImageWrapper:
-    """Wrapper that stores Gaussian pyramid and provides memory-efficient access."""
-    
-    def __init__(self, image: np.ndarray, max_levels: int = 4, scale: float = 0.5, 
-                 sigma: float = 1.0, min_size: int = 32, convert_to_uint8: bool = True):
-        self.original_shape = image.shape
-        self.original_dtype = image.dtype
-        self.max_levels = max_levels
-        self.scale = scale
-        self.convert_to_uint8 = convert_to_uint8
-        
-        # Build pyramid first with original precision
-        self.pyramid = build_optical_flow_pyramid_pure_numpy(
-            image, max_levels, scale, sigma, min_size
-        )
-        
-        # Convert each pyramid level to uint8 after creation if requested
-        if convert_to_uint8:
-            self.pyramid = [to_uint8(level) for level in self.pyramid]
-            self.dtype = np.uint8
-        else:
-            self.dtype = image.dtype
-        
-        # Cache for frequently accessed levels
-        self._level_cache = weakref.WeakValueDictionary()
-    
-    @property
-    def data(self) -> np.ndarray:
-        """Returns the original full-resolution image."""
-        return self.pyramid[0]
-    
-    @property 
-    def coarsest(self) -> np.ndarray:
-        """Returns the coarsest (smallest) level of the pyramid."""
-        return self.pyramid[-1]
-    
-    def get_level(self, level: int) -> np.ndarray:
-        """Get specific pyramid level with caching."""
-        if level >= len(self.pyramid):
-            raise IndexError(f"Level {level} not available. Max level: {len(self.pyramid)-1}")
-        
-        # Use weak reference cache to avoid keeping multiple copies in memory
-        cache_key = f"level_{level}"
-        if cache_key in self._level_cache:
-            return self._level_cache[cache_key]
-        
-        level_data = self.pyramid[level]
-        self._level_cache[cache_key] = level_data
-        return level_data
-    
-    def get_memory_usage(self) -> Dict[str, int]:
-        """Calculate memory usage for each pyramid level."""
-        usage = {}
-        total = 0
-        for i, level in enumerate(self.pyramid):
-            size_bytes = level.nbytes
-            usage[f"level_{i}"] = size_bytes
-            total += size_bytes
-        usage["total"] = total
-        return usage
-    
 
 class MemoryEfficientImageCache:
     """Memory-efficient cache with size limits and automatic cleanup."""
@@ -155,35 +94,6 @@ class MemoryEfficientImageCache:
             'channels': len(self.cache),
             'total_entries': sum(len(ch_cache) for ch_cache in self.cache.values())
         }
-
-
-
-def clear_contrast_cache(self):
-    """Clear contrast cache when switching channels or loading new images."""
-    if hasattr(self, 'memory_cache'):
-        self.memory_cache.clear_all()
-        print("Cleared contrast cache")
-
-def get_cache_info(self):
-    """Get current cache information for debugging."""
-    if hasattr(self, 'memory_cache'):
-        return self.memory_cache.get_memory_info()
-    return {"status": "No cache initialized"}
-
-# Memory monitoring utility
-def monitor_memory_usage():
-    """Simple memory monitoring function."""
-    import psutil
-    import os
-    
-    process = psutil.Process(os.getpid())
-    memory_info = process.memory_info()
-    
-    return {
-        'rss_mb': memory_info.rss / (1024*1024),  # Resident Set Size
-        'vms_mb': memory_info.vms / (1024*1024),  # Virtual Memory Size
-        'percent': process.memory_percent()
-    }
 
 class ImageStorage:
     _instance = None
@@ -312,10 +222,10 @@ class __BaseGraphicsView(QWidget):
         """Memory-efficient version that processes TIFF pages one at a time with simple subsampling."""
         
         if file_name.endswith((".tiff", ".tif")):
-            # Handle metadata
+            # Handle metadata, !TODO: handle if no metadata?
             metadata_widget = MetaData()
-            # metadata = metadata_widget.parse_metadata(file_name)
-            # self.fill_metadata.emit(metadata)
+            metadata = metadata_widget.parse_metadata(file_name)
+            self.fill_metadata.emit(metadata)
             
             print("Starting streaming page processing")
             emit_data = {}  # Data to emit (subsampled versions)
@@ -325,34 +235,35 @@ class __BaseGraphicsView(QWidget):
             for image, channel_num in self.read_tiff_pages(file_name):
                 channel_name = f'Channel {channel_num}'
                 image_adjusted = image
-
+                
+                
+                # Need to change to save as uint16?
                 if adjust_contrast:
                     __scaled = scale_adjust(image) 
                     image_adjusted = adjustContrast(__scaled)
 
                 print(f"Processing {channel_name}, shape: {image.shape}, dtype: {image.dtype}")
                 
-                # Convert to uint8 for storage (memory savings)
-                image_uint8 = to_uint8(image_adjusted)
+                image_uint16 =image_adjusted
                 
                 # Store full resolution version
-                self.np_channels[channel_name] = ImageWrapper(image_uint8)
-                self.reset_np_channels[channel_name] = ImageWrapper(image_uint8.copy())
+                self.np_channels[channel_name] = ImageWrapper(image_uint16)
+                self.reset_np_channels[channel_name] = ImageWrapper(image_uint16.copy())
                 
                 # Create subsampled version for emission/display
                 if subsample_for_emit:
-                    subsampled = self.subsample_for_display(image_uint8, max_display_size)
+                    subsampled = self.subsample_for_display(image_uint16, max_display_size)
                     emit_data[channel_name] = subsampled
-                    print(f"  Original: {image_uint8.shape}, Subsampled: {subsampled.shape}")
+                    print(f"  Original: {image_uint16.shape}, Subsampled: {subsampled.shape}")
                 else:
-                    emit_data[channel_name] = image_uint8
+                    emit_data[channel_name] = image_uint16
                 
                 # Store first channel for return value
                 if channel_num == 1:
                     channel_one_image = emit_data[channel_name]
                 
                 # Print memory info
-                full_size_mb = image_uint8.nbytes / (1024*1024)
+                full_size_mb = image_uint16.nbytes / (1024*1024)
                 if subsample_for_emit:
                     display_size_mb = emit_data[channel_name].nbytes / (1024*1024)
                     print(f'{channel_name} - Full: {full_size_mb:.2f} MB, Display: {display_size_mb:.2f} MB')
@@ -424,7 +335,6 @@ class __BaseGraphicsView(QWidget):
     
     def deleteImage(self):
         self.scene.scene().clear()
-
 
 class ReferenceGraphicsView(__BaseGraphicsView):
     
