@@ -250,7 +250,7 @@ class Controller:
 
     def handle_new_image(self, data, file_name):
         storage_item = {}
-        storage_item['name'] = f"Image {self.image_count}"
+        storage_item['name'] = file_name.split("/")[-1]
         self.image_count += 1
         storage_item['data'] = data
         my_uuid = str(uuid.uuid4())
