@@ -284,6 +284,9 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.polygons = []
         self.current_polygon = None
         self.rubber_band_positions = []
+
+        # NEW: for resizable crop
+        self.resizable_crop_rect = None
         
         # Setup interaction
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -570,22 +573,51 @@ class ImageGraphicsViewUI(QGraphicsView):
             r.mousePressEvent(event)
 
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key.Key_Return and self.current_polygon:
-            # Complete the polygon
-            if self.current_polygon.complete():
-                self.select = False
-                self.polygons.append(self.current_polygon)
-                
-                # Get polygon coordinates for analysis if needed
-                if hasattr(self, 'enc') and hasattr(self.enc, 'analysis_tab'):
-                    self.enc.analysis_tab.analyze_region(self.current_polygon, ("poly", self.current_polygon.im_points))
-                
-                self.current_polygon = None
-                
-        # Handle escape key to cancel polygon drawing
-        elif event.key() == Qt.Key.Key_Escape and self.current_polygon:
-            self.scene().removeItem(self.current_polygon)
-            self.current_polygon = None
+        if event.key() == Qt.Key.Key_Return and self.resizable_crop_rect:
+            rect = self.resizable_crop_rect.rect()
+            top_left = self.resizable_crop_rect.mapToScene(rect.topLeft())
+            bottom_right = self.resizable_crop_rect.mapToScene(rect.bottomRight())
+
+            # Map to image coordinates
+            image_top_left = self.pixmapItem.mapFromScene(top_left)
+            image_bottom_right = self.pixmapItem.mapFromScene(bottom_right)
+
+            # Clamp to image bounds
+            image_rect = QRect(
+                max(0, int(image_top_left.x())),
+                max(0, int(image_top_left.y())),
+                int(image_bottom_right.x() - image_top_left.x()),
+                int(image_bottom_right.y() - image_top_left.y())
+            ).normalized()
+
+            # Make sure rect is within image bounds
+            image = self.pixmapItem.pixmap().toImage()
+            image_width, image_height = image.width(), image.height()
+            image_rect = image_rect.intersected(QRect(0, 0, image_width, image_height))
+
+            if image_rect.isEmpty():
+                print("[✘] Invalid crop area — outside image bounds.")
+                return
+
+            # Emit the crop
+            self.showCrop.emit(image_rect)
+
+            # Clean up
+            self.scene().removeItem(self.resizable_crop_rect)
+            self.resizable_crop_rect = None
+            self.unsetCursor()
+            self.begin_crop = False
+            return
+
+        super().keyPressEvent(event)
+
+
+        # Allow other keys to propagate
+        super().keyPressEvent(event)
+
+
+        # Allow other keys to propagate
+        super().keyPressEvent(event)
 
     def paintEvent(self, event):
         super().paintEvent(event)
@@ -744,14 +776,30 @@ class ImageGraphicsViewUI(QGraphicsView):
 
 
     def set_crop_status(self, status):
-        """Enter and exit crop mode"""
+        """Enter and exit resizable crop mode"""
+        # Always disable legacy crop logic
+        self.begin_crop = False  
+        self.select = False
+        self.unsetCursor()
+
         if status:
-            self.begin_crop = True
-            self.setCursor(self.crop_cursor)
+            if not self.resizable_crop_rect:
+                view_center = self.viewport().rect().center()
+                scene_center = self.mapToScene(view_center)
+                self.resizable_crop_rect = ResizableRect(
+                    scene_center.x(), scene_center.y(), 100, 100
+                )
+                self.scene().addItem(self.resizable_crop_rect)
+                self.resizable_crop_rect.setZValue(10)
+                self.setFocus()  # Ensure keyPressEvent can fire
         else:
-            self.begin_crop = False
-            self.unsetCursor()
-        
+            if self.resizable_crop_rect:
+                self.scene().removeItem(self.resizable_crop_rect)
+                self.resizable_crop_rect = None
+
+
+
+            
         
     def loadChannels(self, np_channels):
         """Load channel data"""

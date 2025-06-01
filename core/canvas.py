@@ -625,54 +625,45 @@ class ImageGraphicsView(__BaseGraphicsView):
 
 
     def crop(self, image_rect):
-        """start crop thread"""
+        """Safely crop current image using image_rect and save to disk"""
 
-        print("starting crop")
-        left = image_rect.x()
-        top = image_rect.y()
-        right = image_rect.right()
-        bottom = image_rect.bottom()
+        print("Starting crop...")
 
-        cropped_array = self.image_wrapper.data[top:bottom+1, left:right+1] # this is the current image. if layered then its the current channel
-        # cropped_array_copy = cropped_array.copy()
+        left = max(0, image_rect.left())
+        top = max(0, image_rect.top())
+        right = min(self.image_wrapper.data.shape[1], image_rect.right())
+        bottom = min(self.image_wrapper.data.shape[0], image_rect.bottom())
 
-        if not cropped_array.data.contiguous:
-            cropped_array = np.ascontiguousarray(cropped_array, dtype=cropped_array.dtype)
+        if right <= left or bottom <= top:
+            print("❌ Invalid crop region: empty or out-of-bounds")
+            return
 
-        # Save cropped image to disk
+        cropped_array = self.image_wrapper.data[top:bottom, left:right]
+
+        # Fix shape if 0 pixels somehow
+        if cropped_array.size == 0:
+            print("❌ Cropped image is empty — aborting")
+            return
+
+        # Ensure proper format (contiguous & uint8/uint16)
+        cropped_array = np.ascontiguousarray(cropped_array)
+
+        if cropped_array.dtype not in [np.uint8, np.uint16]:
+            print(f"⚠️ Unexpected dtype {cropped_array.dtype}, converting to uint8")
+            cropped_array = ((cropped_array / cropped_array.max()) * 255).astype(np.uint8)
+
+        # Save image
+        import uuid, os
         filename = f"cropped_output_{uuid.uuid4().hex[:8]}.tiff"
         output_path = os.path.join(os.getcwd(), filename)
-        tiff.imwrite(output_path, cropped_array)
-        print(f"[✔] Cropped image saved to: {output_path}")
 
-        # cropped_array_copy = cropped_array.copy()
+        try:
+            import tifffile
+            tifffile.imwrite(output_path, cropped_array)
+            print(f"[✔] Cropped image saved to: {output_path}")
+        except Exception as e:
+            print(f"[✘] Failed to save TIFF: {e}")
 
-        # contrast = (self.image_wrapper.contrast_min, self.image_wrapper.contrast_max)
-            
-        # self.crop_dialog = ImageDialog(self, cropped_array_copy, contrast, self.image_wrapper.cmap)
-        # self.crop_dialog.exec()
-
-        if not self.is_layered:
-            self.image_wrapper.data = cropped_array
-            # self.image_wrapper.data = cropped_array_copy
-            self.cropSignal.emit(False) #set crop status
-            return # return if there are no other layers or is not a tiff
-        
-        # If layered, launch crop worker (same as before)
-        self.crop_worker = Worker(self.cropImageTask, image_rect)
-        self.crop_worker.signal.connect(self.onCropCompleted)
-        self.crop_worker.finished.connect(self.crop_worker.quit)
-        self.crop_worker.finished.connect(self.crop_worker.deleteLater)
-        self.crop_worker.start()
-
-        # if self.crop_dialog.confirm_crop:
-        #     self.crop_worker = Worker(self.cropImageTask, image_rect)
-        #     self.crop_worker.signal.connect(self.onCropCompleted) 
-        #     self.crop_worker.finished.connect(self.crop_worker.quit)
-        #     self.crop_worker.finished.connect(self.crop_worker.deleteLater)
-        #     self.crop_worker.start()
-        # else:
-        #     self.cropSignal.emit(False)
 
     cropSignal = pyqtSignal(bool)
     @pyqtSlot(dict)
