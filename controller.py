@@ -36,6 +36,7 @@ class Controller:
         # self.view.menubar.actionOpenFiles.triggered.connect(self.on_action_openFiles_triggered)
         self.view.menubar.actionOpenReference.triggered.connect(self.on_action_reference_triggered)
         self.view.menubar.actionOpen.triggered.connect(self.on_actionOpen_triggered)
+        self.view.menubar.actionSaveAs.triggered.connect(self.view.save)
         
         # self.view.connect()
         self.view.register_groupbox.has_blue_color.currentTextChanged.connect(self.model_register.hasBlueColor)

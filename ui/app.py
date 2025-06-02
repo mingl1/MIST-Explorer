@@ -90,7 +90,7 @@ class Ui_MainWindow(QMainWindow):
         self.setCentralWidget(self.centralwidget)
     
     def _setup_menubar_and_toolbar(self):
-        self.menubar = MenuBarUI(self, enc=self)
+        self.menubar = MenuBarUI(self)
         self.toolBar = ToolBarUI(self)
     
     def _setup_side_panel(self):

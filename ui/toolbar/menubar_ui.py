@@ -1,10 +1,9 @@
-from PyQt6.QtWidgets import QMenuBar, QWidget, QMenu
+from PyQt6.QtWidgets import QMenuBar, QWidget, QMenu,QMainWindow
 from PyQt6.QtCore import QRect, QCoreApplication
 from ui.toolbar.Action import Action
 
 class MenuBarUI(QWidget):
-    def __init__(self, parent=None, enc=None):
-        self.enc = enc
+    def __init__(self, parent: QMainWindow):
 
         super().__init__()
         self.menubar = QMenuBar(parent)
@@ -37,10 +36,6 @@ class MenuBarUI(QWidget):
         self.actionOpen.setText(_translate("MainWindow", "Open Image"))
         # self.actionOpenFiles.setText(_translate("MainWindow", "Open Files"))
         self.actionSaveAs.setText(_translate("MainWindow", "Save As..."))
-        
-        self.actionSaveAs.triggered.connect(self.print_hello)
 
-    def print_hello(self):
-        self.enc.save()
 
 
