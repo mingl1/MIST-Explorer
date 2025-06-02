@@ -36,7 +36,6 @@ class CellLayerAlignmentUI(QWidget):
         # Image 1 layout
         self.image1_layout = QHBoxLayout()
         self.image1_label = QLabel("Target Image:")
-        self.image1_label.setMinimumWidth(120)
         self.image1_status = QLabel("not loaded")
         self.image1_status.setStyleSheet("font-weight: bold; color: #555;")
         self.image1_layout.addWidget(self.image1_label)
@@ -49,7 +48,6 @@ class CellLayerAlignmentUI(QWidget):
         # Image 2 layout
         self.image2_layout = QHBoxLayout()
         self.image2_label = QLabel("Unaligned Image:")
-        self.image2_label.setMinimumWidth(120)
         self.image2_status = QLabel("not loaded")
         self.image2_status.setStyleSheet("font-weight: bold; color: #555;")
         self.image2_layout.addWidget(self.image2_label)
@@ -58,6 +56,10 @@ class CellLayerAlignmentUI(QWidget):
         self.image2_layout.addWidget(self.image_2_channel_selector)
         self.image_2_channel_selector.setVisible(False)
         self.image2_layout.setStretch(1, 1)  # Make the status label expand
+        
+        max_label_width = max(self.image1_label.sizeHint().width(), self.image2_label.sizeHint().width())
+        self.image1_label.setMinimumWidth(max_label_width)
+        self.image2_label.setMinimumWidth(max_label_width)
         
         # Register button
         self.register_button = QPushButton("Register Images")
@@ -132,6 +134,7 @@ class CellLayerAlignmentUI(QWidget):
         self.target_name = name
         self.image1_status.setText(name)
         self.image1_status.setStyleSheet("font-weight: bold; color: #007700;")  # Green to indicate it's loaded
+        self.image1_status.setWordWrap(True)
         self.image_1_channel_selector.setVisible(True)
         self.image_1_channel_selector.clear()
         self.image_1_channel_selector.addItems(obj.keys())
@@ -142,6 +145,7 @@ class CellLayerAlignmentUI(QWidget):
         self.unaligned_image = obj
         self.unaligned_name = name
         self.image2_status.setText(name)
+        self.image1_status.setWordWrap(True)
         self.image2_status.setStyleSheet("font-weight: bold; color: #007700;")  # Green to indicate it's loaded
         self.image_2_channel_selector.setVisible(True)
         self.image_2_channel_selector.addItems(obj.keys())

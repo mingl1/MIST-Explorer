@@ -65,7 +65,7 @@ class Ui_MainWindow(QMainWindow):
     def _setup_main_window(self):
         """Setup main window properties"""
         self.resize(1280, 800)
-        self.setMinimumSize(QSize(1024, 768))
+        self.setMinimumSize(1200, 800)
     
     def _add_shortcuts(self):
         """Add keyboard shortcuts"""
@@ -84,10 +84,10 @@ class Ui_MainWindow(QMainWindow):
             shortcut.activated.connect(slot)
     
     def _setup_central_widget(self):
-        self.centralwidget = QWidget(self)
-        self.central_widget_layout = QHBoxLayout(self.centralwidget)
+        widget = QWidget(self)
+        self.central_widget_layout = QHBoxLayout(widget)
         self.main_layout = QHBoxLayout()
-        self.setCentralWidget(self.centralwidget)
+        self.setCentralWidget(widget)
     
     def _setup_menubar_and_toolbar(self):
         self.menubar = MenuBarUI(self)
@@ -95,14 +95,19 @@ class Ui_MainWindow(QMainWindow):
     
     def _setup_side_panel(self):
         """Setup the collapsible side panel"""
-        # Create side panel container
-        self.sidePanel = QWidget(self.centralwidget)
+        
+        self.sidePanelContainer = QHBoxLayout()
+        self.sidePanelContainer.setContentsMargins(0, 0, 0, 0)
+        self.sidePanelContainer.setSpacing(0)
+        
+        self.sidePanel = QWidget(self.centralWidget())
         self.sidePanelLayout = QVBoxLayout(self.sidePanel)
         self.sidePanelLayout.setContentsMargins(0, 0, 0, 0)
         self.sidePanelLayout.setSpacing(0)
-        self.sidePanel.setMaximumWidth(500)
-        
-        # Create toggle button
+        self.sidePanel.setMinimumWidth(400)
+        self.sidePanel.setMinimumWidth(500)
+        self.sidePanel.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
+
         self.toggleButton = QPushButton("◀", self.sidePanel)
         self.toggleButton.setFixedSize(20, 60)
         self.toggleButton.clicked.connect(self.toggleSidePanel)
@@ -112,10 +117,7 @@ class Ui_MainWindow(QMainWindow):
             }
         """)
         
-        # Create side panel container layout
-        self.sidePanelContainer = QHBoxLayout()
-        self.sidePanelContainer.setContentsMargins(0, 0, 0, 0)
-        self.sidePanelContainer.setSpacing(0)
+        
         
         # Create stacked widget for tabs
         self.stackedWidget = QStackedWidget(self.sidePanel)
@@ -127,10 +129,9 @@ class Ui_MainWindow(QMainWindow):
     
     def _setup_canvas(self):
         """Setup the main canvas and reference view"""
-        self.canvas = ImageGraphicsViewUI(self.centralwidget, enc=self)
-        self.canvas.setMinimumSize(QSize(800, 500))
-        
-        self.small_view = ReferenceGraphicsViewUI(self.centralwidget)
+        self.canvas = ImageGraphicsViewUI(self.centralWidget(), enc=self)
+        self.canvas.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.small_view = ReferenceGraphicsViewUI(self.centralWidget())
         self.small_view.setParent(self.canvas)
         self.small_view.hide()
     
