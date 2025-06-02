@@ -661,6 +661,8 @@ class ImageGraphicsView(__BaseGraphicsView):
             import tifffile
             tifffile.imwrite(output_path, cropped_array)
             print(f"[✔] Cropped image saved to: {output_path}")
+            self.addImage(output_path)  # loads into canvas
+            self.newImageAdded.emit(output_path)  # triggers UI update
         except Exception as e:
             print(f"[✘] Failed to save TIFF: {e}")
 
