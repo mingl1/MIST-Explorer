@@ -6,14 +6,16 @@ class MenuBarUI(QWidget):
     def __init__(self, parent: QMainWindow):
 
         super().__init__()
-        self.menubar = QMenuBar(parent)
+        self.menubar = QMenuBar()
         self.menubar.setGeometry(QRect(0, 0, 1061, 22))
         self.menuFile = QMenu(self.menubar)
         self.menuOpen =QMenu(self.menuFile)
-        parent.setMenuBar(self.menubar)
         self.__createActions(parent)
         self.__addActions()
         self.__retranslateUI()
+    
+    def get_menubar(self):
+        return self.menubar
 
     def __createActions(self, parent):
         self.actionOpen = Action(parent, "actionOpen", "icons/folder.png")
