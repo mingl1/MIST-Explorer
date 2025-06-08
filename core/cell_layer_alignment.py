@@ -10,7 +10,7 @@ class CellLayerAligner(QThread):
     """Two Staged Cell Layer Alignment Using SIFT & pystackreg's Algorithm"""
     progress = pyqtSignal(int, str)
     error = pyqtSignal(str)
-    aligned_image_signal = pyqtSignal(np.ndarray, np.ndarray, np.ndarray)  
+    aligned_image_signal = pyqtSignal(dict, np.ndarray, np.ndarray)  
     
     def __init__(self, pyramid_level=6):
         super().__init__()
@@ -23,17 +23,27 @@ class CellLayerAligner(QThread):
         self.unaligned_pyramid = []
         self.original_target_shape = None
         self.sift_detector = SIFT(n_octaves=8, n_scales=3, sigma_min=1.6)
-    
-    def set_target_image(self, target_image):
+        self.replace = False
+        self.target_key = "Layer 1"
+        self.target_uuid = ""
+        self.unaligned_key = "Layer 1"
+        self.unaligned_uuid = ""
+    def set_target_image(self, target_image, layer_name, uuid):
         """Set target image and clear pyramid cache"""
         self.target_pyramid = []
         self.target_image = target_image
         self.original_target_shape = target_image.shape
+        self.target_key = layer_name
+        self.target_uuid = uuid
     
-    def set_unaligned_image(self, unaligned_image):
+    def set_unaligned_image(self, unaligned_image, layer_name, uuid):
         """Set unaligned image and clear pyramid cache"""
         self.unaligned_pyramid = []
         self.unaligned_image = unaligned_image
+        self.unaligned_key = layer_name
+        self.unaligned_uuid = uuid
+    def set_replace(self, val: bool):
+        self.replace = val
     
     def run(self):
         """Main processing function that runs in the thread"""
@@ -92,7 +102,7 @@ class CellLayerAligner(QThread):
             
             # Convert result back to original dtype
             result = self._convert_to_original_dtype(final_aligned_image, self.unaligned_image.dtype)
-            
+            result = {"uuid": self.target_uuid,"layer":self.target_key,"replace":self.replace,"data":result}
             self.progress.emit(100, "Two-stage alignment complete")
             self.aligned_image_signal.emit(result, target_preview, aligned_preview)
             
@@ -255,3 +265,5 @@ class CellLayerAligner(QThread):
     def _fatal_error_message(self, msg):
         self.error.emit(msg)
         self.progress.emit(100,"Retry Maybe")
+        
+        

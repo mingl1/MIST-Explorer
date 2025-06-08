@@ -7,8 +7,8 @@ from PyQt6.QtCore import pyqtSignal
 
 class Manager(QWidget):
     # Add signals for tissue image selection
-    tissue_target_selected = pyqtSignal(dict, str)
-    tissue_unaligned_selected = pyqtSignal(object, str)
+    tissue_target_selected = pyqtSignal(str)
+    tissue_unaligned_selected = pyqtSignal(str)
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -47,17 +47,20 @@ class Manager(QWidget):
     
     def add_to_storage(self, uuid, obj):
         self.storage.add_data(uuid, obj)
-        print(uuid)
-    
+        
+    def update_item_layer(self, uuid, new_data, layer_name):
+        self.storage.update_data(uuid, new_data, layer_name)
+        
+    # !TODO: move elsewhere
     def set_tissue_target_image(self, uuid):
         """Handle setting an image as tissue target image"""
-        item = self.storage.get_data(uuid)
-        self.tissue_target_selected.emit(item["data"], item['name'])
+        
+        self.tissue_target_selected.emit(uuid)
         
     def set_tissue_unaligned_image(self, uuid):
         """Handle setting an image as tissue unaligned image"""
-        item = self.storage.get_data(uuid)
-        self.tissue_unaligned_selected.emit(item["data"], item['name'])
+        # item = self.storage.get_data(uuid)
+        self.tissue_unaligned_selected.emit(uuid)
 
 class ListWidget(QListWidget):
     def __init__(self, parent=None):
