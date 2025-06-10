@@ -146,17 +146,11 @@ class SignalConnectionManager:
         self.c.view.cell_layer_alignment.alignmentCompleteSignal.connect(
             self.c.handle_new_image
         )
-        self.c.view.cell_layer_alignment.replaceLayerSignal.connect(
-            self.c.view.replace_layer_in_canvas
-        )
         self.c.view.cell_layer_alignment.loadOnCanvasSignal.connect(
             self.c.model_canvas.replace_canvas_auto
         )
         self.c.view.cell_layer_alignment.aligner.progress.connect(
             self.c.view.update_progress_bar
-        )
-        self.c.view.cell_layer_alignment.replace_layer_check_box.stateChanged.connect(
-            self.c.view.cell_layer_alignment.replace_layer
         )
 
     def _setup_menubar_connections(self):

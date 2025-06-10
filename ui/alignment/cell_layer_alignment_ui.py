@@ -19,7 +19,6 @@ from core.canvas import ImageStorage, ImageWrapper
 class CellLayerAlignmentUI(QWidget):
     errorSignal = pyqtSignal(str)
     alignmentCompleteSignal = pyqtSignal(object, str)
-    replaceLayerSignal = pyqtSignal(object)
     loadOnCanvasSignal = pyqtSignal(dict)
     channelChanged = pyqtSignal(int)
 
@@ -86,8 +85,6 @@ class CellLayerAlignmentUI(QWidget):
         self.image1_label.setMinimumWidth(max_label_width)
         self.image2_label.setMinimumWidth(max_label_width)
 
-        self.replace_layer_check_box = QCheckBox(text="Replace Target Channel")
-
         # Register button
         self.register_button = QPushButton("Register Images")
         self.register_button.setEnabled(
@@ -119,7 +116,6 @@ class CellLayerAlignmentUI(QWidget):
         self.main_layout.addLayout(self.image1_layout)
         self.main_layout.addLayout(self.image2_layout)
         self.main_layout.addSpacing(5)
-        self.main_layout.addWidget(self.replace_layer_check_box)
         self.main_layout.addSpacing(10)
         self.main_layout.addWidget(self.register_button)
 
@@ -199,9 +195,6 @@ class CellLayerAlignmentUI(QWidget):
         self.image_2_channel_selector.addItems(obj.keys())
 
         self._check_can_register()
-
-    def replace_layer(self):
-        self.aligner.set_replace(self.replace_layer_check_box.isChecked())
 
     def _check_can_register(self):
         """Check if both images are loaded and enable/disable register button"""

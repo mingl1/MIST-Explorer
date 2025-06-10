@@ -132,12 +132,12 @@ class AlignmentPreviewDialog(QDialog):
             overlay[:, :, 1] = aligned_gray  # Green channel = aligned
 
             # Save to debug file
-            try:
-                print("Saving debug file...")
-                cv2.imwrite("micro.png", overlay)
-                print("Saved overlay to micro.png")
-            except Exception as save_error:
-                print(f"Warning: Could not save debug file: {save_error}")
+            # try:
+            #     print("Saving debug file...")
+            #     cv2.imwrite("micro.png", overlay)
+            #     print("Saved overlay to micro.png")
+            # except Exception as save_error:
+            #     print(f"Warning: Could not save debug file: {save_error}")
 
             # Convert to QImage
             print("Converting to QImage...")
