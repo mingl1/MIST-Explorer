@@ -782,6 +782,9 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.select = False
         self.unsetCursor()
 
+        QApplication.restoreOverrideCursor()
+
+
         if status:
             if not self.resizable_crop_rect:
                 view_center = self.viewport().rect().center()
