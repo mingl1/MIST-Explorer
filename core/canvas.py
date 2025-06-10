@@ -370,7 +370,7 @@ class __BaseGraphicsView(QWidget):
 
         # Update manager without filename
         print("Emitting to update manager")
-        self.update_manager.emit(self.np_channels, "replaced_multichannel")
+        # self.update_manager.emit(self.np_channels, "replaced_multichannel")
         self.image_count += 1
         print("Canvas replaced with multichannel data")
 
