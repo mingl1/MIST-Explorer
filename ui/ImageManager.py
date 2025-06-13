@@ -13,14 +13,18 @@ class Manager(QWidget):
     tissue_target_selected = pyqtSignal(str)
     tissue_unaligned_selected = pyqtSignal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, model_canvas=None):
         super().__init__(parent)
 
         self.setWindowTitle("Image List")
         self.__layout = QVBoxLayout(self)
         self.list_widget = ListWidget(self)
         self.storage = ImageStorage()
+        self.model_canvas = model_canvas
         self.__layout.addWidget(self.list_widget)
+
+    def set_model_canvas(self, model):
+        self.model_canvas = model
 
     def on_text_edited(self):
         sender = self.sender()  # This is the QLineEdit that was edited
@@ -80,6 +84,17 @@ class ListWidget(QListWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setDragDropMode(QListWidget.DragDropMode.InternalMove)
+        self.itemDoubleClicked.connect(self.on_item_selected)
+
+    def on_item_selected(self, item):
+        # Action on select
+        _, uuid = self._name_and_uuid_from_item(item)
+        data = self.parent().storage.get_data(uuid)["data"]
+        print(uuid)
+        # for i in data.keys():
+        #     data[i] = data[i].data
+        self.parent().model_canvas.add_or_replace_image(data)
+        # self.show_message(f"Selected item: {name}")
 
     def contextMenuEvent(self, event):
         menu = QMenu(self)
@@ -135,7 +150,7 @@ class ListWidget(QListWidget):
         row = self.row(item)
         self.takeItem(row)
 
-    def save_as(self, item, type):
+    def _name_and_uuid_from_item(self, item):
         item_widget = self.itemWidget(item)
         layout = item_widget.layout()
         # The text label is the second widget in the layout
@@ -143,6 +158,10 @@ class ListWidget(QListWidget):
         name = text_label.text()
         name = os.path.splitext(name)[0]
         uuid = item.data(Qt.ItemDataRole.UserRole)
+        return name, uuid
+
+    def save_as(self, item, type):
+        name, uuid = self._name_and_uuid_from_item(item)
         channel_dict = self.parent().storage.get_data(uuid)["data"]
         print(channel_dict)
         if type == "tif":
@@ -163,26 +182,12 @@ class ListWidget(QListWidget):
 
     def set_as_tissue_target(self, item: QListWidgetItem):
         """Set the selected image as the tissue target image for alignment"""
-        # Get the item widget and access the text label (QLineEdit)
-        item_widget = self.itemWidget(item)
-        layout = item_widget.layout()
-        # The text label is the second widget in the layout
-        text_label = layout.itemAt(1).widget()
-        name = text_label.text()
-
-        uuid = item.data(Qt.ItemDataRole.UserRole)
+        name, uuid = self._name_and_uuid_from_item(item)
         # Emit a signal with the image data and name
         self.parent().set_tissue_target_image(uuid)
 
     def set_as_tissue_unaligned(self, item: QListWidgetItem):
         """Set the selected image as the tissue unaligned image for alignment"""
-        # Get the item widget and access the text label (QLineEdit)
-        item_widget = self.itemWidget(item)
-        layout = item_widget.layout()
-        # The text label is the second widget in the layout
-        text_label = layout.itemAt(1).widget()
-        name = text_label.text()
-
-        uuid = item.data(Qt.ItemDataRole.UserRole)
+        name, uuid = self._name_and_uuid_from_item(item)
         # Emit a signal with the image data and name
         self.parent().set_tissue_unaligned_image(uuid)

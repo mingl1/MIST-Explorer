@@ -10,9 +10,19 @@ import uuid
 
 
 class Controller:
+
+    _instance = None
     controllerSignal = pyqtSignal(object)
 
+    def __new__(cls, app):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
     def __init__(self, app: Ui_MainWindow):
+        if hasattr(self, "_initialized") and self._initialized:
+            return
+        self._initialized = True
         self.image_count = 0
         self.model_canvas = core.canvas.ImageGraphicsView()
         self.model_stardist = core.stardist.StarDist()
@@ -21,24 +31,22 @@ class Controller:
         self.reference_view = core.canvas.ReferenceGraphicsView()
         self.view = app
         self.openFilesDialog = None
-
+        self.view.images_tab.set_model_canvas(self.model_canvas)
         self.signal_manager = SignalConnectionManager(self)
         self.signal_manager.setup_all_connections()
 
         # Handle initial arguments
         initial_args = vars(app.args)
         if initial_args["image"] is not None:
-            self.model_canvas.addImage(initial_args["image"])
+            self.model_canvas.add_or_replace_image(initial_args["image"])
         if initial_args["reference"] is not None:
-            self.reference_view.addImage(initial_args["reference"])
+            self.reference_view.add_or_replace_image(initial_args["reference"])
 
     def handleError(self, error_message):
         QMessageBox.critical(self.view, "Error", error_message)
 
     def save_pixmap_as_image(self, pixmap: QPixmap, filename: str):
-
         qimage = pixmap.toImage()
-
         # Convert QImage to numpy array
         width = qimage.width()
         height = qimage.height()
@@ -95,7 +103,7 @@ class Controller:
             None, "Open Image File", "", "Images (*.png *.jpg *.tif);;All Files (*)"
         )
         if file_name:
-            viewer.addImage(file_name)
+            viewer.add_or_replace_image(file_name)
 
     def on_action_reference_triggered(self):
         self.openFileDialog(self.reference_view)
@@ -178,8 +186,12 @@ class SignalConnectionManager:
 
     def _setup_image_handling_connections(self):
         """Image loading and display connections"""
-        self.c.view.canvas.imageDropped.connect(self.c.model_canvas.addImage)
-        self.c.view.small_view.imageDropped.connect(self.c.reference_view.addImage)
+        self.c.view.canvas.imageDropped.connect(
+            self.c.model_canvas.add_or_replace_image
+        )
+        self.c.view.small_view.imageDropped.connect(
+            self.c.reference_view.add_or_replace_image
+        )
         self.c.reference_view.update_reference.connect(self.c.view.small_view.display)
         self.c.model_canvas.newImageAdded.connect(self.c.view.canvas.addNewImage)
         self.c.view.view_tab.changePix.connect(self.c.view.canvas.addNewImage)
