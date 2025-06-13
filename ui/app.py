@@ -107,8 +107,8 @@ class Ui_MainWindow(QMainWindow):
 
         self.sidePanel = QWidget(self.centralWidget())
         self.sidePanelLayout = QVBoxLayout(self.sidePanel)
-        self.sidePanelLayout.setContentsMargins(0, 0, 0, 0)
-        self.sidePanelLayout.setSpacing(0)
+        self.sidePanelLayout.setContentsMargins(10, 5, 10, 5)
+        self.sidePanelLayout.setSpacing(10)
         self.sidePanel.setMinimumWidth(400)
         self.sidePanel.setMinimumWidth(500)
         self.sidePanel.setSizePolicy(

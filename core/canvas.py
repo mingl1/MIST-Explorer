@@ -30,6 +30,7 @@ from pystackreg.util import to_uint16
 from typing import Dict, List, Optional
 import weakref
 import cv2
+import threading
 
 
 class MemoryEfficientImageCache:
@@ -119,27 +120,46 @@ class MemoryEfficientImageCache:
 
 class ImageStorage:
     _instance = None
+    _lock = threading.Lock()  # Class-level lock for singleton init
 
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance.image_list = {}
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._init_instance()
         return cls._instance
 
+    def _init_instance(self):
+        self.image_list = {}
+        self._data_lock = threading.Lock()  # Instance-level lock for image_list
+
     def add_data(self, image_id, data):
-        self._instance.image_list[image_id] = data
+        with self._data_lock:
+            self.image_list[image_id] = data
 
     def get_data(self, image_id):
-        return self._instance.image_list[image_id]
+        with self._data_lock:
+            return self.image_list.get(image_id)
+
+    def remove_data(self, image_id):
+        with self._data_lock:
+            if image_id in self.image_list:
+                del self.image_list[image_id]
+                gc.collect()
+
+    def update_data(self, image_id, new_img, channel="Channel 1"):
+        with self._data_lock:
+            if image_id in self.image_list:
+                self.image_list[image_id][channel] = new_img
 
     def clear_data(self):
-        self._instance.image_list.clear()
+        with self._data_lock:
+            self.image_list = {}
+            gc.collect()
 
-    def update_data(self, image_id, new_img, layer=None):
-        if layer:
-            self._instance.image_list[image_id][layer] = new_img
-        else:
-            self._instance.image_list[image_id] = new_img
+    def update_name(self, uuid, new_name):
+        self.update_data(uuid, new_name, "name")
 
 
 class ImageWrapper:
@@ -153,12 +173,16 @@ class ImageWrapper:
         self.contrast_min = 0
         self.contrast_max = 255
 
+    def __copy__(self):
+        arr = self.data.copy()
+        return ImageWrapper(data=arr, name=self.name, cmap=self.cmap)
+
+    def copy(self):
+        return self.__copy__()
+
 
 class __BaseGraphicsView(QWidget):
-    """base class for graphics view with modularized image processing"""
-
-    multi_layer = pyqtSignal(dict, bool)
-    single_layer = pyqtSignal(np.ndarray)
+    image_signal = pyqtSignal(dict, bool)
     updateProgress = pyqtSignal(int, str)
     errorSignal = pyqtSignal(str)
     fill_metadata = pyqtSignal(dict)
@@ -178,12 +202,19 @@ class __BaseGraphicsView(QWidget):
         self.np_channels = {}
         self.reset_np_channels = {}
         self.currentChannelNum = 0
-        self.is_layered = False
         self.image_cache = {}
         self.lut_cache = {}
         self.image_count = 0
         self.storage = ImageStorage()
         self.image_wrapper = None  # Added for single image compatibility
+        self.image_uuid = None
+
+    def set_uuid(self, uuid):
+        self.uuid = uuid
+
+    @property
+    def is_layered(self):
+        return len(self.np_channels.items()) > 1
 
     def dragEnterEvent(self, event: QDragEnterEvent):
         if event.mimeData().hasUrls():
@@ -215,16 +246,6 @@ class __BaseGraphicsView(QWidget):
                     print(f"Error reading page {i}: {e}")
                     continue
 
-    def build_pyramid(self, image, levels=4):
-        """
-        Generates an image pyramid with progressively lower resolutions.
-        """
-        pyramid = [image]
-        for _ in range(1, levels):
-            image = cv2.pyrDown(image)
-            pyramid.append(image)
-        return pyramid
-
     def subsample_for_display(
         self, image: np.ndarray, max_dimension: int = 1024
     ) -> np.ndarray:
@@ -247,7 +268,7 @@ class __BaseGraphicsView(QWidget):
         self,
         file_name: str,
         adjust_contrast=False,
-        subsample_for_emit=True,
+        subsample_for_emit=False,
         max_display_size=1024,
     ) -> np.ndarray:
         if file_name.endswith((".tiff", ".tif")):
@@ -304,7 +325,6 @@ class __BaseGraphicsView(QWidget):
             self._update_progress(channel_num)
             gc.collect()
 
-        self.is_layered = True
         self._emit_multichannel_data(emit_data, subsample_for_emit)
         self._finalize_processing(file_name)
 
@@ -316,105 +336,98 @@ class __BaseGraphicsView(QWidget):
         """Process single channel images."""
         self.np_channels.clear()
         self.reset_np_channels.clear()
-        self.is_layered = False
 
         from PIL import Image
 
         print("Processing single image")
-
+        emit_data = {}
         channel_one_image = np.array(Image.open(file_name))
         channel_name = "Channel 1"
 
         # Convert to uint8 for consistency
-        channel_one_image = to_uint8(channel_one_image)
-
-        # Store full resolution
-        self.image_wrapper = ImageWrapper(channel_one_image)
-        self.np_channels[channel_name] = self.image_wrapper
-
-        # Handle display emission
-        display_image = self._handle_single_image_display(
+        self._store_channel_data(channel_name, channel_one_image)
+        display_image = self._prepare_display_image(
             channel_one_image, subsample_for_emit, max_display_size
         )
-
+        emit_data[channel_name] = display_image
+        self._emit_multichannel_data(emit_data, subsample_for_emit)
         self._finalize_processing(file_name)
         return display_image
 
-    def replace_canvas_multichannel(
-        self,
-        channels_data: Dict[str, np.ndarray],
-        subsample_for_emit: bool = True,
-        max_display_size: int = 1024,
-    ) -> None:
-        """Replace canvas with multichannel image data."""
-        self.np_channels.clear()
-        self.reset_np_channels.clear()
-        self.is_layered = True
-
-        emit_data = {}
-
-        for channel_name, image_data in channels_data.items():
-            # Store full resolution version
-            self._store_channel_data(channel_name, image_data)
-
-            # Prepare display version
-            display_image = self._prepare_display_image(
-                image_data, subsample_for_emit, max_display_size
-            )
-            emit_data[channel_name] = display_image
-
-            print(f"Replaced {channel_name}, shape: {image_data.shape}")
-
-        self._emit_multichannel_data(emit_data, subsample_for_emit)
-        self._clear_caches()
-
-        # Update manager without filename
-        print("Emitting to update manager")
-        # self.update_manager.emit(self.np_channels, "replaced_multichannel")
-        self.image_count += 1
-        print("Canvas replaced with multichannel data")
-
-    def replace_canvas_single(
-        self,
-        image_data: Union[np.ndarray, Dict[str, ImageWrapper]],
-        subsample_for_emit: bool = True,
-        max_display_size: int = 1024,
-    ) -> None:
-        """Replace canvas with single channel image data."""
-        self.np_channels.clear()
-        self.reset_np_channels.clear()
-        self.is_layered = False
-        if isinstance(image_data, dict):
-            image_data = image_data["Channel 1"].data
-        channel_name = "Channel 1"
-
-        # Convert to uint8 for consistency
-        img_data = to_uint8(image_data)
-
-        # Store full resolution
-        self.image_wrapper = ImageWrapper(img_data)
-        self.np_channels[channel_name] = self.image_wrapper
-
-        # Handle display emission
-        self._handle_single_image_display(
-            img_data, subsample_for_emit, max_display_size
-        )
-
-        self._clear_caches()
-
-        # Update manager without filename
-        print("Emitting to update manager")
-        # self.update_manager.emit(self.np_channels, "replaced_single")
-        self.image_count += 1
-        print(f"Canvas replaced with single image, shape: {image_data.shape}")
-
-    def replace_canvas_auto(
+    def replace_canvas(
         self,
         data: Union[np.ndarray, Dict[str, ImageWrapper]],
         subsample_for_emit: bool = True,
         max_display_size: int = 1024,
     ) -> None:
         """Automatically determine whether to use single or multichannel replacement."""
+
+        def replace_canvas_multichannel(
+            self,
+            channels_data: Dict[str, np.ndarray],
+            subsample_for_emit: bool = True,
+            max_display_size: int = 1024,
+        ) -> None:
+            """Replace canvas with multichannel image data."""
+            self.np_channels.clear()
+            self.reset_np_channels.clear()
+
+            emit_data = {}
+
+            for channel_name, image_data in channels_data.items():
+                # Store full resolution version
+                self._store_channel_data(channel_name, image_data)
+
+                # Prepare display version
+                display_image = self._prepare_display_image(
+                    image_data, subsample_for_emit, max_display_size
+                )
+                emit_data[channel_name] = display_image
+
+                print(f"Replaced {channel_name}, shape: {image_data.shape}")
+
+            self._emit_multichannel_data(emit_data, subsample_for_emit)
+            self._clear_caches()
+
+            # Update manager without filename
+            print("Emitting to update manager")
+            # self.update_manager.emit(self.np_channels, "replaced_multichannel")
+            self.image_count += 1
+            print("Canvas replaced with multichannel data")
+
+        def replace_canvas_single(
+            self,
+            image_data: Union[np.ndarray, Dict[str, ImageWrapper]],
+            subsample_for_emit: bool = True,
+            max_display_size: int = 1024,
+        ) -> None:
+            """Replace canvas with single channel image data."""
+            self.np_channels.clear()
+            self.reset_np_channels.clear()
+            if isinstance(image_data, dict):
+                image_data = image_data["Channel 1"].data
+            channel_name = "Channel 1"
+
+            # Convert to uint8 for consistency
+            img_data = to_uint8(image_data)
+
+            # Store full resolution
+            self.image_wrapper = ImageWrapper(img_data)
+            self.np_channels[channel_name] = self.image_wrapper
+
+            # Handle display emission
+            self._handle_single_image_display(
+                img_data, subsample_for_emit, max_display_size
+            )
+
+            self._clear_caches()
+
+            # Update manager without filename
+            print("Emitting to update manager")
+            # self.update_manager.emit(self.np_channels, "replaced_single")
+            self.image_count += 1
+            print(f"Canvas replaced with single image, shape: {image_data.shape}")
+
         if isinstance(data, dict):
             if not data:
                 raise ValueError("Data dict must be non empty")
@@ -434,11 +447,11 @@ class __BaseGraphicsView(QWidget):
                     )
                 processed_data[key] = new_value
             # single channels also use this
-            self.replace_canvas_multichannel(
-                processed_data, subsample_for_emit, max_display_size
+            replace_canvas_multichannel(
+                self, processed_data, subsample_for_emit, max_display_size
             )
         elif isinstance(data, np.ndarray):
-            self.replace_canvas_single(data, subsample_for_emit, max_display_size)
+            replace_canvas_single(self, data, subsample_for_emit, max_display_size)
         else:
             raise ValueError(
                 "Data must be either numpy array or dictionary of numpy arrays"
@@ -457,13 +470,21 @@ class __BaseGraphicsView(QWidget):
         """Store channel data in full resolution containers."""
         self.np_channels[channel_name] = ImageWrapper(image_data)
         self.reset_np_channels[channel_name] = ImageWrapper(image_data.copy())
+        self.image_wrapper = ImageWrapper(image_data)
 
     def _prepare_display_image(
-        self, image_data: np.ndarray, subsample_for_emit: bool, max_display_size: int
+        self,
+        image_data: np.ndarray,
+        subsample_for_emit: bool = False,
+        max_display_size: int = 0,
     ) -> np.ndarray:
         """Prepare image for display (subsample if needed)."""
 
         if subsample_for_emit:
+            if not max_display_size:
+                raise ValueError(
+                    "If subsample_for_emit, max_display_size must be specified."
+                )
             subsampled = self.subsample_for_display(image_data, max_display_size)
             print(f"  Original: {image_data.shape}, Subsampled: {subsampled.shape}")
             image_data = subsampled
@@ -476,13 +497,13 @@ class __BaseGraphicsView(QWidget):
         """Handle single image display emission."""
         if subsample_for_emit and image_data.size > max_display_size * max_display_size:
             subsampled = self.subsample_for_display(image_data, max_display_size)
-            self.multi_layer.emit(subsampled)
+            self.image_signal.emit(subsampled, True)
             print(
                 f"Single image subsampled from {image_data.shape} to {subsampled.shape}"
             )
             return subsampled
         else:
-            self.multi_layer.emit(image_data)
+            self.image_signal.emit(image_data, True)
             return image_data
 
     def _emit_multichannel_data(
@@ -495,10 +516,10 @@ class __BaseGraphicsView(QWidget):
                 display_wrappers = {
                     name: ImageWrapper(data) for name, data in emit_data.items()
                 }
-                self.multi_layer.emit(display_wrappers, True)
+                self.image_signal.emit(display_wrappers, True)
             else:
                 # Emit full resolution
-                self.multi_layer.emit(self.np_channels, True)
+                self.image_signal.emit(self.np_channels, True)
 
     def _log_memory_usage(
         self,
@@ -551,7 +572,6 @@ class ReferenceGraphicsView(__BaseGraphicsView):
     # referenceLoaded = pyqtSignal(dict)
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.is_layered = False
 
     def dropEvent(self, event: QDropEvent):
         if event.mimeData().hasUrls():
@@ -570,11 +590,6 @@ class ReferenceGraphicsView(__BaseGraphicsView):
         self.reference_worker.finished.connect(self.reference_worker.deleteLater)
 
     def filename_to_image_complete(self, image):
-        if not self.np_channels.get("Channel 1") == None:
-            self.is_layered = True
-
-        else:
-            self.is_layered = False
 
         qimage = numpy_to_qimage(image)
         self.pixmap = QPixmap(qimage)
@@ -590,14 +605,10 @@ class ImageGraphicsView(__BaseGraphicsView):
     saveImage = pyqtSignal(QGraphicsPixmapItem)
     changeSlider = pyqtSignal(tuple)
     update_cmap = pyqtSignal(str)
+    cropSignal = pyqtSignal(bool)
 
     def __init__(self, parent=None):
-
         super().__init__(parent)
-        self.reset_pixmap = None
-        self.reset_pixmapItem = None
-        self.pixmap = None
-        self.pixmapItem = None
         self.begin_crop = False
         self.crop_cursor = QCursor(Qt.CursorShape.CrossCursor)
         self.stardist_image_count = 0
@@ -813,7 +824,6 @@ class ImageGraphicsView(__BaseGraphicsView):
 
     def loadStardistLabels(self, stardist: ImageWrapper):
 
-        self.is_layered = False
         self.stardist_labels = stardist.data
         cmap = self.np_channels[f"Channel {self.currentChannelNum+1}"].cmap
         self.image_wrapper = ImageWrapper(
@@ -826,20 +836,34 @@ class ImageGraphicsView(__BaseGraphicsView):
         )
         self.stardist_image_count += 1
 
-    def addImage(self, file: str):
+    def addImage(self, file: str | ImageWrapper):
         """add a new image"""
         self.np_channels.clear()
         if hasattr(self, "memory_cache"):
             self.memory_cache.clear_all()
         self.scene.resetTransform()
-
         if isinstance(file, str):
-
             self.image_worker = Worker(self.filename_to_image, file)
-            self.image_worker.signal.connect(self.onFileNameToPixmapCompleted)
-            self.image_worker.error.connect(self.onError)
-            self.image_worker.finished.connect(self.image_worker.quit)
-            self.image_worker.start()
+        elif isinstance(file, ImageWrapper):
+            self.image_worker = Worker(self.array_to_image, file)
+
+        self.image_worker.signal.connect(self.onFileNameToPixmapCompleted)
+        self.image_worker.error.connect(self.onError)
+        self.image_worker.finished.connect(self.image_worker.quit)
+        self.image_worker.start()
+
+    def array_to_image(self, img: ImageWrapper):
+        channel_name = "Channel 1"
+        subsample_for_emit = False
+        emit_data = {}
+        self._store_channel_data(channel_name, img.data)
+        self.np_channels[channel_name] = img
+        self.reset_np_channels[channel_name] = img.copy()
+        self.image_wrapper = img
+        display_image = self._prepare_display_image(img.data)
+        emit_data[channel_name] = display_image
+        self._emit_multichannel_data(emit_data, subsample_for_emit)
+        self._finalize_processing(img.name)
 
     @pyqtSlot(object)
     def onFileNameToPixmapCompleted(self, image):
@@ -879,7 +903,7 @@ class ImageGraphicsView(__BaseGraphicsView):
         if self.pixmapItem:
 
             self.np_channels = copy.deepcopy(self.reset_np_channels)
-            self.multi_layer.emit(self.np_channels, False)
+            self.image_signal.emit(self.np_channels, False)
 
             channel_num = f"Channel {self.currentChannelNum + 1}"
             self.image_wrapper = self.np_channels.get(channel_num)
@@ -968,7 +992,7 @@ class ImageGraphicsView(__BaseGraphicsView):
 
             self.image_cache.clear()
             self.update_image(cmap_text=channel_cmap)  # this also updates the contrast
-            self.multi_layer.emit(self.np_channels, False)
+            self.image_signal.emit(self.np_channels, False)
 
         else:
             # channel_image = scale_adjust(result)
@@ -983,7 +1007,7 @@ class ImageGraphicsView(__BaseGraphicsView):
         self, channels: dict, clear: bool
     ) -> None:  # cropsignal will update this
         self.np_channels = channels  # replace channels with new, cropped/rotated, etc
-        self.multi_layer.emit(self.np_channels, clear)
+        self.image_signal.emit(self.np_channels, clear)
 
     def updateCurrentImage(self, data_dict):
         self.image = data_dict[f"Channel {self.currentChannelNum + 1}"].data
@@ -1072,18 +1096,20 @@ class ImageGraphicsView(__BaseGraphicsView):
             )  # Replace with the corrected version
             cmap = self.np_channels[self._blur_layer].cmap
             self.update_image(cmap)
-            self.multi_layer.emit(self.np_channels, False)
+            self.image_signal.emit(self.np_channels, False)
             self.updateProgress.emit(100, f"Replaced {self._blur_layer}")
 
+    # Doesn't work if subsampling display, need to
+    # store zoom info in ImageWrapper and adjust bounds accordingly
     def crop(self, image_rect):
-        """start crop thread"""
+        """Safely crop current image using image_rect and save to disk"""
 
-        print("starting crop")
-        left = image_rect.x()
-        top = image_rect.y()
-        right = image_rect.right()
-        bottom = image_rect.bottom()
+        print("Starting crop...")
 
+        left = max(0, image_rect.left())
+        top = max(0, image_rect.top())
+        right = min(self.image_wrapper.data.shape[1], image_rect.right())
+        bottom = min(self.image_wrapper.data.shape[0], image_rect.bottom())
         cropped_array = self.image_wrapper.data[
             top : bottom + 1, left : right + 1
         ]  # this is the current image. if layered then its the current channel
@@ -1103,21 +1129,18 @@ class ImageGraphicsView(__BaseGraphicsView):
         )
         self.crop_dialog.exec()
 
-        if not self.is_layered:
-            self.image_wrapper.data = cropped_array_copy
-            self.cropSignal.emit(False)  # set crop status
-            return  # return if there are no other layers or is not a tiff
-
+        name = f"cropped_{self.image_wrapper.name}.tif"
+        image_wrapper = ImageWrapper(cropped_array_copy, name)
         if self.crop_dialog.confirm_crop:
-            self.crop_worker = Worker(self.cropImageTask, image_rect)
-            self.crop_worker.signal.connect(self.onCropCompleted)
+            self.crop_worker = Worker(self.addImage, image_wrapper)
+            # self.crop_worker.signal.connect(self.onCropCompleted)
             self.crop_worker.finished.connect(self.crop_worker.quit)
             self.crop_worker.finished.connect(self.crop_worker.deleteLater)
             self.crop_worker.start()
         else:
             self.cropSignal.emit(False)
-
-    cropSignal = pyqtSignal(bool)
+        if right <= left or bottom <= top:
+            print("❌ Invalid crop region: empty or out-of-bounds")
 
     @pyqtSlot(dict)
     def onCropCompleted(self, cropped_wrappers: dict):

@@ -131,8 +131,7 @@ class SignalConnectionManager:
         self._setup_stardist_connections()
         self._setup_registration_connections()
         self._setup_cell_intensity_connections()
-        self._setup_multilayer_broadcast_connections()
-        self._setup_single_layer_connections()
+        self._setup_image_broadcast_connections()
         self._setup_misc_connections()
 
     def _setup_alignment_connections(self):
@@ -147,7 +146,7 @@ class SignalConnectionManager:
             self.c.handle_new_image
         )
         self.c.view.cell_layer_alignment.loadOnCanvasSignal.connect(
-            self.c.model_canvas.replace_canvas_auto
+            self.c.model_canvas.replace_canvas
         )
         self.c.view.cell_layer_alignment.aligner.progress.connect(
             self.c.view.update_progress_bar
@@ -375,29 +374,21 @@ class SignalConnectionManager:
             self.c.model_cellIntensity.cancel
         )
 
-    def _setup_multilayer_broadcast_connections(self):
-        """Multi-layer signal broadcast to multiple targets"""
-        # Model canvas multi-layer updates
-        multi_layer_signal = self.c.model_canvas.multi_layer
-        multi_layer_signal.connect(self.c.view.toolBarUI.updateChannelSelector)
-        multi_layer_signal.connect(self.c.view.stardist_groupbox.updateChannelSelector)
-        multi_layer_signal.connect(self.c.view.register_groupbox.updateChannelSelector)
-        multi_layer_signal.connect(self.c.view.canvas.loadChannels)
-        multi_layer_signal.connect(self.c.model_stardist.updateChannels)
-        multi_layer_signal.connect(self.c.view.gaussian_blur.updateChannelSelector)
-        multi_layer_signal.connect(self.c.model_register.update_protein_channels)
+    def _setup_image_broadcast_connections(self):
+        """Image signal broadcast to multiple targets"""
 
-        # Reference view multi-layer updates
-        ref_multi_layer = self.c.reference_view.multi_layer
-        ref_multi_layer.connect(self.c.model_register.update_reference_channels)
-        ref_multi_layer.connect(self.c.view.small_view.load_channels)
+        image_signal = self.c.model_canvas.image_signal
+        image_signal.connect(self.c.view.toolBarUI.updateChannelSelector)
+        image_signal.connect(self.c.view.stardist_groupbox.updateChannelSelector)
+        image_signal.connect(self.c.view.register_groupbox.updateChannelSelector)
+        image_signal.connect(self.c.view.canvas.loadChannels)
+        image_signal.connect(self.c.model_stardist.updateChannels)
+        image_signal.connect(self.c.view.gaussian_blur.updateChannelSelector)
+        image_signal.connect(self.c.model_register.update_protein_channels)
 
-    def _setup_single_layer_connections(self):
-        """Single layer signal connections"""
-        single_layer_signal = self.c.model_canvas.single_layer
-        single_layer_signal.connect(self.c.view.toolBarUI.clearChannelSelector)
-        single_layer_signal.connect(self.c.view.stardist_groupbox.clearChannelSelector)
-        single_layer_signal.connect(self.c.model_stardist.setImageToProcess)
+        ref_image = self.c.reference_view.image_signal
+        ref_image.connect(self.c.model_register.update_reference_channels)
+        ref_image.connect(self.c.view.small_view.load_channels)
 
     def _setup_misc_connections(self):
         """Miscellaneous connections"""

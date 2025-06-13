@@ -332,6 +332,9 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.current_polygon = None
         self.rubber_band_positions = []
 
+        # NEW: for resizable crop
+        self.resizable_crop_rect = None
+
         # Setup interaction
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMouseTracking(True)
@@ -624,24 +627,49 @@ class ImageGraphicsViewUI(QGraphicsView):
             r.mousePressEvent(event)
 
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key.Key_Return and self.current_polygon:
-            # Complete the polygon
-            if self.current_polygon.complete():
-                self.select = False
-                self.polygons.append(self.current_polygon)
+        if event.key() == Qt.Key.Key_Return and self.resizable_crop_rect:
+            rect = self.resizable_crop_rect.rect()
+            top_left = self.resizable_crop_rect.mapToScene(rect.topLeft())
+            bottom_right = self.resizable_crop_rect.mapToScene(rect.bottomRight())
 
-                # Get polygon coordinates for analysis if needed
-                if hasattr(self, "enc") and hasattr(self.enc, "analysis_tab"):
-                    self.enc.analysis_tab.analyze_region(
-                        self.current_polygon, ("poly", self.current_polygon.im_points)
-                    )
+            # Map to image coordinates
+            image_top_left = self.pixmapItem.mapFromScene(top_left)
+            image_bottom_right = self.pixmapItem.mapFromScene(bottom_right)
 
-                self.current_polygon = None
+            # Clamp to image bounds
+            image_rect = QRect(
+                max(0, int(image_top_left.x())),
+                max(0, int(image_top_left.y())),
+                int(image_bottom_right.x() - image_top_left.x()),
+                int(image_bottom_right.y() - image_top_left.y()),
+            ).normalized()
 
-        # Handle escape key to cancel polygon drawing
-        elif event.key() == Qt.Key.Key_Escape and self.current_polygon:
-            self.scene().removeItem(self.current_polygon)
-            self.current_polygon = None
+            # Make sure rect is within image bounds
+            image = self.pixmapItem.pixmap().toImage()
+            image_width, image_height = image.width(), image.height()
+            image_rect = image_rect.intersected(QRect(0, 0, image_width, image_height))
+
+            if image_rect.isEmpty():
+                print("[✘] Invalid crop area — outside image bounds.")
+                return
+
+            # Emit the crop
+            self.showCrop.emit(image_rect)
+
+            # Clean up
+            self.scene().removeItem(self.resizable_crop_rect)
+            self.resizable_crop_rect = None
+            self.unsetCursor()
+            self.begin_crop = False
+            return
+
+        super().keyPressEvent(event)
+
+        # Allow other keys to propagate
+        super().keyPressEvent(event)
+
+        # Allow other keys to propagate
+        super().keyPressEvent(event)
 
     def paintEvent(self, event):
         super().paintEvent(event)
@@ -819,13 +847,28 @@ class ImageGraphicsViewUI(QGraphicsView):
     #     QMessageBox.information(self, "Selection", message)
 
     def set_crop_status(self, status):
-        """Enter and exit crop mode"""
+        """Enter and exit resizable crop mode"""
+        # Always disable legacy crop logic
+        self.begin_crop = False
+        self.select = False
+        self.unsetCursor()
+
+        QApplication.restoreOverrideCursor()
+
         if status:
-            self.begin_crop = True
-            self.setCursor(self.crop_cursor)
+            if not self.resizable_crop_rect:
+                view_center = self.viewport().rect().center()
+                scene_center = self.mapToScene(view_center)
+                self.resizable_crop_rect = ResizableRect(
+                    scene_center.x(), scene_center.y(), 100, 100
+                )
+                self.scene().addItem(self.resizable_crop_rect)
+                self.resizable_crop_rect.setZValue(10)
+                self.setFocus()  # Ensure keyPressEvent can fire
         else:
-            self.begin_crop = False
-            self.unsetCursor()
+            if self.resizable_crop_rect:
+                self.scene().removeItem(self.resizable_crop_rect)
+                self.resizable_crop_rect = None
 
     def loadChannels(self, np_channels):
         """Load channel data"""
@@ -878,9 +921,23 @@ class ImageGraphicsViewUI(QGraphicsView):
         return False
 
 
-class ResizableRect(QGraphicsRectItem):
-    """Resizable rectangle graphics item"""
+class ResizeHandle(QGraphicsRectItem):
+    def __init__(self, cursor_shape: Qt.CursorShape, parent=None):
+        super().__init__(-8, -8, 16, 16, parent)  # Center the handle
+        self.setBrush(QBrush(Qt.GlobalColor.white))
+        self.setPen(QPen(Qt.GlobalColor.black))
+        self.setZValue(11)
+        self.setAcceptHoverEvents(True)
+        self.cursor_shape = cursor_shape
 
+    def hoverEnterEvent(self, event):
+        QApplication.setOverrideCursor(QCursor(self.cursor_shape))
+
+    def hoverLeaveEvent(self, event):
+        QApplication.restoreOverrideCursor()
+
+
+class ResizableRect(QGraphicsRectItem):
     def __init__(self, x, y, width, height, onCenter=False):
         if onCenter:
             super().__init__(-width / 2, -height / 2, width, height)
@@ -888,34 +945,61 @@ class ResizableRect(QGraphicsRectItem):
             super().__init__(0, 0, width, height)
 
         self.setPos(x, y)
-        self.setFlags(QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
+        self.setFlags(
+            QGraphicsRectItem.GraphicsItemFlag.ItemIsMovable
+            | QGraphicsRectItem.GraphicsItemFlag.ItemIsSelectable
+            | QGraphicsRectItem.GraphicsItemFlag.ItemIsFocusable
+        )
         self.setAcceptHoverEvents(True)
         self.setPen(QPen(QBrush(Qt.GlobalColor.blue), 3, Qt.PenStyle.DotLine))
         self.selected_edge = None
 
-        # Position display
         self.posItem = QGraphicsSimpleTextItem(f"{self.x()}, {self.y()}", parent=self)
         self.posItem.setPos(
             self.boundingRect().x(),
             self.boundingRect().y() - self.posItem.boundingRect().height(),
         )
 
-    def getEdges(self, pos):
-        """Determine which edges are under the cursor"""
-        edges = Qt.Edge(0)
+        # Create 8 resize handles with correct cursor
+        self.handles = []
+        cursor_shapes = [
+            Qt.CursorShape.SizeFDiagCursor,  # top-left
+            Qt.CursorShape.SizeVerCursor,  # top-center
+            Qt.CursorShape.SizeBDiagCursor,  # top-right
+            Qt.CursorShape.SizeHorCursor,  # mid-right
+            Qt.CursorShape.SizeFDiagCursor,  # bottom-right
+            Qt.CursorShape.SizeVerCursor,  # bottom-center
+            Qt.CursorShape.SizeBDiagCursor,  # bottom-left
+            Qt.CursorShape.SizeHorCursor,  # mid-left
+        ]
+
+        for cursor in cursor_shapes:
+            handle = ResizeHandle(cursor, self)
+            self.handles.append(handle)
+
+        self.updateHandles()
+
+    def updateHandles(self):
         rect = self.rect()
-        border = self.pen().width() / 2
+        x, y, w, h = rect.x(), rect.y(), rect.width(), rect.height()
 
-        if pos.x() < rect.x() + border:
-            edges |= Qt.Edge.LeftEdge
-        elif pos.x() > rect.right() - border:
-            edges |= Qt.Edge.RightEdge
-        if pos.y() < rect.y() + border:
-            edges |= Qt.Edge.TopEdge
-        elif pos.y() > rect.bottom() - border:
-            edges |= Qt.Edge.BottomEdge
+        positions = [
+            QPointF(x, y),  # top-left
+            QPointF(x + w / 2, y),  # top-center
+            QPointF(x + w, y),  # top-right
+            QPointF(x + w, y + h / 2),  # mid-right
+            QPointF(x + w, y + h),  # bottom-right
+            QPointF(x + w / 2, y + h),  # bottom-center
+            QPointF(x, y + h),  # bottom-left
+            QPointF(x, y + h / 2),  # mid-left
+        ]
 
-        return edges
+        for handle, pos in zip(self.handles, positions):
+            handle.setPos(pos)
+
+    def setRect(self, rect):
+        super().setRect(rect)
+        self.updateHandles()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -927,66 +1011,39 @@ class ResizableRect(QGraphicsRectItem):
 
     def mouseMoveEvent(self, event):
         if self.selected_edge:
-            mouse_delta = event.pos() - event.buttonDownPos(Qt.MouseButton.LeftButton)
             rect = self.rect()
-            pos_delta = QPointF()
-            border = self.pen().width()
+            pos = event.pos()
+            new_rect = QRectF(rect)
 
-            # Handle horizontal resize
             if self.selected_edge & Qt.Edge.LeftEdge:
-                diff = min(mouse_delta.x() - self.offset.x(), rect.width() - border)
-                if rect.x() < 0:
-                    offset = diff / 2
-                    self.offset.setX(self.offset.x() + offset)
-                    pos_delta.setX(offset)
-                    rect.adjust(offset, 0, -offset, 0)
-                else:
-                    pos_delta.setX(diff)
-                    rect.setWidth(rect.width() - diff)
-            elif self.selected_edge & Qt.Edge.RightEdge:
-                if rect.x() < 0:
-                    diff = max(mouse_delta.x() - self.offset.x(), border - rect.width())
-                    offset = diff / 2
-                    self.offset.setX(self.offset.x() + offset)
-                    pos_delta.setX(offset)
-                    rect.adjust(-offset, 0, offset, 0)
-                else:
-                    rect.setWidth(max(border, event.pos().x() - rect.x()))
+                diff = pos.x()
+                new_width = rect.right() - diff
+                if new_width > 10:
+                    new_rect.setLeft(diff)
 
-            # Handle vertical resize
+            if self.selected_edge & Qt.Edge.RightEdge:
+                diff = pos.x()
+                new_width = diff - rect.left()
+                if new_width > 10:
+                    new_rect.setRight(diff)
+
             if self.selected_edge & Qt.Edge.TopEdge:
-                diff = min(mouse_delta.y() - self.offset.y(), rect.height() - border)
-                if rect.y() < 0:
-                    offset = diff / 2
-                    self.offset.setY(self.offset.y() + offset)
-                    pos_delta.setY(offset)
-                    rect.adjust(0, offset, 0, -offset)
-                else:
-                    pos_delta.setY(diff)
-                    rect.setHeight(rect.height() - diff)
-            elif self.selected_edge & Qt.Edge.BottomEdge:
-                if rect.y() < 0:
-                    diff = max(
-                        mouse_delta.y() - self.offset.y(), border - rect.height()
-                    )
-                    offset = diff / 2
-                    self.offset.setY(self.offset.y() + offset)
-                    pos_delta.setY(offset)
-                    rect.adjust(0, -offset, 0, offset)
-                else:
-                    rect.setHeight(max(border, event.pos().y() - rect.y()))
+                diff = pos.y()
+                new_height = rect.bottom() - diff
+                if new_height > 10:
+                    new_rect.setTop(diff)
 
-            # Apply changes if rectangle has changed
-            if rect != self.rect():
-                self.setRect(rect)
-                if pos_delta:
-                    self.setPos(self.pos() + pos_delta)
+            if self.selected_edge & Qt.Edge.BottomEdge:
+                diff = pos.y()
+                new_height = diff - rect.top()
+                if new_height > 10:
+                    new_rect.setBottom(diff)
+
+            self.setRect(new_rect)
         else:
-            # Use default implementation for regular movement
             super().mouseMoveEvent(event)
 
-        # Update position display
-        self.posItem.setText(f"{self.x()},{self.y()} ({self.rect().getRect()})")
+        self.posItem.setText(f"{self.x()}, {self.y()} ({self.rect().getRect()})")
         self.posItem.setPos(
             self.boundingRect().x(),
             self.boundingRect().y() - self.posItem.boundingRect().height(),
@@ -995,22 +1052,21 @@ class ResizableRect(QGraphicsRectItem):
     def mouseReleaseEvent(self, event):
         self.selected_edge = Qt.Edge(0)
         super().mouseReleaseEvent(event)
+        self.updateHandles()
 
-    def hoverMoveEvent(self, event):
-        edges = self.getEdges(event.pos())
-        if not edges:
-            self.unsetCursor()
-        elif edges in (
-            Qt.Edge.TopEdge | Qt.Edge.LeftEdge,
-            Qt.Edge.BottomEdge | Qt.Edge.RightEdge,
-        ):
-            self.setCursor(Qt.CursorShape.SizeFDiagCursor)
-        elif edges in (
-            Qt.Edge.BottomEdge | Qt.Edge.LeftEdge,
-            Qt.Edge.TopEdge | Qt.Edge.RightEdge,
-        ):
-            self.setCursor(Qt.CursorShape.SizeBDiagCursor)
-        elif edges in (Qt.Edge.LeftEdge, Qt.Edge.RightEdge):
-            self.setCursor(Qt.CursorShape.SizeHorCursor)
-        else:
-            self.setCursor(Qt.CursorShape.SizeVerCursor)
+    def getEdges(self, pos):
+        """Fallback edge hit detection for resize dragging (not hover)"""
+        edges = Qt.Edge(0)
+        rect = self.rect()
+        buffer = 30
+
+        if pos.x() < rect.x() + buffer:
+            edges |= Qt.Edge.LeftEdge
+        elif pos.x() > rect.right() - buffer:
+            edges |= Qt.Edge.RightEdge
+        if pos.y() < rect.y() + buffer:
+            edges |= Qt.Edge.TopEdge
+        elif pos.y() > rect.bottom() - buffer:
+            edges |= Qt.Edge.BottomEdge
+
+        return edges
