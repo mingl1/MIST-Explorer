@@ -212,6 +212,7 @@ class __BaseGraphicsView(QWidget):
         self.storage = ImageStorage()
         self.image_wrapper = None  # Added for single image compatibility
         self.uuid = None
+        self.num_channels = 0
 
     def set_uuid(self, uuid):
         self.uuid = uuid
@@ -232,7 +233,7 @@ class __BaseGraphicsView(QWidget):
         with tiff.TiffFile(file_path) as tif:
             total_pages = len(tif.pages)
             valid_page_count = 0
-
+            self.num_channels = total_pages
             for i, page in enumerate(tif.pages):
                 try:
                     image = page.asarray()
@@ -241,9 +242,7 @@ class __BaseGraphicsView(QWidget):
                         continue
 
                     valid_page_count += 1
-                    self.updateProgress.emit(
-                        int((i + 1) / total_pages * 50), "Loading image"
-                    )
+
                     yield image, valid_page_count
 
                 except Exception as e:
@@ -326,7 +325,7 @@ class __BaseGraphicsView(QWidget):
             self._log_memory_usage(
                 channel_name, image_adjusted, display_image, subsample_for_emit
             )
-            self._update_progress(channel_num)
+            self._update_progress(channel_num, self.num_channels)
             gc.collect()
 
         self._emit_multichannel_data(emit_data, subsample_for_emit)
@@ -549,15 +548,10 @@ class __BaseGraphicsView(QWidget):
         else:
             print(f"{channel_name} - Size: {full_size_mb:.2f} MB")
 
-    def _update_progress(self, channel_num: int) -> None:
+    def _update_progress(self, channel_num: int, total_channels) -> None:
         """Update processing progress."""
-        progress = 50 + int(channel_num * 40 / max(1, channel_num))
+        progress = 10 + int(channel_num / total_channels * 70)
         self.updateProgress.emit(progress, f"Processing Channel {channel_num}")
-
-    def _clear_caches(self) -> None:
-        """Clear image and LUT caches."""
-        self.image_cache.clear()
-        self.lut_cache.clear()
 
     def _finalize_processing(self, file_name: str) -> None:
         """Finalize processing with cleanup and emissions."""
@@ -571,6 +565,11 @@ class __BaseGraphicsView(QWidget):
         if self.np_channels:
             first_channel = next(iter(self.np_channels.values()))
             print("Final stored dtype:", first_channel.data.dtype)
+
+    def _clear_caches(self) -> None:
+        """Clear image and LUT caches."""
+        self.image_cache.clear()
+        self.lut_cache.clear()
 
     def deleteImage(self):
         self.scene.scene().clear()

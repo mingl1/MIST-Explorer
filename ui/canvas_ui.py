@@ -873,7 +873,8 @@ class ImageGraphicsViewUI(QGraphicsView):
     def loadChannels(self, np_channels):
         """Load channel data"""
         self.np_channels = np_channels
-        self.__centerImage(self.pixmapItem)
+        if self.pixmapItem is not None:
+            self.__centerImage(self.pixmapItem)
 
     def setCurrentChannel(self, channel_num: int) -> None:
         """Set the current channel to display"""
