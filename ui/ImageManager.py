@@ -89,12 +89,9 @@ class ListWidget(QListWidget):
     def on_item_selected(self, item):
         # Action on select
         _, uuid = self._name_and_uuid_from_item(item)
-        data = self.parent().storage.get_data(uuid)["data"]
-        print(uuid)
-        # for i in data.keys():
-        #     data[i] = data[i].data
+        data = self.parent().storage.get_data(uuid)
+        data = data["data"]
         self.parent().model_canvas.add_or_replace_image(data)
-        # self.show_message(f"Selected item: {name}")
 
     def contextMenuEvent(self, event):
         menu = QMenu(self)

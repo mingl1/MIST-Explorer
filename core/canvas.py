@@ -169,9 +169,13 @@ class ImageWrapper:
 
         self.name = name
         self.cmap = cmap
-        self.data = data
+        self._data = data.copy()
         self.contrast_min = 0
         self.contrast_max = 255
+
+    @property
+    def data(self):
+        return self._data
 
     def __copy__(self):
         arr = self.data.copy()
@@ -334,8 +338,7 @@ class __BaseGraphicsView(QWidget):
         self, file_name: str, subsample_for_emit: bool, max_display_size: int
     ) -> np.ndarray:
         """Process single channel images."""
-        self.np_channels.clear()
-        self.reset_np_channels.clear()
+        self._prepare_channels_for_new_image()
 
         from PIL import Image
 
@@ -401,11 +404,9 @@ class __BaseGraphicsView(QWidget):
         max_display_size: int = 1024,
     ) -> np.ndarray:
         """Replace canvas with multichannel image data."""
-        self.np_channels.clear()
-        self.reset_np_channels.clear()
-
+        self._prepare_channels_for_new_image()
         emit_data = {}
-        first_channel_data = np.zeros(0)
+        first_channel_data = None
         for channel_name, image_data in channels_data.items():
             # Store full resolution version
             self._store_channel_data(channel_name, image_data)
@@ -415,7 +416,7 @@ class __BaseGraphicsView(QWidget):
                 image_data, subsample_for_emit, max_display_size
             )
             emit_data[channel_name] = display_image
-            if not first_channel_data:
+            if first_channel_data is None:
                 first_channel_data = display_image
             print(f"Replaced {channel_name}, shape: {image_data.shape}")
 
@@ -427,7 +428,13 @@ class __BaseGraphicsView(QWidget):
         # self.update_manager.emit(self.np_channels, "replaced_multichannel")
         self.image_count += 1
         print("Canvas replaced with multichannel data")
+        if first_channel_data is None:
+            raise ValueError("First channel is None")
         return first_channel_data
+
+    def _prepare_channels_for_new_image(self):
+        self.np_channels = {}
+        self.reset_np_channels = {}
 
     def replace_canvas_single(
         self,
@@ -436,8 +443,7 @@ class __BaseGraphicsView(QWidget):
         max_display_size: int = 1024,
     ) -> np.ndarray:
         """Replace canvas with single channel image data."""
-        self.np_channels.clear()
-        self.reset_np_channels.clear()
+        self._prepare_channels_for_new_image()
         if isinstance(image_data, dict):
             image_data = image_data["Channel 1"].data
         channel_name = "Channel 1"
@@ -475,7 +481,7 @@ class __BaseGraphicsView(QWidget):
     def _store_channel_data(self, channel_name: str, image_data: np.ndarray) -> None:
         """Store channel data in full resolution containers."""
         self.np_channels[channel_name] = ImageWrapper(image_data)
-        self.reset_np_channels[channel_name] = ImageWrapper(image_data.copy())
+        self.reset_np_channels[channel_name] = ImageWrapper(image_data)
         self.image_wrapper = ImageWrapper(image_data)
 
     def _prepare_display_image(
@@ -571,7 +577,6 @@ class __BaseGraphicsView(QWidget):
 
 
 class ReferenceGraphicsView(__BaseGraphicsView):
-
     update_reference = pyqtSignal(QPixmap, bool)
 
     # referenceLoaded = pyqtSignal(dict)
@@ -843,7 +848,7 @@ class ImageGraphicsView(__BaseGraphicsView):
 
     def add_or_replace_image(self, input: str | ImageWrapper | Dict[str, ImageWrapper]):
         """add a new image"""
-        self.np_channels.clear()
+        self._prepare_channels_for_new_image()
         if hasattr(self, "memory_cache"):
             self.memory_cache.clear_all()
         self.scene.resetTransform()
@@ -854,6 +859,9 @@ class ImageGraphicsView(__BaseGraphicsView):
         elif isinstance(input, ImageWrapper):
             self.image_worker = Worker(self.array_to_image, input)
         else:
+            # !TODO: If memory allows, we should save current canvas by using a stackwidget,
+            # such that new canvas just goes ontop of old, and if switch back, just need to go back in stack,
+            # which is essentially like cached performance
             self.image_worker = Worker(self.replace_canvas, input)
 
         self.image_worker.signal.connect(self.onFileNameToPixmapCompleted)
@@ -1323,71 +1331,3 @@ class MetaData(QWidget):
                 metadata["DimensionOrder"] = "Unknown"
 
         return metadata
-
-
-# class ContrastWorkerSignals(QObject):
-#     finished = pyqtSignal(np.ndarray)
-
-# class ContrastWorker(QRunnable):
-
-#     def __init__(self, image, contrast_min, contrast_max):
-#         super().__init__()
-#         self.image = image
-#         self.contrast_min = contrast_min
-#         self.contrast_max = contrast_max
-#         self.signals = ContrastWorkerSignals()
-
-#     def run(self):
-#         pass
-
-
-#     def update(self):
-#         '''displays the image between a lower and upper limit'''
-#         if self.image_wrapper is None:
-#             self.errorSignal.emit("Canvas is empty")
-#             return
-
-#         contrast_min, contrast_max = int(values[0]), int(values[1])
-#         self.image_wrapper.contrast_min = contrast_min
-#         self.image_wrapper.contrast_max = contrast_max  # Save contrast settings
-
-#         contrast_key = (contrast_min, contrast_max)
-#         cmap_key = self.image_wrapper.cmap
-#         cache_key = (cmap_key, contrast_key)
-
-#         # Check if the current image (single-layer or multi-layer) is in the cache
-#         if self.is_layered:
-#             print("Checking layered")
-#             channel_num = f"Channel {self.currentChannelNum + 1}"
-
-#             # Initialize cache for this channel if it's not already initialized
-#             if channel_num not in self.image_cache:
-#                 self.image_cache[channel_num] = {}
-
-
-#             self.image_wrapper = self.np_channels[channel_num]  # Set the current channel wrapper
-
-
-#             self._apply_contrast_and_cache(channel_num, cache_key, contrast_min, contrast_max)
-
-#         else:  # Single-layer logic
-#             self._apply_contrast_and_cache(None, cache_key, contrast_min, contrast_max)
-
-#         # Update the contrast slider with the new settings
-#         self.changeSlider.emit((self.image_wrapper.contrast_min, self.image_wrapper.contrast_max))  # Update the slider
-
-#     def apply_contrast(self, new_min, new_max):
-
-#         qimage = self.pixmap.toImage() # get current image
-#         image = qimage_to_numpy(qimage) # returns uint8
-#         lut = self.create_lut(new_min, new_max)
-#         return cv2.LUT(image, lut)
-
-#     def create_lut(self, new_min, new_max):
-
-#         lut = np.zeros(256, dtype=np.uint8) # uint8 for display
-#         lut[new_min:new_max+1] = np.linspace(start=0, stop=255, num=(new_max - new_min + 1), endpoint=True, dtype=np.uint8)
-#         lut[:new_min] = 0 # clip between 0 and 255
-#         lut[new_max+1:] = 255
-
-#         return lut

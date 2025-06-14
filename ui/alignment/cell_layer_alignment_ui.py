@@ -267,6 +267,7 @@ class CellLayerAlignmentUI(QWidget):
             filename = item["name"]
             aligned_name = f"Aligned_{filename}"
             data[layer] = wrapped_image
+            print(data)
             self.alignmentCompleteSignal.emit(data, aligned_name)
             self.loadOnCanvasSignal.emit(data)
 
