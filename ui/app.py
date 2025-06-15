@@ -120,12 +120,14 @@ class Ui_MainWindow(QMainWindow):
         # layout crop and rotate next to each other
         self.rotate_crop_hlayout = QHBoxLayout()
         
-        self.rotate_crop_hlayout.addWidget(self.crop_groupbox.crop_groupbox)
-        self.rotate_crop_hlayout.addWidget(self.rotate_groupbox.rotate_groupbox)
+        # self.rotate_crop_hlayout.addWidget(self.crop_groupbox.crop_groupbox)
+        # self.rotate_crop_hlayout.addWidget(self.rotate_groupbox.rotate_groupbox)
         # self.rotate_crop_hlayout.addWidget(self.gaussian_blur.gaussian_blur)
         self.rotate_crop_hlayout.setSpacing(3)
         
-        self.preprocessing_dockwidget_main_vlayout.addLayout(self.rotate_crop_hlayout)
+        # self.preprocessing_dockwidget_main_vlayout.addLayout(self.rotate_crop_hlayout)
+        self.images_tab.layout().addWidget(self.crop_groupbox.crop_groupbox)
+        self.images_tab.layout().addWidget(self.rotate_groupbox.rotate_groupbox)
 
         # Add flip buttons
         self.flip_groupbox = QGroupBox("Flip Image")
@@ -142,13 +144,17 @@ class Ui_MainWindow(QMainWindow):
         self.flip_layout.addWidget(self.flip_vertical_btn)
         self.flip_groupbox.setLayout(self.flip_layout)
         
-        self.preprocessing_dockwidget_main_vlayout.addWidget(self.flip_groupbox)
+        # self.preprocessing_dockwidget_main_vlayout.addWidget(self.flip_groupbox)
+        self.images_tab.layout().addWidget(self.flip_groupbox)
+
 
         self.register_groupbox = RegisterUI(self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout)
         self.gaussian_blur = GaussianBlur(self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout)
 
         # Add the cell layer alignment UI
-        self.cell_layer_alignment = CellLayerAlignmentUI(self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout)
+        # self.cell_layer_alignment = CellLayerAlignmentUI(self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout)
+        self.cell_layer_alignment = CellLayerAlignmentUI(self.images_tab, self.images_tab.layout())
+
         
         # Now that cell_layer_alignment exists, connect the signals
         self.images_tab.tissue_target_selected.connect(self.cell_layer_alignment.set_target_image)
