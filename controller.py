@@ -32,6 +32,7 @@ class Controller:
         self.view = app
         self.openFilesDialog = None
         self.view.images_tab.set_model_canvas(self.model_canvas)
+        self.view.images_tab.set_model_stardist(self.model_stardist)
         self.signal_manager = SignalConnectionManager(self)
         self.signal_manager.setup_all_connections()
 
@@ -111,7 +112,18 @@ class Controller:
     def on_actionOpen_triggered(self):
         self.openFileDialog(self.model_canvas)
 
+    # add new image to storage
     def handle_new_image(self, data, file_name):
+        storage_item = {}
+        storage_item["name"] = file_name.split("/")[-1]
+        self.image_count += 1
+        storage_item["data"] = data
+        my_uuid = str(uuid.uuid4())
+        self.view.images_tab.add_to_storage(my_uuid, storage_item)
+        self.model_canvas.set_uuid(my_uuid)
+        self.view.images_tab.add_item(my_uuid)
+
+    def handle_new_reference_image(self, data, file_name):
         storage_item = {}
         storage_item["name"] = file_name.split("/")[-1]
         self.image_count += 1
@@ -193,14 +205,14 @@ class SignalConnectionManager:
         self.c.view.view_tab.changePix.connect(self.c.view.canvas.addNewImage)
         self.c.model_canvas.canvasUpdated.connect(self.c.view.canvas.updateCanvas)
         self.c.model_canvas.update_manager.connect(self.c.handle_new_image)
-        self.c.reference_view.update_manager.connect(self.c.handle_new_image)
+        self.c.reference_view.update_manager.connect(self.c.handle_new_reference_image)
 
     def _setup_canvas_connections(self):
         """Canvas-related signal connections"""
         self.c.model_canvas.updateProgress.connect(self.c.view.update_progress_bar)
         self.c.model_canvas.errorSignal.connect(self.c.handleError)
         self.c.view.canvas.showCrop.connect(self.c.model_canvas.crop)
-        self.c.model_canvas.cropSignal.connect(self.c.view.canvas.set_crop_status)
+        # self.c.model_canvas.cropSignal.connect(self.c.view.canvas.set_crop_status)
         self.c.model_canvas.update_cmap.connect(
             self.c.view.toolBarUI.update_cmap_selector
         )
@@ -217,13 +229,13 @@ class SignalConnectionManager:
     def _setup_crop_connections(self):
         """Crop operation connections"""
         self.c.view.crop_groupbox.crop_button.triggered.connect(
-            lambda: self.c.view.canvas.set_crop_status(True)
+            lambda: self.c.view.canvas.start_crop_mode()
         )
         self.c.view.crop_groupbox.crop_button.triggered.connect(
             lambda: self.c.view.small_view.setVisible(False)
         )
         self.c.view.crop_groupbox.cancel_crop_button.triggered.connect(
-            lambda: self.c.view.canvas.set_crop_status(False)
+            lambda: self.c.view.canvas.cancel_crop_mode()
         )
         self.c.view.crop_groupbox.cancel_crop_button.triggered.connect(
             lambda: self.c.view.small_view.setVisible(True)

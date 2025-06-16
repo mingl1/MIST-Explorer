@@ -13,6 +13,7 @@ def numpy_to_qimage(array: np.ndarray) -> QImage:
     if not array.data.contiguous:
         array = np.ascontiguousarray(array)
 
+    qimage = None
     if len(array.shape) == 2:
         # Grayscale image
         height, width = array.shape
@@ -42,7 +43,9 @@ def numpy_to_qimage(array: np.ndarray) -> QImage:
             )
     else:
         raise ValueError("Unsupported array shape: {}".format(array.shape))
-    return qimage.copy()
+    if qimage is None:
+        raise ValueError("Failed to create QImage from numpy array")
+    return qimage if qimage is not None else QImage()
 
 
 def qimage_to_numpy(qimage: QImage):

@@ -1,4 +1,5 @@
 import os
+from pyexpat import model
 from PyQt6.QtGui import *
 from PyQt6.QtCore import *
 from PyQt6.QtWidgets import *
@@ -13,7 +14,8 @@ class Manager(QWidget):
     tissue_target_selected = pyqtSignal(str)
     tissue_unaligned_selected = pyqtSignal(str)
 
-    def __init__(self, parent=None, model_canvas=None):
+    def __init__(self, parent, model_canvas=None, model_stardist=None):
+
         super().__init__(parent)
 
         self.setWindowTitle("Image List")
@@ -21,10 +23,14 @@ class Manager(QWidget):
         self.list_widget = ListWidget(self)
         self.storage = ImageStorage()
         self.model_canvas = model_canvas
+        self.model_stardist = model_stardist
         self.__layout.addWidget(self.list_widget)
 
     def set_model_canvas(self, model):
         self.model_canvas = model
+
+    def set_model_stardist(self, model):
+        self.model_stardist = model
 
     def on_text_edited(self):
         sender = self.sender()  # This is the QLineEdit that was edited
@@ -38,6 +44,7 @@ class Manager(QWidget):
         h_layout = QHBoxLayout()
         name = self.storage.get_data(uuid)["name"]
         data = self.storage.get_data(uuid)["data"]["Channel 1"].data
+        print(data)
         thumbnail_label = QLabel(self)
         thumbnail_pixmap = QPixmap(numpy_to_qimage(data))
         thumbnail_label.setPixmap(
@@ -81,7 +88,7 @@ class Manager(QWidget):
 
 
 class ListWidget(QListWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent):
         super().__init__(parent)
         self.setDragDropMode(QListWidget.DragDropMode.InternalMove)
         self.itemDoubleClicked.connect(self.on_item_selected)
@@ -89,9 +96,10 @@ class ListWidget(QListWidget):
     def on_item_selected(self, item):
         # Action on select
         _, uuid = self._name_and_uuid_from_item(item)
-        data = self.parent().storage.get_data(uuid)
-        data = data["data"]
-        self.parent().model_canvas.add_to_canvas(data, as_new_image=False)
+        # data = self.parent().storage.get_data(uuid)
+        # data = data["data"]
+
+        self.parent().model_canvas.add_to_canvas(uuid, as_new_image=False)
 
     def contextMenuEvent(self, event):
         menu = QMenu(self)
@@ -119,9 +127,7 @@ class ListWidget(QListWidget):
                 lambda: self.show_message("reference selected")
             )
             set_target.triggered.connect(lambda: self.show_message("target selected"))
-            set_cell_image.triggered.connect(
-                lambda: self.show_message("cell image selected")
-            )
+            set_cell_image.triggered.connect(lambda: self.set_for_stardist(item))
             set_tissue_target_image.triggered.connect(
                 lambda: self.set_as_tissue_target(item)
             )
@@ -139,6 +145,11 @@ class ListWidget(QListWidget):
             menu.addAction(delete)
 
             menu.exec(event.globalPos())
+
+    def set_for_stardist(self, item):
+        _, uuid = self._name_and_uuid_from_item(item)
+        data = self.parent().storage.get_data(uuid)["data"]
+        self.parent().model_stardist.setProteinImage(data)
 
     def show_message(self, message):
         QMessageBox.information(self, "Selection", message)
@@ -175,7 +186,9 @@ class ListWidget(QListWidget):
                     for key, channel_obj in sorted(channel_dict.items())
                 ]
                 stacked = np.stack(arrays, axis=0)  # Shape: (channels, H, W)
-                tifffile.imwrite(file_path, stacked)
+                tifffile.imwrite(
+                    file_path, stacked, photometric="minisblack", imagej=True
+                )
 
     def set_as_tissue_target(self, item: QListWidgetItem):
         """Set the selected image as the tissue target image for alignment"""

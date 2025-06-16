@@ -1,5 +1,8 @@
 """Main Class to handle display of images"""
 
+from PyQt6.QtWidgets import QGraphicsRectItem
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPen, QBrush, QColor
 from PyQt6.QtWidgets import (
     QToolTip,
     QGraphicsView,
@@ -332,8 +335,10 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.current_polygon = None
         self.rubber_band_positions = []
 
-        # NEW: for resizable crop
-        self.resizable_crop_rect = None
+        # Improved crop system
+        self.crop_mode = False
+        self.crop_start_pos = None
+        self.active_crop_rect = None
 
         # Setup interaction
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -446,25 +451,51 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.update_floating_buttons_position()
 
     def set_selection_mode(self, mode):
-
         print("set_selection_mode", mode)
         """Set the current selection mode"""
         # Reset all modes
         self.select = False
         self.current_polygon = None
+        self.crop_mode = False
+        self.begin_crop = False
 
         # Set the new mode
         if mode == "rect":
             self.select = "rect"
-            # self.setCursor(Qt.CursorShape.CrossCursor)
             self.enc.select()
         elif mode == "circle":
-            # self.setCursor(Qt.CursorShape.CrossCursor)
             self.enc.circle_select()
         elif mode == "poly":
             self.select = "poly"
-            # self.setCursor(Qt.CursorShape.CrossCursor)
             self.enc.poly_select()
+
+    def start_crop_mode(self):
+        """Start crop mode - called from external crop button"""
+        self.crop_mode = True
+        self.begin_crop = True
+        self.select = False
+        self.current_polygon = None
+
+        # Clear any existing crop rectangle
+        if self.active_crop_rect:
+            self.scene().removeItem(self.active_crop_rect)
+            self.active_crop_rect = None
+
+        self.setCursor(Qt.CursorShape.CrossCursor)
+        print("Crop mode activated - drag to create crop area")
+
+    def cancel_crop_mode(self):
+        """Cancel crop mode and clean up"""
+        self.crop_mode = False
+        self.begin_crop = False
+        self.crop_start_pos = None
+
+        if self.active_crop_rect:
+            self.scene().removeItem(self.active_crop_rect)
+            self.active_crop_rect = None
+
+        self.unsetCursor()
+        print("Crop mode cancelled")
 
     def isEmpty(self) -> bool:
         return self.pixmapItem is None
@@ -478,7 +509,6 @@ class ImageGraphicsViewUI(QGraphicsView):
         if self.pixmapItem:
             print("updating canvas and setting pixmap")
             self.pixmapItem.setPixmap(pixmap)
-            # self.__centerImage(self.pixmapItem)
             self.pixmapItem.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
 
     def addNewImage(self, pixmapItem: QGraphicsPixmapItem):
@@ -572,7 +602,31 @@ class ImageGraphicsViewUI(QGraphicsView):
     def mousePressEvent(self, event: QMouseEvent):
         if self.isEmpty():
             return
+
         if event.button() == Qt.MouseButton.LeftButton:
+            # Handle crop mode
+            if self.crop_mode:
+                scene_pos = self.mapToScene(event.pos())
+                self.crop_start_pos = scene_pos
+
+                # Create a new crop rectangle starting from this position
+                if self.active_crop_rect:
+                    self.scene().removeItem(self.active_crop_rect)
+
+                # Create a resizable crop rectangle
+
+                self.active_crop_rect = QGraphicsRectItem()
+                self.active_crop_rect.setRect(scene_pos.x(), scene_pos.y(), 0, 0)
+
+                # Style the crop rectangle
+                pen = QPen(QColor(255, 255, 255), 2, Qt.PenStyle.DashLine)
+                self.active_crop_rect.setPen(pen)
+                self.active_crop_rect.setBrush(QBrush(QColor(255, 255, 255, 30)))
+
+                self.scene().addItem(self.active_crop_rect)
+                return
+
+            # Handle regular selection modes
             if self.begin_crop or self.select:
                 self.origin = event.pos()
                 self.update_starting_position(event)
@@ -627,49 +681,57 @@ class ImageGraphicsViewUI(QGraphicsView):
             r.mousePressEvent(event)
 
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key.Key_Return and self.resizable_crop_rect:
-            rect = self.resizable_crop_rect.rect()
-            top_left = self.resizable_crop_rect.mapToScene(rect.topLeft())
-            bottom_right = self.resizable_crop_rect.mapToScene(rect.bottomRight())
+        # Handle crop confirmation with Enter key
+        if (
+            event.key() == Qt.Key.Key_Return
+            and self.crop_mode
+            and self.active_crop_rect
+        ):
+            self.confirm_crop()
+            return
 
-            # Map to image coordinates
-            image_top_left = self.pixmapItem.mapFromScene(top_left)
-            image_bottom_right = self.pixmapItem.mapFromScene(bottom_right)
-
-            # Clamp to image bounds
-            image_rect = QRect(
-                max(0, int(image_top_left.x())),
-                max(0, int(image_top_left.y())),
-                int(image_bottom_right.x() - image_top_left.x()),
-                int(image_bottom_right.y() - image_top_left.y()),
-            ).normalized()
-
-            # Make sure rect is within image bounds
-            image = self.pixmapItem.pixmap().toImage()
-            image_width, image_height = image.width(), image.height()
-            image_rect = image_rect.intersected(QRect(0, 0, image_width, image_height))
-
-            if image_rect.isEmpty():
-                print("[✘] Invalid crop area — outside image bounds.")
-                return
-
-            # Emit the crop
-            self.showCrop.emit(image_rect)
-
-            # Clean up
-            self.scene().removeItem(self.resizable_crop_rect)
-            self.resizable_crop_rect = None
-            self.unsetCursor()
-            self.begin_crop = False
+        # Handle crop cancellation with Escape key
+        if event.key() == Qt.Key.Key_Escape and self.crop_mode:
+            self.cancel_crop_mode()
             return
 
         super().keyPressEvent(event)
 
-        # Allow other keys to propagate
-        super().keyPressEvent(event)
+    def confirm_crop(self):
+        """Confirm the current crop selection"""
+        if not self.active_crop_rect or not self.pixmapItem:
+            return
 
-        # Allow other keys to propagate
-        super().keyPressEvent(event)
+        # Get the crop rectangle in scene coordinates
+        crop_rect = self.active_crop_rect.rect()
+
+        # Convert to image coordinates
+        image_top_left = self.pixmapItem.mapFromScene(crop_rect.topLeft())
+        image_bottom_right = self.pixmapItem.mapFromScene(crop_rect.bottomRight())
+
+        # Create image rectangle and clamp to image bounds
+        image_rect = QRect(
+            max(0, int(image_top_left.x())),
+            max(0, int(image_top_left.y())),
+            int(image_bottom_right.x() - image_top_left.x()),
+            int(image_bottom_right.y() - image_top_left.y()),
+        ).normalized()
+
+        # Make sure rect is within image bounds
+        image = self.pixmapItem.pixmap().toImage()
+        image_width, image_height = image.width(), image.height()
+        image_rect = image_rect.intersected(QRect(0, 0, image_width, image_height))
+
+        if image_rect.isEmpty():
+            print("[✘] Invalid crop area — outside image bounds.")
+            return
+
+        # Emit the crop signal
+        self.showCrop.emit(image_rect)
+
+        # Clean up crop mode
+        self.cancel_crop_mode()
+        print(f"[✓] Crop confirmed: {image_rect}")
 
     def paintEvent(self, event):
         super().paintEvent(event)
@@ -688,6 +750,22 @@ class ImageGraphicsViewUI(QGraphicsView):
 
     def mouseMoveEvent(self, event: QMouseEvent):
         super().mouseMoveEvent(event)
+
+        # Handle crop rectangle resizing
+        if self.crop_mode and self.crop_start_pos and self.active_crop_rect:
+            current_pos = self.mapToScene(event.pos())
+
+            # Update the crop rectangle
+            x1, y1 = self.crop_start_pos.x(), self.crop_start_pos.y()
+            x2, y2 = current_pos.x(), current_pos.y()
+
+            # Ensure proper rectangle (top-left to bottom-right)
+            left = min(x1, x2)
+            top = min(y1, y2)
+            width = abs(x2 - x1)
+            height = abs(y2 - y1)
+
+            self.active_crop_rect.setRect(left, top, width, height)
 
         # Store current mouse position for polygon preview
         if self.current_polygon and len(self.current_polygon.points) > 0:
@@ -740,8 +818,13 @@ class ImageGraphicsViewUI(QGraphicsView):
             else:
                 self.enc.updateMousePositionLabel(f"")
 
-        # Handle rubber band updates
-        if not self.isEmpty() and self.begin_crop and self.rubberBand:
+        # Handle rubber band updates for old crop system
+        if (
+            not self.isEmpty()
+            and self.begin_crop
+            and self.rubberBand
+            and not self.crop_mode
+        ):
             self.rubberBand.setGeometry(QRect(self.origin, event.pos()).normalized())
 
         if (
@@ -775,6 +858,12 @@ class ImageGraphicsViewUI(QGraphicsView):
 
         self.rubber_band_positions = []
 
+        # Handle crop mode mouse release
+        if self.crop_mode and self.active_crop_rect:
+            # Don't auto-confirm, let user press Enter or Escape
+            print("Crop area created. Press Enter to confirm or Escape to cancel.")
+            return
+
         if not self.rubberBands:
             return
 
@@ -785,7 +874,8 @@ class ImageGraphicsViewUI(QGraphicsView):
         if event.button() == Qt.MouseButton.LeftButton:
             rubberband = self.rubberBand if self.begin_crop else self.rubberBands[-1]
 
-            if self.begin_crop:
+            # Handle old crop system
+            if self.begin_crop and not self.crop_mode:
                 rubberband.hide()
 
                 selectedRect = rubberband.geometry()
@@ -805,11 +895,9 @@ class ImageGraphicsViewUI(QGraphicsView):
                 self.showCrop.emit(self.image_rect)
 
             if self.select:
-
                 self.origin = None
 
                 if self.select == "rect" or self.select == "circle":
-
                     scene_pos = self.mapToScene(event.pos())
                     image_pos = self.pixmapItem.mapFromScene(scene_pos)
                     image_rect = (
@@ -826,100 +914,11 @@ class ImageGraphicsViewUI(QGraphicsView):
                     self.select = False
                     return
 
-    # def contextMenuEvent(self, event):
-    #     # Create the menu
-    #     menu = QMenu(self)
-
-    #     # Add actions
-    #     action1 = QAction("Option 1", self)
-    #     action1.triggered.connect(lambda: self.show_message("Option 1 selected"))
-
-    #     action2 = QAction("Option 2", self)
-    #     action2.triggered.connect(lambda: self.show_message("Option 2 selected"))
-
-    #     menu.addAction(action1)
-    #     menu.addAction(action2)
-
-    #     # Show the menu at the cursor position
-    #     menu.exec(event.globalPos())
-
-    # def show_message(self, message):
-    #     QMessageBox.information(self, "Selection", message)
-
-    def set_crop_status(self, status):
-        """Enter and exit resizable crop mode"""
-        # Always disable legacy crop logic
-        self.begin_crop = False
-        self.select = False
-        self.unsetCursor()
-
-        QApplication.restoreOverrideCursor()
-
-        if status:
-            if not self.resizable_crop_rect:
-                view_center = self.viewport().rect().center()
-                scene_center = self.mapToScene(view_center)
-                self.resizable_crop_rect = ResizableRect(
-                    scene_center.x(), scene_center.y(), 100, 100
-                )
-                self.scene().addItem(self.resizable_crop_rect)
-                self.resizable_crop_rect.setZValue(10)
-                self.setFocus()  # Ensure keyPressEvent can fire
-        else:
-            if self.resizable_crop_rect:
-                self.scene().removeItem(self.resizable_crop_rect)
-                self.resizable_crop_rect = None
-
     def loadChannels(self, np_channels):
         """Load channel data"""
         self.np_channels = np_channels
         if self.pixmapItem is not None:
             self.__centerImage(self.pixmapItem)
-
-    def setCurrentChannel(self, channel_num: int) -> None:
-        """Set the current channel to display"""
-        self.currentChannelNum = channel_num
-
-    def update_image(self, cmap=None):
-        """Update the displayed image with current channel data"""
-        if (
-            hasattr(self, "np_channels")
-            and self.np_channels
-            and hasattr(self, "currentChannelNum")
-        ):
-            channel_key = f"Channel {self.currentChannelNum + 1}"
-            if channel_key in self.np_channels:
-                # Convert numpy data to QImage
-                channel_data = self.np_channels[channel_key].data
-                from utils import numpy_to_qimage
-                from PyQt6.QtGui import QPixmap
-
-                # Make sure channel data is in the right format
-                if channel_data.dtype != np.uint8:
-                    # Scale to 8-bit for display if needed
-                    if channel_data.max() > 255:
-                        channel_data = (
-                            (channel_data / channel_data.max()) * 255
-                        ).astype(np.uint8)
-                    else:
-                        channel_data = channel_data.astype(np.uint8)
-
-                q_image = numpy_to_qimage(channel_data)
-                pixmap = QPixmap(q_image)
-
-                # Update the pixmap
-                if self.pixmapItem:
-                    self.pixmapItem.setPixmap(pixmap)
-
-                return True
-        return False
-
-    def swap_channel(self, channel_num):
-        """Switch to a different channel"""
-        if hasattr(self, "np_channels") and self.np_channels:
-            self.setCurrentChannel(channel_num)
-            return self.update_image()
-        return False
 
 
 class ResizeHandle(QGraphicsRectItem):

@@ -170,13 +170,9 @@ class ImageWrapper:
 
         self.name = name
         self.cmap = cmap
-        self._data = data.copy()
+        self.data = data.copy()
         self.contrast_min = 0
         self.contrast_max = 255
-
-    @property
-    def data(self):
-        return self._data
 
     def __copy__(self):
         arr = self.data.copy()
@@ -584,9 +580,9 @@ class __BaseGraphicsView(QWidget):
         self.update_manager.emit(self.np_channels, file_name)
         self.image_count += 1
 
-        if self.np_channels:
-            first_channel = next(iter(self.np_channels.values()))
-            print("Final stored dtype:", first_channel.data.dtype)
+        # if self.np_channels:
+        #     first_channel = next(iter(self.np_channels.values()))
+        #     print("Final stored dtype:", first_channel.data.dtype)
 
     def _clear_caches(self) -> None:
         """Clear image and LUT caches."""
@@ -883,11 +879,23 @@ class ImageGraphicsView(__BaseGraphicsView):
 
         # self.image_worker should return np.ndarray, the first channel being displayed
         if isinstance(input, str):
-            if not as_new_image:
-                raise ValueError(
-                    "Cannot replace canvas with a filename, UUID replace not supported yet."
+            if self.storage.get_data(input):
+                # If the image is already in storage, retrieve it
+                stored_image = self.storage.get_data(input)["data"]
+                self.image_worker = Worker(
+                    self.replace_canvas,
+                    stored_image,
+                    as_new_image,
+                    new_image_name,
+                    target_channel,
                 )
-            self.image_worker = Worker(self.filename_to_image, input)
+                self.set_uuid(input)
+            else:
+                if not as_new_image:
+                    raise ValueError(
+                        "Cannot replace canvas with a filename, UUID replace not supported yet."
+                    )
+                self.image_worker = Worker(self.filename_to_image, input)
         elif isinstance(input, ImageWrapper):
             self.image_worker = Worker(
                 self.array_to_image, input, as_new_image, new_image_name
@@ -927,6 +935,7 @@ class ImageGraphicsView(__BaseGraphicsView):
         if image.dtype != np.uint8:
             image = scale_adjust(np.image)
 
+        # self.set_uuid(str(uuid.uuid4()))
         qimage = numpy_to_qimage(image)
         pixmap = QPixmap(qimage)
         self.reset_pixmap = pixmap
@@ -1178,8 +1187,9 @@ class ImageGraphicsView(__BaseGraphicsView):
             self, cropped_array_copy, contrast, self.image_wrapper.cmap
         )
         self.crop_dialog.exec()
-
-        name = f"cropped_{self.image_wrapper.name}.tif"
+        image_name = self.storage.get_data(self.uuid)["name"]
+        print("Image Name:", image_name)
+        name = f"cropped_{image_name}.tif"
 
         if self.crop_dialog.confirm_crop:
             channels = {}
