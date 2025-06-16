@@ -38,9 +38,9 @@ class Controller:
         # Handle initial arguments
         initial_args = vars(app.args)
         if initial_args["image"] is not None:
-            self.model_canvas.add_or_replace_image(initial_args["image"])
+            self.model_canvas.add_to_canvas(initial_args["image"])
         if initial_args["reference"] is not None:
-            self.reference_view.add_or_replace_image(initial_args["reference"])
+            self.reference_view.add_to_canvas(initial_args["reference"])
 
     def handleError(self, error_message):
         QMessageBox.critical(self.view, "Error", error_message)
@@ -103,7 +103,7 @@ class Controller:
             None, "Open Image File", "", "Images (*.png *.jpg *.tif);;All Files (*)"
         )
         if file_name:
-            viewer.add_or_replace_image(file_name)
+            viewer.add_to_canvas(file_name)
 
     def on_action_reference_triggered(self):
         self.openFileDialog(self.reference_view)
@@ -154,7 +154,7 @@ class SignalConnectionManager:
             self.c.handle_new_image
         )
         self.c.view.cell_layer_alignment.loadOnCanvasSignal.connect(
-            self.c.model_canvas.replace_canvas
+            self.c.model_canvas.add_to_canvas
         )
         self.c.view.cell_layer_alignment.aligner.progress.connect(
             self.c.view.update_progress_bar
@@ -186,12 +186,8 @@ class SignalConnectionManager:
 
     def _setup_image_handling_connections(self):
         """Image loading and display connections"""
-        self.c.view.canvas.imageDropped.connect(
-            self.c.model_canvas.add_or_replace_image
-        )
-        self.c.view.small_view.imageDropped.connect(
-            self.c.reference_view.add_or_replace_image
-        )
+        self.c.view.canvas.imageDropped.connect(self.c.model_canvas.add_to_canvas)
+        self.c.view.small_view.imageDropped.connect(self.c.reference_view.add_to_canvas)
         self.c.reference_view.update_reference.connect(self.c.view.small_view.display)
         self.c.model_canvas.newImageAdded.connect(self.c.view.canvas.addNewImage)
         self.c.view.view_tab.changePix.connect(self.c.view.canvas.addNewImage)

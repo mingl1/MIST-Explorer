@@ -91,7 +91,7 @@ class ListWidget(QListWidget):
         _, uuid = self._name_and_uuid_from_item(item)
         data = self.parent().storage.get_data(uuid)
         data = data["data"]
-        self.parent().model_canvas.add_or_replace_image(data)
+        self.parent().model_canvas.add_to_canvas(data, as_new_image=False)
 
     def contextMenuEvent(self, event):
         menu = QMenu(self)

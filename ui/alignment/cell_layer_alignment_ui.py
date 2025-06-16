@@ -19,7 +19,7 @@ from core.canvas import ImageStorage, ImageWrapper
 class CellLayerAlignmentUI(QWidget):
     errorSignal = pyqtSignal(str)
     alignmentCompleteSignal = pyqtSignal(object, str)
-    loadOnCanvasSignal = pyqtSignal(dict)
+    loadOnCanvasSignal = pyqtSignal(dict, bool, str)
     channelChanged = pyqtSignal(int)
 
     def __init__(
@@ -267,9 +267,8 @@ class CellLayerAlignmentUI(QWidget):
             filename = item["name"]
             aligned_name = f"Aligned_{filename}"
             data[layer] = wrapped_image
-            print(data)
-            self.alignmentCompleteSignal.emit(data, aligned_name)
-            self.loadOnCanvasSignal.emit(data)
+            # self.alignmentCompleteSignal.emit(data, aligned_name)
+            self.loadOnCanvasSignal.emit(data, True, aligned_name)
 
     def _show_preview_dialog(self, target_small, aligned_small):
         """Show the preview dialog with red/green overlay"""
