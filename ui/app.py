@@ -78,7 +78,6 @@ class Ui_MainWindow(QMainWindow):
             ("Ctrl+C", self.circle_select),
             ("Ctrl+P", self.poly_select),
             ("Ctrl+S", self.save),
-            # A for analysis?, was previously a comment but was outdated?
         ]
 
         for key_sequence, slot in shortcuts:
@@ -217,11 +216,17 @@ class Ui_MainWindow(QMainWindow):
 
         # Layout crop and rotate next to each other
         self.rotate_crop_hlayout = QHBoxLayout()
+        self.rotate_crop_hlayout.setSpacing(3)
+        
+        self.images_tab.layout().addWidget(self.crop_groupbox.crop_groupbox)
+        self.images_tab.layout().addWidget(self.rotate_groupbox.rotate_groupbox)
+
         self.rotate_crop_hlayout.addWidget(self.crop_groupbox.crop_groupbox)
         self.rotate_crop_hlayout.addWidget(self.rotate_groupbox.rotate_groupbox)
         self.rotate_crop_hlayout.setSpacing(3)
 
-        self.preprocessing_dockwidget_main_vlayout.addLayout(self.rotate_crop_hlayout)
+        self.images_tab.layout().addLayout(self.rotate_crop_hlayout)
+
 
     def _setup_flip_components(self):
         """Setup flip buttons"""
@@ -238,8 +243,33 @@ class Ui_MainWindow(QMainWindow):
         self.flip_layout.addWidget(self.flip_horizontal_btn)
         self.flip_layout.addWidget(self.flip_vertical_btn)
         self.flip_groupbox.setLayout(self.flip_layout)
+        
+        self.images_tab.layout().addWidget(self.flip_groupbox)
 
-        self.preprocessing_dockwidget_main_vlayout.addWidget(self.flip_groupbox)
+
+        self.register_groupbox = RegisterUI(self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout)
+        self.gaussian_blur = GaussianBlur(self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout)
+
+        # Add the cell layer alignment UI
+        self.cell_layer_alignment = CellLayerAlignmentUI(self.images_tab, self.images_tab.layout())
+
+        
+        # Now that cell_layer_alignment exists, connect the signals
+        self.images_tab.tissue_target_selected.connect(self.cell_layer_alignment.set_target_image)
+        self.images_tab.tissue_unaligned_selected.connect(self.cell_layer_alignment.set_unaligned_image)
+        self.cell_layer_alignment.alignmentCompleteSignal.connect(self.add_item_to_manager)
+        self.cell_layer_alignment.replaceLayerSignal.connect(self.replace_layer_in_canvas)
+        self.cell_layer_alignment.loadOnCanvasSignal.connect(self.load_image_on_canvas)
+        
+        # Connect to progress bar
+        self.cell_layer_alignment.aligner.progress.connect(self.update_progress_bar)
+        
+        # stardist UI
+        self.stardist_groupbox = StarDistUI(self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout)
+
+        self.cellIntensity_groupbox = CellIntensityUI(self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout)
+        self.preprocessing_dockwidget_main_vlayout.addWidget(self.save_button)
+
 
     def _setup_cell_layer_alignment(self):
         """Setup cell layer alignment component and its connections"""
@@ -526,16 +556,6 @@ class Ui_MainWindow(QMainWindow):
         # Update Channel 2
         self.canvas.currentChannelNum = 1  # Index 1 corresponds to Channel 2
 
-        # if hasattr(self.canvas, 'update_image'):
-        #     cmap = getattr(self.canvas.np_channels[channel_name], 'cmap', 'gray')
-        #     self.canvas.update_image(cmap)
-        #     self.canvas.loadChannels(self.canvas.np_channels)
-
-        #     # Restore original active channel if different
-        #     if current_active_channel != 1 and hasattr(self.canvas, 'swap_channel'):
-        #         self.canvas.swap_channel(current_active_channel)
-        # else:
-        #     self.load_image_on_canvas(aligned_image)
 
         self.update_progress_bar(100, f"Replaced {channel_name} with aligned image")
 
