@@ -149,7 +149,7 @@ class ImageStorage:
                 del self.image_list[image_id]
                 gc.collect()
 
-    def update_data(self, image_id, new_img, channel="Channel 1"):
+    def update_data(self, image_id, channel="Channel 1", new_img=None):
         with self._data_lock:
             if image_id in self.image_list:
                 self.image_list[image_id][channel] = new_img
@@ -160,7 +160,7 @@ class ImageStorage:
             gc.collect()
 
     def update_name(self, uuid, new_name):
-        self.update_data(uuid, new_name, "name")
+        self.update_data(uuid, "name", new_name)
 
 
 class ImageWrapper:
@@ -977,92 +977,73 @@ class ImageGraphicsView(__BaseGraphicsView):
             self.update_image("gray")
 
     def rotate_image_task(self, channels: dict, angle):
-        t = time.time()
-        rotated_arrays = []
 
-        if self.is_layered:
-            for channel_num, wrapper in channels.items():
-                try:
-                    arr = wrapper.data
-                    cmap = wrapper.cmap
-                    if not arr.data.contiguous:
-                        arr = np.ascontiguousarray(arr, dtype="uint16")
-                except Exception as e:
-                    print("error: ", str(e))  # should be a QMessageBox
+        for channel_num, wrapper in channels.items():
+            try:
+                arr = wrapper.data
+                cmap = wrapper.cmap
+                if not arr.data.contiguous:
+                    arr = np.ascontiguousarray(arr, dtype="uint16")
+            except Exception as e:
+                self.onError(f"Error processing {channel_num}: {e}")
+                raise e
 
-                # rotate image
-                h, w = arr.shape
-                center = (w / 2, h / 2)
-                rotation_matrix = cv2.getRotationMatrix2D(center, -angle, 1)
-                cos = np.abs(rotation_matrix[0, 0])
-                sin = np.abs(rotation_matrix[0, 1])
-                updated_w = int((h * sin) + (w * cos))
-                updated_h = int((h * cos) + (w * sin))
-                rotation_matrix[0, 2] += (updated_w / 2) - w / 2
-                rotation_matrix[1, 2] += (updated_h / 2) - h / 2
-                rotated_arr = cv2.warpAffine(
-                    arr, rotation_matrix, (updated_h, updated_h)
-                )
-
-                self.np_channels[channel_num].data = rotated_arr
-                # self.rotated_wrapper = ImageWrapper(rotated_arr, cmap = cmap)
-                # rotated_arrays.append(self.rotated_wrapper)
-            return self.np_channels
-        else:
-            h, w = self.image_wrapper.data.shape
+            # Rotate image with padding and center correction
+            h, w = arr.shape
             center = (w / 2, h / 2)
             rotation_matrix = cv2.getRotationMatrix2D(center, -angle, 1)
-            cos = np.abs(rotation_matrix[0, 0])
-            sin = np.abs(rotation_matrix[0, 1])
+
+            cos = abs(rotation_matrix[0, 0])
+            sin = abs(rotation_matrix[0, 1])
+
             updated_w = int((h * sin) + (w * cos))
             updated_h = int((h * cos) + (w * sin))
-            rotation_matrix[0, 2] += (updated_w / 2) - w / 2
-            rotation_matrix[1, 2] += (updated_h / 2) - h / 2
-            rotated_arr = cv2.warpAffine(
-                self.image_wrapper.data, rotation_matrix, (updated_h, updated_h)
-            )
+            max_w = self.reset_np_channels[channel_num].data.shape[1]
+            max_h = self.reset_np_channels[channel_num].data.shape[0]
+            max_side = max(max_w, max_h)
+            max_side *= np.sqrt(2)  # ensure it fits after rotation
+            max_side = int(max_side)
+            updated_w = min(updated_w, max_side)
+            updated_h = min(updated_h, max_side)
 
-            return rotated_arr
+            rotation_matrix[0, 2] += (updated_w / 2) - center[0]
+            rotation_matrix[1, 2] += (updated_h / 2) - center[1]
+
+            rotated_arr = cv2.warpAffine(arr, rotation_matrix, (updated_w, updated_h))
+            self.np_channels[channel_num].data = rotated_arr
+
+        return True
 
     def rotateImage(self, angle_text: str):
         try:
             angle = float(angle_text)
         except ValueError:
-            print("Error: Please enter a valid number.")  # this should be a QMessageBox
+            print("Error: Please enter a valid number.")  # use QMessageBox for GUI
             return
 
         if self.pixmap and angle is not None:
             self.rotation_worker = Worker(
                 self.rotate_image_task, self.np_channels, angle
             )
-            self.rotation_worker.signal.connect(
-                self.onRotationCompleted
-            )  # result is rotated_channels
+            self.rotation_worker.signal.connect(self.onRotationCompleted)
             self.rotation_worker.error.connect(self.onError)
             self.rotation_worker.finished.connect(self.rotation_worker.quit)
             self.rotation_worker.finished.connect(self.rotation_worker.deleteLater)
             self.rotation_worker.start()
 
     @pyqtSlot(object)
-    def onRotationCompleted(self, result):
-
-        if type(result) == dict:
+    def onRotationCompleted(self, success):
+        if success:
             print("completing rotation")
-            self.np_channels = result
+            for channel_name, wrapper in self.np_channels.items():
+                if "Channel" in channel_name:
+                    self.storage.update_data(self.uuid, channel_name, wrapper.data)
+            self.image_wrapper = self.np_channels.get(
+                f"Channel {self.currentChannelNum + 1}"
+            )
+        self.image_cache.clear()  # Clear cache to force redraw
 
-            # channel_image = list(self.np_channels.values())[self.currentChannelNum].data
-            channel_cmap = list(self.np_channels.values())[self.currentChannelNum].cmap
-            # channel_image = scale_adjust(channel_image)
-            # self.image = channel_image
-
-            self.image_cache.clear()
-            self.update_image(cmap_text=channel_cmap)  # this also updates the contrast
-            self.image_signal.emit(self.np_channels, False)
-
-        else:
-            # channel_image = scale_adjust(result)
-            # self.image = channel_image
-            self.update_image(cmap_text="gray")  # this also updates the contrast
+        self.toPixmapItem(self.image_wrapper.data)
 
     @pyqtSlot(str)
     def onError(self, error_message):
@@ -1251,28 +1232,29 @@ class ImageGraphicsView(__BaseGraphicsView):
 
     def flip_horizontal(self):
         """Flip the image horizontally"""
-        if self.is_layered:
-            for channel_name, wrapper in self.np_channels.items():
-                wrapper.data = cv2.flip(wrapper.data, 1)  # 1 for horizontal flip
-            self.image_cache.clear()  # Clear cache to force redraw
-            self.update_image()
-        else:
-            self.image_wrapper.data = cv2.flip(self.image_wrapper.data, 1)
-            self.image_cache.clear()  # Clear cache to force redraw
-            self.update_image()
+        for channel_name, wrapper in self.np_channels.items():
+            if "Channel" in channel_name:
+                wrapper.data = cv2.flip(wrapper.data, 1)
+                self.storage.update_data(self.uuid, channel_name, wrapper.data)
+        self.image_wrapper = self.np_channels.get(
+            f"Channel {self.currentChannelNum + 1}"
+        )
+        self.image_cache.clear()  # Clear cache to force redraw
+        self.toPixmapItem(self.image_wrapper.data)
         print("Image flipped horizontally")
 
     def flip_vertical(self):
         """Flip the image vertically"""
-        if self.is_layered:
-            for channel_name, wrapper in self.np_channels.items():
-                wrapper.data = cv2.flip(wrapper.data, 0)  # 0 for vertical flip
-            self.image_cache.clear()  # Clear cache to force redraw
-            self.update_image()
-        else:
-            self.image_wrapper.data = cv2.flip(self.image_wrapper.data, 0)
-            self.image_cache.clear()  # Clear cache to force redraw
-            self.update_image()
+
+        for channel_name, wrapper in self.np_channels.items():
+            if "Channel" in channel_name:
+                wrapper.data = cv2.flip(wrapper.data, 0)
+                self.storage.update_data(self.uuid, channel_name, wrapper.data)
+        self.image_wrapper = self.np_channels.get(
+            f"Channel {self.currentChannelNum + 1}"
+        )
+        self.image_cache.clear()  # Clear cache to force redraw
+        self.toPixmapItem(self.image_wrapper.data)
         print("Image flipped vertically")
 
 
