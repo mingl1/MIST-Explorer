@@ -154,6 +154,10 @@ class Ui_MainWindow(QMainWindow):
 
         images_scroll.setWidget(self.images_tab)
         self.stackedWidget.addWidget(images_scroll)
+        self._setup_crop_rotate_components()
+
+        # Flip components
+        self._setup_images_components()
 
     def _setup_preprocessing_tab(self):
         """Setup the preprocessing tab with all its components"""
@@ -182,26 +186,18 @@ class Ui_MainWindow(QMainWindow):
         self.save_button.clicked.connect(self.save_canvas)
 
         # Crop and rotate components
-        self._setup_crop_rotate_components()
-
-        # Flip components
-        self._setup_flip_components()
-
-        # Cell layer alignment
-        self._setup_cell_layer_alignment()
-
-        # Other processing components
         self.register_groupbox = RegisterUI(
             self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout
         )
+
         self.gaussian_blur = GaussianBlur(
             self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout
         )
 
-        # StarDist and Cell Intensity
         self.stardist_groupbox = StarDistUI(
             self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout
         )
+
         self.cellIntensity_groupbox = CellIntensityUI(
             self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout
         )
@@ -211,15 +207,15 @@ class Ui_MainWindow(QMainWindow):
 
     def _setup_crop_rotate_components(self):
         """Setup crop and rotate components side by side"""
-        self.crop_groupbox = CropUI(self.preprocessing_tab)
-        self.rotate_groupbox = RotateUI(self.preprocessing_tab)
+        self.crop_groupbox = CropUI(self.images_tab)
+        self.rotate_groupbox = RotateUI(self.images_tab)
 
         # Layout crop and rotate next to each other
         self.rotate_crop_hlayout = QHBoxLayout()
         self.rotate_crop_hlayout.setSpacing(3)
 
-        self.images_tab.layout().addWidget(self.crop_groupbox.crop_groupbox)
-        self.images_tab.layout().addWidget(self.rotate_groupbox.rotate_groupbox)
+        # self.images_tab.layout().addWidget(self.crop_groupbox.crop_groupbox)
+        # self.images_tab.layout().addWidget(self.rotate_groupbox.rotate_groupbox)
 
         self.rotate_crop_hlayout.addWidget(self.crop_groupbox.crop_groupbox)
         self.rotate_crop_hlayout.addWidget(self.rotate_groupbox.rotate_groupbox)
@@ -227,7 +223,7 @@ class Ui_MainWindow(QMainWindow):
 
         self.images_tab.layout().addLayout(self.rotate_crop_hlayout)
 
-    def _setup_flip_components(self):
+    def _setup_images_components(self):
         """Setup flip buttons"""
         self.flip_groupbox = QGroupBox("Flip Image")
         self.flip_layout = QHBoxLayout()
@@ -248,12 +244,6 @@ class Ui_MainWindow(QMainWindow):
 
         images_tab_layout.addWidget(self.flip_groupbox)
 
-        self.register_groupbox = RegisterUI(
-            self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout
-        )
-        self.gaussian_blur = GaussianBlur(
-            self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout
-        )
         images_layout = self.images_tab.layout()
         assert isinstance(images_layout, QVBoxLayout)
         self.cell_layer_alignment = CellLayerAlignmentUI(
@@ -272,24 +262,6 @@ class Ui_MainWindow(QMainWindow):
 
         # Connect to progress bar
         self.cell_layer_alignment.aligner.progress.connect(self.update_progress_bar)
-
-        # stardist UI
-        self.stardist_groupbox = StarDistUI(
-            self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout
-        )
-
-        self.cellIntensity_groupbox = CellIntensityUI(
-            self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout
-        )
-        self.preprocessing_dockwidget_main_vlayout.addWidget(self.save_button)
-
-    def _setup_cell_layer_alignment(self):
-        """Setup cell layer alignment component and its connections"""
-        self.cell_layer_alignment = CellLayerAlignmentUI(
-            self.preprocessing_dockwidget_main_vlayout,
-            self.images_tab.storage,
-            self.preprocessing_tab,
-        )
 
     def _setup_view_tab(self):
         """Setup the view tab"""
