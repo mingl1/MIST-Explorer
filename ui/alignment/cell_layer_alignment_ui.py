@@ -140,7 +140,6 @@ class CellLayerAlignmentUI(QWidget):
             self.change_image2_channel
         )
 
-        # Also connect our errorSignal to pass errors to the parent
         self.aligner.error.connect(self.errorSignal)
 
     @pyqtSlot(int)

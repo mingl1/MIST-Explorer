@@ -217,7 +217,7 @@ class Ui_MainWindow(QMainWindow):
         # Layout crop and rotate next to each other
         self.rotate_crop_hlayout = QHBoxLayout()
         self.rotate_crop_hlayout.setSpacing(3)
-        
+
         self.images_tab.layout().addWidget(self.crop_groupbox.crop_groupbox)
         self.images_tab.layout().addWidget(self.rotate_groupbox.rotate_groupbox)
 
@@ -226,7 +226,6 @@ class Ui_MainWindow(QMainWindow):
         self.rotate_crop_hlayout.setSpacing(3)
 
         self.images_tab.layout().addLayout(self.rotate_crop_hlayout)
-
 
     def _setup_flip_components(self):
         """Setup flip buttons"""
@@ -243,33 +242,46 @@ class Ui_MainWindow(QMainWindow):
         self.flip_layout.addWidget(self.flip_horizontal_btn)
         self.flip_layout.addWidget(self.flip_vertical_btn)
         self.flip_groupbox.setLayout(self.flip_layout)
-        
-        self.images_tab.layout().addWidget(self.flip_groupbox)
 
+        # Ensure images_tab has a layout before adding widgets
+        images_tab_layout = self.images_tab.layout()
 
-        self.register_groupbox = RegisterUI(self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout)
-        self.gaussian_blur = GaussianBlur(self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout)
+        images_tab_layout.addWidget(self.flip_groupbox)
 
-        # Add the cell layer alignment UI
-        self.cell_layer_alignment = CellLayerAlignmentUI(self.images_tab, self.images_tab.layout())
+        self.register_groupbox = RegisterUI(
+            self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout
+        )
+        self.gaussian_blur = GaussianBlur(
+            self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout
+        )
+        images_layout = self.images_tab.layout()
+        assert isinstance(images_layout, QVBoxLayout)
+        self.cell_layer_alignment = CellLayerAlignmentUI(
+            images_layout,
+            self.images_tab.storage,
+            self.images_tab,
+        )
 
-        
         # Now that cell_layer_alignment exists, connect the signals
-        self.images_tab.tissue_target_selected.connect(self.cell_layer_alignment.set_target_image)
-        self.images_tab.tissue_unaligned_selected.connect(self.cell_layer_alignment.set_unaligned_image)
-        self.cell_layer_alignment.alignmentCompleteSignal.connect(self.add_item_to_manager)
-        self.cell_layer_alignment.replaceLayerSignal.connect(self.replace_layer_in_canvas)
-        self.cell_layer_alignment.loadOnCanvasSignal.connect(self.load_image_on_canvas)
-        
+        self.images_tab.tissue_target_selected.connect(
+            self.cell_layer_alignment.set_target_image
+        )
+        self.images_tab.tissue_unaligned_selected.connect(
+            self.cell_layer_alignment.set_unaligned_image
+        )
+
         # Connect to progress bar
         self.cell_layer_alignment.aligner.progress.connect(self.update_progress_bar)
-        
+
         # stardist UI
-        self.stardist_groupbox = StarDistUI(self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout)
+        self.stardist_groupbox = StarDistUI(
+            self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout
+        )
 
-        self.cellIntensity_groupbox = CellIntensityUI(self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout)
+        self.cellIntensity_groupbox = CellIntensityUI(
+            self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout
+        )
         self.preprocessing_dockwidget_main_vlayout.addWidget(self.save_button)
-
 
     def _setup_cell_layer_alignment(self):
         """Setup cell layer alignment component and its connections"""
@@ -462,160 +474,3 @@ class Ui_MainWindow(QMainWindow):
         """Update metadata tab with new metadata"""
         self.metadata = metadata
         self.metadata_tab.populate_table(self.metadata)
-
-    def replace_layer_in_canvas(self, aligned_image):
-        """Replace the second layer in the target image with the aligned image"""
-        try:
-            # Debug prints
-            print("Canvas attributes:", dir(self.canvas))
-            print("Has np_channels:", hasattr(self.canvas, "np_channels"))
-            if hasattr(self.canvas, "np_channels"):
-                print("np_channels keys:", self.canvas.np_channels.keys())
-
-            channel_to_replace = "Channel 2"
-
-            # Initialize channels if they don't exist
-            if not hasattr(self.canvas, "np_channels") or not self.canvas.np_channels:
-                self._initialize_canvas_channels(aligned_image, channel_to_replace)
-                return True
-
-            # Replace or add Channel 2
-            self._update_canvas_channel(aligned_image, channel_to_replace)
-            return True
-
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error replacing layer: {str(e)}")
-            import traceback
-
-            traceback.print_exc()
-            return False
-
-    def _initialize_canvas_channels(self, aligned_image, channel_name):
-        """Initialize canvas channels when they don't exist"""
-        from dataclasses import dataclass
-
-        @dataclass
-        class ChannelInfo:
-            data: np.ndarray
-            cmap: str = "gray"
-
-        print("Initializing channels")
-        self.canvas.np_channels = {}
-
-        # Add existing pixmap as Channel 1 if available
-        if hasattr(self.canvas, "pixmapItem") and self.canvas.pixmapItem:
-            print("Using existing pixmap for Channel 1")
-            pixmap = self.canvas.pixmapItem.pixmap()
-            image = pixmap.toImage()
-            width, height = image.width(), image.height()
-
-            ptr = image.bits()
-            ptr.setsize(height * width * 4)  # 4 for RGBAa
-            arr = np.frombuffer(ptr, np.uint8).reshape((height, width, 4))
-
-            self.canvas.np_channels["Channel 1"] = ChannelInfo(
-                arr[:, :, :3]
-            )  # RGB only
-
-        # Add aligned image as Channel 2
-        self.canvas.np_channels[channel_name] = ChannelInfo(aligned_image)
-        self.canvas.currentChannelNum = 1  # Index 1 corresponds to Channel 2
-
-        # Update canvas
-        if hasattr(self.canvas, "update_image"):
-            self.canvas.update_image("gray")
-        else:
-            self.load_image_on_canvas(aligned_image)
-
-        self.update_progress_bar(100, f"Added {channel_name} as a new layer")
-
-    def _update_canvas_channel(self, aligned_image, channel_name):
-        """Update existing canvas channel"""
-        from dataclasses import dataclass
-
-        @dataclass
-        class ChannelInfo:
-            data: np.ndarray
-            cmap: str = "gray"
-
-        current_active_channel = getattr(self.canvas, "currentChannelNum", 0)
-        print("Current active channel:", current_active_channel)
-
-        # Replace or add Channel 2
-        if channel_name in self.canvas.np_channels:
-            print(f"Replacing {channel_name} with aligned image")
-            self.canvas.np_channels[channel_name].data = aligned_image
-        else:
-            print(f"Adding {channel_name} as a new channel")
-            self.canvas.np_channels[channel_name] = ChannelInfo(aligned_image)
-
-        # Clear image cache if it exists
-        if hasattr(self.canvas, "image_cache"):
-            self.canvas.image_cache.clear()
-
-        # Update Channel 2
-        self.canvas.currentChannelNum = 1  # Index 1 corresponds to Channel 2
-
-
-        self.update_progress_bar(100, f"Replaced {channel_name} with aligned image")
-
-    def load_image_on_canvas(self, image):
-        """Load the given image directly onto the canvas"""
-        try:
-            if image is None:
-                return
-
-            from utils import numpy_to_qimage
-            from PyQt6.QtGui import QPixmap
-
-            # Prepare image for display
-            image_for_display = self._prepare_image_for_display(image)
-
-            # Convert to QImage and QPixmap
-            q_image = numpy_to_qimage(image_for_display)
-            pixmap = QPixmap(q_image)
-
-            # Update or create pixmapItem
-            self._update_canvas_pixmap(pixmap)
-
-            self.update_progress_bar(100, "Loaded aligned image onto canvas")
-            return True
-
-        except Exception as e:
-            QMessageBox.critical(
-                self, "Error", f"Error loading image onto canvas: {str(e)}"
-            )
-            import traceback
-
-            traceback.print_exc()
-            return False
-
-    def _prepare_image_for_display(self, image):
-        """Prepare numpy image for display"""
-        if image.dtype != np.uint8:
-            if image.max() > 255:
-                return ((image / image.max()) * 255).astype(np.uint8)
-            else:
-                return image.astype(np.uint8)
-        return image
-
-    def _update_canvas_pixmap(self, pixmap):
-        """Update canvas with new pixmap"""
-        if hasattr(self.canvas, "pixmapItem") and self.canvas.pixmapItem:
-            # Update existing pixmap
-            self.canvas.pixmapItem.setPixmap(pixmap)
-            self.canvas.pixmap = pixmap
-        else:
-            # Create new pixmapItem
-            pixmap_item = QGraphicsPixmapItem(pixmap)
-            self.canvas.pixmap = pixmap
-            self.canvas.pixmapItem = pixmap_item
-            self.canvas.scene().addItem(pixmap_item)
-
-            # Center and fit in view
-            item_rect = pixmap_item.boundingRect()
-            self.canvas.setSceneRect(item_rect)
-            self.canvas.fitInView(item_rect, Qt.AspectRatioMode.KeepAspectRatio)
-
-        # Signal canvas update
-        self.canvas.canvasUpdated.emit(pixmap)
