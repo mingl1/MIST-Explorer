@@ -15,7 +15,7 @@ from utils import (
 
 import cv2
 import concurrent.futures
-import itk
+import itk.elxParameterObjectPython
 from scipy.ndimage import rotate
 import itk.itkElastixRegistrationMethodPython
 

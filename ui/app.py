@@ -185,7 +185,6 @@ class Ui_MainWindow(QMainWindow):
         self.save_button = QPushButton("Save Canvas")
         self.save_button.clicked.connect(self.save_canvas)
 
-        # Crop and rotate components
         self.register_groupbox = RegisterUI(
             self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout
         )
