@@ -1,6 +1,10 @@
+import numpy as np
+
+if not hasattr(np, "bool"):
+    np.bool = np.bool_
 import ui.app as app, controller
 
-from PyQt6.QtWidgets import  QApplication
+from PyQt6.QtWidgets import QApplication
 
 if __name__ == "__main__":
 
