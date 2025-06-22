@@ -638,7 +638,6 @@ class ImageGraphicsView(__BaseGraphicsView):
         super().__init__(parent)
         self.begin_crop = False
         self.crop_cursor = QCursor(Qt.CursorShape.CrossCursor)
-        self.stardist_image_count = 0
         self.memory_cache = MemoryEfficientImageCache(max_cache_size_mb=300)
 
     def toPixmapItem(self, data: QPixmap | np.ndarray | QImage):
@@ -849,19 +848,15 @@ class ImageGraphicsView(__BaseGraphicsView):
                 labels = labels[:, :, 0]  # Take first channel if multi-channel
             return cv2.LUT(cv2.merge((labels, labels, labels)), lut)  # gray to color
 
-    def loadStardistLabels(self, stardist: ImageWrapper):
-
-        self.stardist_labels = stardist.data
+    def loadStardistLabels(self, stardist: np.ndarray):
+        self.stardist_labels = stardist
         cmap = self.np_channels[f"Channel {self.currentChannelNum+1}"].cmap
-        self.image_wrapper = ImageWrapper(
-            self.stardist_labels.copy(), name="stardist_label", cmap=cmap
+        image_wrapper = ImageWrapper(
+            self.stardist_labels.copy(), name="Channel 1", cmap=cmap
         )
-        self.update_image(cmap_text=cmap)
-        # !TODO: need to fix; think is broken now after changing update_manger behavior
-        self.update_manager.emit(
-            cmap, self.image_wrapper.name + " " + str(self.stardist_image_count)
+        self.add_to_canvas(
+            image_wrapper, as_new_image=True, new_image_name="Stardist Labels"
         )
-        self.stardist_image_count += 1
 
     def add_to_canvas(
         self,

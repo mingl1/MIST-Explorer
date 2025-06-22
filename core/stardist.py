@@ -19,7 +19,7 @@ import tensorflow as tf
 
 
 class StarDist(QThread):
-    stardistDone = pyqtSignal(ImageWrapper)
+    stardistDone = pyqtSignal(np.ndarray)
     # sendGrayScale = pyqtSignal(np.ndarray)
     progress = pyqtSignal(int, str)
     errorSignal = pyqtSignal(str)
@@ -141,13 +141,13 @@ class StarDist(QThread):
         print("here3")
         radius = self.params["radius"]
         self.progress.emit(95, "Dilating")
+        # If error is platform not found, ask user to install run "sudo apt install pocl-opencl-icd"
         self.stardist_labels_grayscale = np.array(
             dilate_labels(stardist_labels, radius=radius), dtype=np.uint16
         )
         print("here 4")
         self.progress.emit(100, "Stardist Done")
-        stardist_result = ImageWrapper(self.stardist_labels_grayscale, name="stardist")
-        self.stardistDone.emit(stardist_result)
+        self.stardistDone.emit(self.stardist_labels_grayscale)
 
     def cancel(self):
         self.terminate()
