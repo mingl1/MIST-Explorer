@@ -869,8 +869,17 @@ class ResizeHandle(QGraphicsRectItem):
         self.setPen(QPen(Qt.GlobalColor.black, 2))
         self.setZValue(11)
         self.setAcceptHoverEvents(True)
-        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations)  # <-- Fixes size at all zoom levels
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations)  # Fixes size at all zoom levels
         self.cursor_shape = cursor_shape
+        self.hitbox_radius = 60
+
+    def contains(self, point: QPointF) -> bool:
+        """Override hit detection to make the handle easier to click"""
+        # This creates a larger circular hit area around the center
+        radius = self.hitbox_radius  
+        hit_area = QRectF(-radius, -radius, 2 * radius, 2 * radius)
+        return hit_area.contains(point)
+
 
     def hoverEnterEvent(self, event):
         QApplication.setOverrideCursor(QCursor(self.cursor_shape))
@@ -902,19 +911,8 @@ class ResizableRect(QGraphicsRectItem):
             self.boundingRect().y() - self.posItem.boundingRect().height()
         )
 
-        # Create 8 resize handles with cursor + role
+        # Create 8 resize handles with correct cursor
         self.handles = []
-        self.handle_roles = [
-            ('top_left', Qt.Edge.TopEdge | Qt.Edge.LeftEdge),
-            ('top_center', Qt.Edge.TopEdge),
-            ('top_right', Qt.Edge.TopEdge | Qt.Edge.RightEdge),
-            ('mid_right', Qt.Edge.RightEdge),
-            ('bottom_right', Qt.Edge.BottomEdge | Qt.Edge.RightEdge),
-            ('bottom_center', Qt.Edge.BottomEdge),
-            ('bottom_left', Qt.Edge.BottomEdge | Qt.Edge.LeftEdge),
-            ('mid_left', Qt.Edge.LeftEdge),
-        ]
-
         cursor_shapes = [
             Qt.CursorShape.SizeFDiagCursor,    # top-left
             Qt.CursorShape.SizeVerCursor,      # top-center
@@ -926,10 +924,8 @@ class ResizableRect(QGraphicsRectItem):
             Qt.CursorShape.SizeHorCursor       # mid-left
         ]
 
-        for (cursor, (role_name, edge_flags)) in zip(cursor_shapes, self.handle_roles):
+        for cursor in cursor_shapes:
             handle = ResizeHandle(cursor, self)
-            handle.role = role_name
-            handle.edges = edge_flags
             self.handles.append(handle)
 
         self.updateHandles()
@@ -958,20 +954,11 @@ class ResizableRect(QGraphicsRectItem):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            scene_pos = self.mapToScene(event.pos())
-            for handle in self.handles:
-                if handle.contains(handle.mapFromScene(scene_pos)):
-                    self.selected_edge = handle.edges
-                    self.offset = QPointF()
-                    break
-            else:
-                self.selected_edge = Qt.Edge(0)
+            self.selected_edge = self.getEdges(event.pos())
+            self.offset = QPointF()
         else:
             self.selected_edge = Qt.Edge(0)
-
         super().mousePressEvent(event)
-
-
 
     def mouseMoveEvent(self, event):
         if self.selected_edge:
@@ -1019,30 +1006,18 @@ class ResizableRect(QGraphicsRectItem):
         self.updateHandles()
 
     def getEdges(self, pos):
-        """Detect which edge or corner the user is near — prioritize corners."""
+        """Fallback edge hit detection for resize dragging (not hover)"""
         edges = Qt.Edge(0)
         rect = self.rect()
-        buffer = 30  # How far outside/inside the user can be and still grab
+        buffer = 30
 
-        # Corners first (priority!)
-        if (pos - rect.topLeft()).manhattanLength() < buffer:
-            return Qt.Edge.TopEdge | Qt.Edge.LeftEdge
-        if (pos - rect.topRight()).manhattanLength() < buffer:
-            return Qt.Edge.TopEdge | Qt.Edge.RightEdge
-        if (pos - rect.bottomLeft()).manhattanLength() < buffer:
-            return Qt.Edge.BottomEdge | Qt.Edge.LeftEdge
-        if (pos - rect.bottomRight()).manhattanLength() < buffer:
-            return Qt.Edge.BottomEdge | Qt.Edge.RightEdge
-
-        # Edges (only if not corner)
-        if abs(pos.x() - rect.left()) < buffer:
+        if pos.x() < rect.x() + buffer:
             edges |= Qt.Edge.LeftEdge
-        elif abs(pos.x() - rect.right()) < buffer:
+        elif pos.x() > rect.right() - buffer:
             edges |= Qt.Edge.RightEdge
-
-        if abs(pos.y() - rect.top()) < buffer:
+        if pos.y() < rect.y() + buffer:
             edges |= Qt.Edge.TopEdge
-        elif abs(pos.y() - rect.bottom()) < buffer:
+        elif pos.y() > rect.bottom() - buffer:
             edges |= Qt.Edge.BottomEdge
 
         return edges
