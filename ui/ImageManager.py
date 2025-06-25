@@ -7,10 +7,10 @@ import numpy as np
 from core.canvas import ImageStorage
 from utils import numpy_to_qimage
 from PyQt6.QtCore import pyqtSignal
+from models.image_list_model import ImageTreeModel, ImageTreeItem
 
 
 class Manager(QWidget):
-    # Add signals for tissue image selection
     tissue_target_selected = pyqtSignal(str)
     tissue_unaligned_selected = pyqtSignal(str)
 
@@ -20,17 +20,24 @@ class Manager(QWidget):
 
         self.setWindowTitle("Image List")
         self.__layout = QVBoxLayout(self)
-        self.list_widget = ListWidget(self)
+        self.image_tree_view = ImageTreeWidget(self, model_canvas, model_stardist)
+        self.image_tree_model = ImageTreeModel()
+        self.image_tree_view.setModel(self.image_tree_model)
+        self.root_node = self.image_tree_model.invisibleRootItem()
+        self.image_tree_view.setIconSize(QSize(50, 50))
+        self.image_tree_view.setHeaderHidden(True)
         self.storage = ImageStorage()
         self.model_canvas = model_canvas
         self.model_stardist = model_stardist
-        self.__layout.addWidget(self.list_widget)
+        self.__layout.addWidget(self.image_tree_view)
 
     def set_model_canvas(self, model):
         self.model_canvas = model
+        self.image_tree_view.model_canvas = model
 
     def set_model_stardist(self, model):
         self.model_stardist = model
+        self.image_tree_view.model_stardist = model
 
     def on_text_edited(self):
         sender = self.sender()  # This is the QLineEdit that was edited
@@ -40,34 +47,45 @@ class Manager(QWidget):
 
     def add_item(self, uuid):
         print("adding item")
-        item = QListWidgetItem(self.list_widget)
-        h_layout = QHBoxLayout()
-        name = self.storage.get_data(uuid)["name"]
-        data = self.storage.get_data(uuid)["data"]["Channel 1"].data
-        print(data)
-        thumbnail_label = QLabel(self)
-        thumbnail_pixmap = QPixmap(numpy_to_qimage(data))
-        thumbnail_label.setPixmap(
-            thumbnail_pixmap.scaled(50, 50, Qt.AspectRatioMode.KeepAspectRatio)
-        )
-        h_layout.addWidget(thumbnail_label)
+        assert self.root_node is not None, "Root node is not initialized"
+        main_item = ImageTreeItem(uuid, channel="Channel 1", useItemName=True)
+        item = self.storage.get_data(uuid)
+        assert item is not None, f"No data found for UUID: {uuid}"
+        item_data = item["data"]
+        channels = item_data.keys()
+        if len(channels) > 1:
+            for channel in channels:
+                channel_item = ImageTreeItem(uuid, channel=channel, useItemName=False)
+                main_item.appendRow(channel_item)
+        self.root_node.appendRow(main_item)
+        # self.image_tree_view.setExpanded(
+        #     self.image_tree_model.indexFromItem(main_item), True
+        # )
 
-        text_label = QLineEdit(name, self)
-        text_label.setObjectName(uuid)
-        text_label.editingFinished.connect(self.on_text_edited)
+        # h_layout = QHBoxLayout()
+        # thumbnail_label = QLabel(self)
+        # thumbnail_pixmap = QPixmap(numpy_to_qimage(data))
+        # thumbnail_label.setPixmap(
+        #     thumbnail_pixmap.scaled(50, 50, Qt.AspectRatioMode.KeepAspectRatio)
+        # )
+        # h_layout.addWidget(thumbnail_label)
 
-        text_label.setStyleSheet("QLineEdit { border: none; background: transparent; }")
+        # text_label = QLineEdit(name, self)
+        # text_label.setObjectName(uuid)
+        # text_label.editingFinished.connect(self.on_text_edited)
 
-        h_layout.addWidget(text_label)
+        # text_label.setStyleSheet("QLineEdit { border: none; background: transparent; }")
 
-        item_widget = QWidget()
-        item_widget.setLayout(h_layout)
+        # h_layout.addWidget(text_label)
 
-        self.list_widget.setItemWidget(item, item_widget)
+        # item_widget = QWidget()
+        # item_widget.setLayout(h_layout)
 
-        # Store the image data in the item's user role
-        item.setData(Qt.ItemDataRole.UserRole, uuid)
-        item.setSizeHint(item_widget.sizeHint())
+        # self.image_tree_view.setItemWidget(item, item_widget)
+
+        # # Store the image data in the item's user role
+        # item.setData(Qt.ItemDataRole.UserRole, uuid)
+        # item.setSizeHint(item_widget.sizeHint())
 
     def add_to_storage(self, uuid, obj):
         self.storage.add_data(uuid, obj)
@@ -87,24 +105,33 @@ class Manager(QWidget):
         self.tissue_unaligned_selected.emit(uuid)
 
 
-class ListWidget(QListWidget):
-    def __init__(self, parent):
+class ImageTreeWidget(QTreeView):
+    def __init__(self, parent, model_canvas, model_stardist=None):
         super().__init__(parent)
-        self.setDragDropMode(QListWidget.DragDropMode.InternalMove)
-        self.itemDoubleClicked.connect(self.on_item_selected)
+        # self.setDragDropMode(QListWidget.DragDropMode.InternalMove)
+        self.storage = ImageStorage()
+        self.model_canvas = model_canvas
+        self.model_stardist = model_stardist
+        self.doubleClicked.connect(self.on_item_selected)
 
     def on_item_selected(self, item):
-        # Action on select
-        _, uuid = self._name_and_uuid_from_item(item)
-        # data = self.parent().storage.get_data(uuid)
-        # data = data["data"]
-
-        self.parent().model_canvas.add_to_canvas(uuid, as_new_image=False)
+        channel, uuid = self._name_and_uuid_from_item(item, tooltip=True)
+        is_new_image = self.model_canvas.uuid != uuid
+        if not is_new_image:
+            item = self.storage.get_data(uuid)
+            assert item is not None, f"No data found for UUID: {uuid}"
+            data = item["data"]
+            assert data is not None, f"No data found for UUID: {uuid}"
+            image_wrapper = data[channel]
+            self.model_canvas.add_to_canvas(image_wrapper, as_new_image=False)
+        else:
+            self.model_canvas.add_to_canvas(
+                uuid, as_new_image=False, target_channel=channel
+            )
 
     def contextMenuEvent(self, event):
         menu = QMenu(self)
-
-        item = self.itemAt(event.pos())
+        item = self.indexAt(event.pos())
         if item:
             set_menu = QMenu("Set as...", self)
             set_reference = QAction("Reference")
@@ -121,7 +148,6 @@ class ListWidget(QListWidget):
             set_menu.addAction(set_cell_image)
             set_menu.addAction(set_tissue_target_image)
             set_menu.addAction(set_tissue_unaligned_image)
-            set_menu.addAction(save_as_tiff)
 
             set_reference.triggered.connect(
                 lambda: self.show_message("reference selected")
@@ -141,7 +167,7 @@ class ListWidget(QListWidget):
             # rename.triggered.connect(lambda: self.rename(item))
 
             menu.addMenu(set_menu)
-            # menu.addAction(rename)
+            menu.addAction(save_as_tiff)
             menu.addAction(delete)
 
             menu.exec(event.globalPos())
@@ -158,14 +184,15 @@ class ListWidget(QListWidget):
         row = self.row(item)
         self.takeItem(row)
 
-    def _name_and_uuid_from_item(self, item):
-        item_widget = self.itemWidget(item)
-        layout = item_widget.layout()
-        # The text label is the second widget in the layout
-        text_label = layout.itemAt(1).widget()
-        name = text_label.text()
-        name = os.path.splitext(name)[0]
+    def _name_and_uuid_from_item(self, item, tooltip=False):
+        item = self.model().itemFromIndex(item)  # type: ignore
+        if tooltip is False:
+            name = item.text()
+        else:
+            name = item.data(Qt.ItemDataRole.ToolTipRole)
         uuid = item.data(Qt.ItemDataRole.UserRole)
+        if not uuid:
+            raise ValueError("Item does not have a valid UUID.")
         return name, uuid
 
     def save_as(self, item, type):
