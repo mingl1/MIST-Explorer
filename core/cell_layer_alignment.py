@@ -15,7 +15,7 @@ from utils import (
 
 import cv2
 import concurrent.futures
-import itk
+import itk.elxParameterObjectPython
 from scipy.ndimage import rotate
 import itk.itkElastixRegistrationMethodPython
 
@@ -173,7 +173,6 @@ class CellLayerAligner(QThread):
             flip,  # Flip used in preprocessing
             moving.shape,  # Original moving image shape
         )
-        print(transform_info["combined_matrix"][:2, :3])
         return transform_info["combined_matrix"][
             :2, :3
         ]  # Return only 2x3 part for affine transform

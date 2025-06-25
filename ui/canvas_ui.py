@@ -209,16 +209,28 @@ class ReferenceGraphicsViewUI(QGraphicsView):
 
     def mousePressEvent(self, event):
         if not self.is_empty() and len(self.np_channels) > 1:
-            print("mouse press")
             scene_pos = self.mapToScene(event.pos())
+            arrow_clicked = False
+
+            # Check if left arrow was clicked
             if self.left_arrow and self.left_arrow.contains(
                 self.left_arrow.mapFromScene(scene_pos)
             ):
                 self.prev_slide()
+                arrow_clicked = True
+
+            # Check if right arrow was clicked
             elif self.right_arrow and self.right_arrow.contains(
                 self.right_arrow.mapFromScene(scene_pos)
             ):
                 self.next_slide()
+                arrow_clicked = True
+
+            # If an arrow was clicked, don't pass the event to parent
+            if arrow_clicked:
+                return
+
+        # Let parent handle the event (enables panning)
         super().mousePressEvent(event)
 
     def prev_slide(self):
@@ -244,6 +256,26 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         item_rect = self.pixmapItem.boundingRect()
         self.setSceneRect(item_rect)
         self.fitInView(self.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+
+    def __centerImage(self):
+        item_rect = self.pixmapItem.boundingRect()
+        self.setSceneRect(item_rect)
+        self.fitInView(self.pixmapItem, Qt.AspectRatioMode.KeepAspectRatio)
+        self.centerOn(self.pixmapItem)
+
+    # def mouseMoveEvent(self, event: QMouseEvent):
+    #     """Handle mouse move events for panning"""
+    #     if not self.is_empty():
+    #         scene_pos = self.mapToScene(event.pos())
+    #         image_pos = self.pixmapItem.mapFromScene(scene_pos)
+
+    #         x = int(image_pos.x())
+    #         y = int(image_pos.y())
+    #         img = self.pixmapItem.pixmap().toImage()
+
+    #         if 0 <= x < img.width() and 0 <= y < img.height():
+    #             global_pos = self.mapToGlobal(event.pos())
+    #     super().mouseMoveEvent(event)
 
     def display(self, pixmap: QPixmap, is_layer: bool):
         # self.scene().clear()
@@ -307,6 +339,39 @@ class ReferenceGraphicsViewUI(QGraphicsView):
 
         # self.move(int(self.parent.width() - 2*self.parent.width()), 10)
 
+    def highlight_pixel(self, x, y):
+        """Highlight the pixel at the given coordinates"""
+        # Remove existing pixel highlight if any
+        if hasattr(self, "pixel_highlight") and self.pixel_highlight:
+            self.scene().removeItem(self.pixel_highlight)
+
+        # Create a small rectangle to highlight the pixel
+        # Convert pixel coordinates to scene coordinates
+        pixel_rect = QRectF(x, y, 1, 1)  # 1x1 pixel
+        scene_rect = self.pixmapItem.mapRectToScene(pixel_rect)
+
+        # Create highlight rectangle
+        self.pixel_highlight = QGraphicsRectItem(scene_rect)
+
+        # Style the highlight (you can customize this)
+        pen = QPen(QColor(255, 255, 0, 180))  # Yellow with transparency
+        pen.setWidth(0)  # Cosmetic pen (always 1 pixel wide regardless of zoom)
+        pen.setCosmetic(True)
+        self.pixel_highlight.setPen(pen)
+
+        # Optional: Add a semi-transparent fill
+        brush = QBrush(QColor(255, 255, 0, 50))  # Light yellow fill
+        self.pixel_highlight.setBrush(brush)
+
+        # Add to scene
+        self.scene().addItem(self.pixel_highlight)
+
+    def hide_pixel_highlight(self):
+        """Hide the pixel highlight"""
+        if hasattr(self, "pixel_highlight") and self.pixel_highlight:
+            self.scene().removeItem(self.pixel_highlight)
+            self.pixel_highlight = None
+
 
 class ImageGraphicsViewUI(QGraphicsView):
     """Main image view with support for selection, cropping and other operations"""
@@ -339,6 +404,8 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.crop_mode = False
         self.crop_start_pos = None
         self.active_crop_rect = None
+
+        self.reference_view = None
 
         # Setup interaction
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -502,7 +569,7 @@ class ImageGraphicsViewUI(QGraphicsView):
 
     def mouseDoubleClickEvent(self, event):
         if not self.isEmpty():
-            self.__centerImage(self.pixmapItem)
+            self.__centerImage()
 
     def updateCanvas(self, pixmap: QPixmap, reset=False, crop=False):
         """Updates canvas when current image is operated on"""
@@ -518,16 +585,18 @@ class ImageGraphicsViewUI(QGraphicsView):
             self.pixmapItem = pixmapItem
             self.pixmapItem.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
             self.scene().addItem(self.pixmapItem)
-            self.__centerImage(self.pixmapItem)
+            self.__centerImage()
         else:
             # Update the pixmap of the existing item
             self.pixmapItem.setPixmap(pixmapItem.pixmap())
 
-    def __centerImage(self, pixmapItem):
+    def __centerImage(self):
         item_rect = self.pixmapItem.boundingRect()
         self.setSceneRect(item_rect)
-        self.fitInView(pixmapItem, Qt.AspectRatioMode.KeepAspectRatio)
-        self.centerOn(pixmapItem)
+        self.fitInView(self.pixmapItem, Qt.AspectRatioMode.KeepAspectRatio)
+        self.centerOn(self.pixmapItem)
+        # if self.reference_view:
+        #     self.reference_view.__centerImage()
 
     def dragEnterEvent(self, event: QDragEnterEvent):
         if event.mimeData().hasUrls():
@@ -553,7 +622,8 @@ class ImageGraphicsViewUI(QGraphicsView):
 
         if self.zoom < 1 / (1.1**2) and not zooming_out:  # Max zoom in
             return
-
+        if self.reference_view:
+            self.reference_view.wheelEvent(event)
         zoom_factor = 1.1 if zooming_out else 0.9
         self.zoom *= zoom_factor
 
@@ -673,7 +743,9 @@ class ImageGraphicsViewUI(QGraphicsView):
                     self.rubberBand.setGeometry(QRect(self.origin, QSize()))
                     self.rubberBand.show()
                     return
-
+        if self.reference_view:
+            # Propagate event to reference view if it exists
+            self.reference_view.mousePressEvent(event)
         super().mousePressEvent(event)
 
         # Propagate event to rubber bands
@@ -815,9 +887,17 @@ class ImageGraphicsViewUI(QGraphicsView):
                     self.enc.updateMousePositionLabel(
                         f"R: {r}, G: {g}, B: {b} X: {x}, Y: {y}"
                     )
+
+                # Highlight the pixel under cursor
+                self.highlight_pixel(x, y)
+                if self.reference_view:
+                    self.reference_view.highlight_pixel(x, y)
             else:
                 self.enc.updateMousePositionLabel(f"")
-
+                # Hide pixel highlight when outside image bounds
+                self.hide_pixel_highlight()
+                if self.reference_view:
+                    self.reference_view.hide_pixel_highlight()
         # Handle rubber band updates for old crop system
         if (
             not self.isEmpty()
@@ -918,7 +998,40 @@ class ImageGraphicsViewUI(QGraphicsView):
         """Load channel data"""
         self.np_channels = np_channels
         if self.pixmapItem is not None:
-            self.__centerImage(self.pixmapItem)
+            self.__centerImage()
+
+    def highlight_pixel(self, x, y):
+        """Highlight the pixel at the given coordinates"""
+        # Remove existing pixel highlight if any
+        if hasattr(self, "pixel_highlight") and self.pixel_highlight:
+            self.scene().removeItem(self.pixel_highlight)
+
+        # Create a small rectangle to highlight the pixel
+        # Convert pixel coordinates to scene coordinates
+        pixel_rect = QRectF(x, y, 1, 1)  # 1x1 pixel
+        scene_rect = self.pixmapItem.mapRectToScene(pixel_rect)
+
+        # Create highlight rectangle
+        self.pixel_highlight = QGraphicsRectItem(scene_rect)
+
+        # Style the highlight (you can customize this)
+        pen = QPen(QColor(255, 255, 0, 180))  # Yellow with transparency
+        pen.setWidth(0)  # Cosmetic pen (always 1 pixel wide regardless of zoom)
+        pen.setCosmetic(True)
+        self.pixel_highlight.setPen(pen)
+
+        # Optional: Add a semi-transparent fill
+        brush = QBrush(QColor(255, 255, 0, 50))  # Light yellow fill
+        self.pixel_highlight.setBrush(brush)
+
+        # Add to scene
+        self.scene().addItem(self.pixel_highlight)
+
+    def hide_pixel_highlight(self):
+        """Hide the pixel highlight"""
+        if hasattr(self, "pixel_highlight") and self.pixel_highlight:
+            self.scene().removeItem(self.pixel_highlight)
+            self.pixel_highlight = None
 
 
 class ResizeHandle(QGraphicsRectItem):

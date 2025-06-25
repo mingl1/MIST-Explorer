@@ -1,6 +1,5 @@
 import gc
 from typing import Dict, OrderedDict, Union
-import weakref
 from PyQt6.QtWidgets import (
     QGraphicsView,
     QGraphicsScene,
@@ -16,10 +15,6 @@ from PyQt6.QtCore import (
     QSize,
     pyqtSignal,
     pyqtSlot,
-    QThreadPool,
-    QRunnable,
-    QTimer,
-    QObject,
 )
 import tifffile as tiff, numpy as np, matplotlib as mpl, time, cv2, xml.etree.ElementTree as ET, os, copy
 from core.Worker import Worker
@@ -626,7 +621,6 @@ class ReferenceGraphicsView(__BaseGraphicsView):
 
 ##########################################################
 class ImageGraphicsView(__BaseGraphicsView):
-
     canvasUpdated = pyqtSignal(QPixmap)
     newImageAdded = pyqtSignal(QGraphicsPixmapItem)
     saveImage = pyqtSignal(QGraphicsPixmapItem)

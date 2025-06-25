@@ -142,6 +142,7 @@ class Ui_MainWindow(QMainWindow):
         self.small_view = ReferenceGraphicsViewUI(self.centralWidget())
         self.small_view.setParent(self.canvas)
         self.small_view.hide()
+        self.canvas.reference_view = self.small_view
 
     def _setup_images_tab(self):
         """Setup the images workspace tab"""
@@ -185,7 +186,6 @@ class Ui_MainWindow(QMainWindow):
         self.save_button = QPushButton("Save Canvas")
         self.save_button.clicked.connect(self.save_canvas)
 
-        # Crop and rotate components
         self.register_groupbox = RegisterUI(
             self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout
         )
