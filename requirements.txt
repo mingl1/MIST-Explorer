@@ -8,7 +8,7 @@ PyQt6
 SimpleITK
 pystackreg
 diplib 
-tensorflow
+tensorflow[and-cuda]
 pandas
 QtRangeSlider
 stardist

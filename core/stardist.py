@@ -1,15 +1,7 @@
-from PyQt6.QtGui import QImage, QPixmap
-from PyQt6.QtCore import pyqtSignal, QThread, pyqtSlot
-from PyQt6.QtWidgets import QMessageBox
-import numpy as np, cv2 as cv, matplotlib as mpl, time
+from PyQt6.QtCore import pyqtSignal, QThread
+import numpy as np
 from pyclesperanto_prototype import dilate_labels
-from core.canvas import ImageGraphicsView, ImageWrapper
-import ui.app
-from utils import numpy_to_qimage, qimage_to_numpy
-from skimage.segmentation import expand_labels
 from core.Worker import Worker
-
-# STARDIST
 import os
 
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
@@ -20,7 +12,6 @@ import tensorflow as tf
 
 class StarDist(QThread):
     stardistDone = pyqtSignal(np.ndarray)
-    # sendGrayScale = pyqtSignal(np.ndarray)
     progress = pyqtSignal(int, str)
     errorSignal = pyqtSignal(str)
 
@@ -46,10 +37,10 @@ class StarDist(QThread):
 
     def runStarDist(self):
         if self.protein_channels is None and self.np_image is None:
-            self.errorSignal.emit("please load image first")  # emit error message
+            self._fatal_error_message("please load image first")  # emit error message
             return
         elif self.protein_channels and self.np_image:
-            self.errorSignal.emit(
+            self._fatal_error_message(
                 "unknown error, canvas has both single channel image and multi-channel image initiated"
             )  # emit error message
             return
@@ -68,9 +59,11 @@ class StarDist(QThread):
 
         # if system == "Windows":
         with tf.device(device_name):
-            self.run()
-            self.finished.connect(self.quit)
-            self.finished.connect(self.deleteLater)
+            self.star_dist_worker = Worker(self.run)
+            self.star_dist_worker.finished.connect(self.quit)
+            self.star_dist_worker.finished.connect(self.deleteLater)
+            self.star_dist_worker.error.connect(self._fatal_error_message)
+            self.star_dist_worker.start()
 
         # else:
         #     print("on MacOS ")
@@ -85,66 +78,51 @@ class StarDist(QThread):
         elif self.protein_channels is None and self.np_image:
             return self.np_image
         elif self.protein_channels and self.np_image is None:
-            print(self.protein_channels)
-            print(self.params["channel"])
             return self.protein_channels[self.params["channel"]].data
 
     def run(self):
         cell_image = self.__get_cell_image()
+        if cell_image is None:
+            self._fatal_error_message("No image to process")
+            return
+        assert isinstance(cell_image, np.ndarray), "cell_image must be a numpy array"
 
-        # adjusted = cv.convertScaleAbs(cell_image, alpha=(255.0/65535.0))
-
-        # alpha = 5 # Contrast control
-        # beta = 15 # Brightness control
-        # adjusted = cv.convertScaleAbs(adjusted, alpha=alpha, beta=beta)
-        # cv.imshow('Image Window',adjusted)
-
-        # cv.waitKey(0)
-
-        # cv.destroyAllWindows()
-
-        self.progress.emit(0, "Starting StarDist")
+        self.progress.emit(0, "Loading StarDist model")
         model = StarDist2D.from_pretrained(str(self.params["model"]))
-
+        if model is None:
+            self._fatal_error_message("Failed to load StarDist model")
+            return
         self.progress.emit(25, "Training model")
 
         print("here2")
-        if self.params["n_tiles"] == 0:
+        guess_tiles = self.params["n_tiles"]
+        if guess_tiles == 0:
             guess_tiles = model._guess_n_tiles(cell_image)
-            # total_tiles = int(guess_tiles[0] * guess_tiles[1])
-            # self.setNumberTiles(n_tiles)
-            stardist_labels, _ = model.predict_instances(
-                normalize(
-                    cell_image,
-                    self.params["percentile_low"],
-                    self.params["percentile_high"],
-                ),
-                prob_thresh=self.params["prob_threshold"],
-                nms_thresh=self.params["nms_threshold"],
-                n_tiles=guess_tiles,
-            )
-
-        else:
-
-            stardist_labels, _ = model.predict_instances(
-                normalize(
-                    cell_image,
-                    self.params["percentile_low"],
-                    self.params["percentile_high"],
-                ),
-                prob_thresh=self.params["prob_threshold"],
-                nms_thresh=self.params["nms_threshold"],
-                n_tiles=(self.params["n_tiles"], (self.params["n_tiles"])),
-            )
+        stardist_labels, _ = model.predict_instances(
+            normalize(
+                cell_image,
+                self.params["percentile_low"],
+                self.params["percentile_high"],
+            ),
+            prob_thresh=self.params["prob_threshold"],
+            nms_thresh=self.params["nms_threshold"],
+            n_tiles=guess_tiles,
+        )
 
         # dilate
         print("here3")
         radius = self.params["radius"]
         self.progress.emit(95, "Dilating")
         # If error is platform not found, ask user to install run "sudo apt install pocl-opencl-icd"
-        self.stardist_labels_grayscale = np.array(
-            dilate_labels(stardist_labels, radius=radius), dtype=np.uint16
-        )
+        try:
+            self.stardist_labels_grayscale = np.array(
+                dilate_labels(stardist_labels, radius=radius), dtype=np.uint16
+            )
+        except Exception as e:
+            self._fatal_error_message(
+                f"Error during dilation: {e}. You may need to install pocl-opencl-icd(wsl2 users)."
+            )
+            return
         print("here 4")
         self.progress.emit(100, "Stardist Done")
         self.stardistDone.emit(self.stardist_labels_grayscale)
@@ -162,28 +140,7 @@ class StarDist(QThread):
         if not self.stardist_labels_grayscale is None:
             Image.fromarray(self.stardist_labels_grayscale).save(file_name)
         else:
-            self.errorSignal.emit("Cannot save. No stardist labels available")
-
-    # @pyqtSlot(int)
-    # def updateProgress(self, num):
-    #     self.progress.emit(num, f"Generating Tile {num}")
-
-    # only uint8
-    # @pyqtSlot(ImageWrapper)
-    # def on_stardist_completed(self, stardist_result):
-    #     self.stardistDone.emit(stardist_result)
-
-    def change_cmap(self):
-        pass
-
-    def generate_lut(self, cmap: str):
-        label_range = np.linspace(0, 1, 256)
-        return np.uint8(mpl.colormaps[cmap](label_range)[:, 2::-1] * 256).reshape(
-            256, 1, 3
-        )
-
-    def label2rgb(self, labels, lut):
-        return cv.LUT(cv.merge((labels, labels, labels)), lut)
+            self._fatal_error_message("Cannot save. No stardist labels available")
 
     def updateChannels(self, protein_channels, _):
         self.np_image = None
@@ -220,3 +177,7 @@ class StarDist(QThread):
 
     def setDilationRadius(self, value):
         self.params["radius"] = value
+
+    def _fatal_error_message(self, msg):
+        self.errorSignal.emit(msg)
+        self.progress.emit(100, "")

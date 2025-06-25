@@ -142,6 +142,7 @@ class Ui_MainWindow(QMainWindow):
         self.small_view = ReferenceGraphicsViewUI(self.centralWidget())
         self.small_view.setParent(self.canvas)
         self.small_view.hide()
+        self.canvas.reference_view = self.small_view
 
     def _setup_images_tab(self):
         """Setup the images workspace tab"""

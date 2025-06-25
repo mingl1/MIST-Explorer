@@ -1,12 +1,14 @@
 [project]
-name = "mist-explorer"
+name = "MIST-Explorer"
 version = "0.1.0"
 description = "Our application is a powerful and intuitive tool designed for researchers and scientists in the field of single-cell proteomics. It allows users to load, visualize, and analyze protein distribution at the single-cell level. By providing a user-friendly interface, the app enables seamless exploration of protein expression data, helping to uncover insights into cellular functions, interactions, and heterogeneity."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "astroalign>=2.6.1",
+    "cupy-cuda12x>=13.4.1",
     "diplib>=3.5.2",
+    "ipykernel>=6.29.5",
     "itk-elastix>=0.23.0",
     "matplotlib>=3.10.3",
     "numpy==1.26.4",

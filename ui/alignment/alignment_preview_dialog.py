@@ -130,15 +130,6 @@ class AlignmentPreviewDialog(QDialog):
             overlay = np.zeros((h, w, 3), dtype=np.uint8)
             overlay[:, :, 0] = target_gray  # Red channel = target
             overlay[:, :, 1] = aligned_gray  # Green channel = aligned
-
-            # Save to debug file
-            # try:
-            #     print("Saving debug file...")
-            #     cv2.imwrite("micro.png", overlay)
-            #     print("Saved overlay to micro.png")
-            # except Exception as save_error:
-            #     print(f"Warning: Could not save debug file: {save_error}")
-
             # Convert to QImage
             print("Converting to QImage...")
             height, width, channels = overlay.shape
