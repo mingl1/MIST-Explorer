@@ -440,8 +440,6 @@ class __BaseGraphicsView(QWidget):
         self._clear_caches()
 
         # Update manager without filename
-        print("Emitting to update manager")
-        # self.update_manager.emit(self.np_channels, "replaced_multichannel")
         self.image_count += 1
         print("Canvas replaced with multichannel data")
         if display_channel_data is None:
@@ -537,7 +535,7 @@ class __BaseGraphicsView(QWidget):
     def _emit_multichannel_data(
         self, emit_data: Dict[str, np.ndarray], subsample_for_emit: bool
     ) -> None:
-        """Emit multichannel data for display."""
+        """Notify listeners that number of channels has changed and emit data."""
         if emit_data:
             if subsample_for_emit:
                 # Create wrappers for subsampled data
@@ -923,9 +921,9 @@ class ImageGraphicsView(__BaseGraphicsView):
         self.image_wrapper = img
         display_image = self._prepare_display_image(img.data)
         emit_data[channel_name] = display_image
-        self._emit_multichannel_data(emit_data, subsample_for_emit)
         if as_new_image:
             assert image_name is not None, "Image name must be provided for new image"
+            self._emit_multichannel_data(emit_data, subsample_for_emit)
             self._add_to_manager(image_name)
         return display_image
 
