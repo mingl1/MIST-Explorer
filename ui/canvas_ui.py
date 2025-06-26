@@ -322,6 +322,9 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.setupUI()
 
         # Initialize variables
+        self.crop_drawing_mode = False  # True when user is drawing initial crop
+        self.crop_draw_origin = None    # Starting point of the drawn crop
+        self.temp_crop_rect = None      # Temporary visual set draw
         self.pixmapItem = None
         self.rubberBand = None
         self.rubberBands = []
@@ -603,6 +606,21 @@ class ImageGraphicsViewUI(QGraphicsView):
         if self.isEmpty():
             return
 
+
+        if self.crop_drawing_mode and event.button() == Qt.MouseButton.LeftButton:
+            self.crop_draw_origin = self.mapToScene(event.pos())
+
+            if self.temp_crop_rect:
+                self.scene().removeItem(self.temp_crop_rect)
+
+            pen = QPen(QColor(0, 255, 0), 2, Qt.PenStyle.SolidLine)  # Brighter green solid
+            pen.setCosmetic(True)  # Constant width regardless of zoom
+            self.temp_crop_rect = QGraphicsRectItem()
+            self.temp_crop_rect.setPen(pen)
+            self.temp_crop_rect.setBrush(QBrush(QColor(0, 255, 0, 50)))  # translucent green fill
+            self.scene().addItem(self.temp_crop_rect)
+            return  # Don't pass to super or anything else if in drawing mode
+
         if event.button() == Qt.MouseButton.LeftButton:
             # Handle crop mode
             if self.crop_mode:
@@ -652,17 +670,14 @@ class ImageGraphicsViewUI(QGraphicsView):
                     return
                 elif self.select == "poly":
                     if not self.current_polygon:
-                        self.current_polygon = PolyLasso(
-                            self.pixmapItem
-                        )  # Set pixmapItem as parent
+
+                        self.current_polygon = PolyLasso(self.pixmapItem)
+
                         self.scene().addItem(self.current_polygon)
-                        # Enable mouse tracking for live preview
                         self.setMouseTracking(True)
 
-                    # Add point in scene coordinates, but relative to the image
                     scene_pos = self.mapToScene(event.pos())
                     image_pos = self.pixmapItem.mapFromScene(scene_pos)
-                    # Convert image_pos to scene coordinates relative to the image
                     polygon_pos = self.pixmapItem.mapToScene(image_pos)
                     self.current_polygon.add_point(polygon_pos, image_pos)
                     return
@@ -676,9 +691,9 @@ class ImageGraphicsViewUI(QGraphicsView):
 
         super().mousePressEvent(event)
 
-        # Propagate event to rubber bands
         for r in self.rubberBands:
             r.mousePressEvent(event)
+
 
     def keyPressEvent(self, event):
         # Handle crop confirmation with Enter key
@@ -749,33 +764,38 @@ class ImageGraphicsViewUI(QGraphicsView):
         painter.end()
 
     def mouseMoveEvent(self, event: QMouseEvent):
+        if self.crop_drawing_mode and self.crop_draw_origin and self.temp_crop_rect:
+            current_pos = self.mapToScene(event.pos())
+            rect = QRectF(self.crop_draw_origin, current_pos).normalized()
+            self.temp_crop_rect.setRect(rect)
+            return
+
         super().mouseMoveEvent(event)
 
-        # Handle crop rectangle resizing
-        if self.crop_mode and self.crop_start_pos and self.active_crop_rect:
-            current_pos = self.mapToScene(event.pos())
+#         # Handle crop rectangle resizing
+#         if self.crop_mode and self.crop_start_pos and self.active_crop_rect:
+#             current_pos = self.mapToScene(event.pos())
 
-            # Update the crop rectangle
-            x1, y1 = self.crop_start_pos.x(), self.crop_start_pos.y()
-            x2, y2 = current_pos.x(), current_pos.y()
+#             # Update the crop rectangle
+#             x1, y1 = self.crop_start_pos.x(), self.crop_start_pos.y()
+#             x2, y2 = current_pos.x(), current_pos.y()
 
-            # Ensure proper rectangle (top-left to bottom-right)
-            left = min(x1, x2)
-            top = min(y1, y2)
-            width = abs(x2 - x1)
-            height = abs(y2 - y1)
+#             # Ensure proper rectangle (top-left to bottom-right)
+#             left = min(x1, x2)
+#             top = min(y1, y2)
+#             width = abs(x2 - x1)
+#             height = abs(y2 - y1)
 
-            self.active_crop_rect.setRect(left, top, width, height)
+#             self.active_crop_rect.setRect(left, top, width, height)
 
         # Store current mouse position for polygon preview
         if self.current_polygon and len(self.current_polygon.points) > 0:
-            # Update temp point in scene coordinates relative to the image
             scene_pos = self.mapToScene(event.pos())
             image_pos = self.pixmapItem.mapFromScene(scene_pos)
             polygon_pos = self.pixmapItem.mapToScene(image_pos)
             self.current_polygon.set_temp_point(polygon_pos)
 
-        # Handle pixel info display
+
         if self.pixmapItem:
             scene_pos = self.mapToScene(event.pos())
             image_pos = self.pixmapItem.mapFromScene(scene_pos)
@@ -784,18 +804,16 @@ class ImageGraphicsViewUI(QGraphicsView):
             y = int(image_pos.y())
             img = self.pixmapItem.pixmap().toImage()
 
-            # Show pixel info in tooltip
             if 0 <= x < img.width() and 0 <= y < img.height():
                 color = QColor(img.pixel(x, y))
                 r, g, b = color.red(), color.green(), color.blue()
-
                 global_pos = self.mapToGlobal(event.pos())
                 QToolTip.showText(global_pos, f"", self)
 
-                # Get layer values if available
-                layers = self.enc.view_tab.get_layer_values_at(x, y)
 
-                combined_layers = None  # added this so we don't get reference error
+                layers = self.enc.view_tab.get_layer_values_at(x, y)
+                combined_layers = None
+
 
                 if layers:
                     layers = [f"{layer}: {value[0]}\n" for layer, value in layers]
@@ -804,7 +822,6 @@ class ImageGraphicsViewUI(QGraphicsView):
                 else:
                     QToolTip.showText(global_pos, f"R: {r}, G: {g}, B: {b}", self)
 
-                # Update position display in main window
                 if combined_layers:
                     combined_layers = combined_layers.replace("\n", ", ")
                     combined_layers += ";"
@@ -818,20 +835,10 @@ class ImageGraphicsViewUI(QGraphicsView):
             else:
                 self.enc.updateMousePositionLabel(f"")
 
-        # Handle rubber band updates for old crop system
-        if (
-            not self.isEmpty()
-            and self.begin_crop
-            and self.rubberBand
-            and not self.crop_mode
-        ):
+        if not self.isEmpty() and self.begin_crop and self.rubberBand:
             self.rubberBand.setGeometry(QRect(self.origin, event.pos()).normalized())
 
-        if (
-            (self.select == "rect" or self.select == "circle")
-            and self.rubberBands
-            and self.origin is not None
-        ):
+        if (self.select == "rect" or self.select == "circle") and self.rubberBands and self.origin is not None:
             if self.select == "circle":
                 center = self.origin
                 corner = event.pos()
@@ -846,16 +853,34 @@ class ImageGraphicsViewUI(QGraphicsView):
                     QRect(self.origin, event.pos()).normalized()
                 )
 
-        # Propagate event to rubber bands when not in selection mode
         if not self.select:
             for r in self.rubberBands:
                 r.mouseMoveEvent(event)
 
+
     def mouseReleaseEvent(self, event: QMouseEvent):
         if self.isEmpty():
             return
-        super().mouseReleaseEvent(event)
 
+        if self.crop_drawing_mode and event.button() == Qt.MouseButton.LeftButton and self.crop_draw_origin:
+            end_pos = self.mapToScene(event.pos())
+            rect = QRectF(self.crop_draw_origin, end_pos).normalized()
+
+            if rect.width() > 10 and rect.height() > 10:
+                self.resizable_crop_rect = ResizableRect(rect.x(), rect.y(), rect.width(), rect.height())
+                self.scene().addItem(self.resizable_crop_rect)
+                self.resizable_crop_rect.setZValue(10)
+
+            if self.temp_crop_rect:
+                self.scene().removeItem(self.temp_crop_rect)
+                self.temp_crop_rect = None
+
+            self.crop_draw_origin = None
+            self.crop_drawing_mode = False
+            self.unsetCursor()
+            return
+
+        super().mouseReleaseEvent(event)
         self.rubber_band_positions = []
 
         # Handle crop mode mouse release
@@ -867,15 +892,14 @@ class ImageGraphicsViewUI(QGraphicsView):
         if not self.rubberBands:
             return
 
-        # Propagate event to rubber bands
         for r in self.rubberBands:
             r.mouseReleaseEvent(event)
 
         if event.button() == Qt.MouseButton.LeftButton:
             rubberband = self.rubberBand if self.begin_crop else self.rubberBands[-1]
 
-            # Handle old crop system
-            if self.begin_crop and not self.crop_mode:
+
+            if self.begin_crop:
                 rubberband.hide()
 
                 selectedRect = rubberband.geometry()
@@ -889,7 +913,7 @@ class ImageGraphicsViewUI(QGraphicsView):
                     int(self.starting_x),
                     int(self.starting_y),
                     int(image_pos.x() - self.starting_x),
-                    int(image_pos.y() - self.starting_y),
+                    int(image_pos.y() - self.starting_y)
                 ).normalized()
 
                 self.showCrop.emit(self.image_rect)
@@ -910,9 +934,49 @@ class ImageGraphicsViewUI(QGraphicsView):
                         ),
                     )
                     self.enc.analysis_tab.analyze_region(rubberband, image_rect)
-
                     self.select = False
-                    return
+                
+    # def contextMenuEvent(self, event):
+    #     # Create the menu
+    #     menu = QMenu(self)
+
+    #     # Add actions
+    #     action1 = QAction("Option 1", self)
+    #     action1.triggered.connect(lambda: self.show_message("Option 1 selected"))
+
+    #     action2 = QAction("Option 2", self)
+    #     action2.triggered.connect(lambda: self.show_message("Option 2 selected"))
+
+    #     menu.addAction(action1)
+    #     menu.addAction(action2)
+
+    #     # Show the menu at the cursor position
+    #     menu.exec(event.globalPos())
+
+    # def show_message(self, message):
+    #     QMessageBox.information(self, "Selection", message)
+
+
+    def set_crop_status(self, status):
+        """Enter and exit crop mode that allows drawing the initial crop box"""
+        self.crop_drawing_mode = status
+        self.select = False
+        self.unsetCursor()
+
+        if status:
+            self.begin_crop = False  # disable legacy
+            self.setCursor(Qt.CursorShape.CrossCursor)
+            self.setFocus()
+        else:
+            self.crop_drawing_mode = False
+            self.begin_crop = False
+            self.unsetCursor()
+            if self.resizable_crop_rect:
+                self.scene().removeItem(self.resizable_crop_rect)
+                self.resizable_crop_rect = None
+
+            
+        
 
     def loadChannels(self, np_channels):
         """Load channel data"""
@@ -923,12 +987,22 @@ class ImageGraphicsViewUI(QGraphicsView):
 
 class ResizeHandle(QGraphicsRectItem):
     def __init__(self, cursor_shape: Qt.CursorShape, parent=None):
-        super().__init__(-8, -8, 16, 16, parent)  # Center the handle
+        super().__init__(-4, -4, 8, 8, parent)  # Centered, big, clickable
         self.setBrush(QBrush(Qt.GlobalColor.white))
-        self.setPen(QPen(Qt.GlobalColor.black))
+        self.setPen(QPen(Qt.GlobalColor.black, 2))
         self.setZValue(11)
         self.setAcceptHoverEvents(True)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations)  # Fixes size at all zoom levels
         self.cursor_shape = cursor_shape
+        self.hitbox_radius = 60
+
+    def contains(self, point: QPointF) -> bool:
+        """Override hit detection to make the handle easier to click"""
+        # This creates a larger circular hit area around the center
+        radius = self.hitbox_radius  
+        hit_area = QRectF(-radius, -radius, 2 * radius, 2 * radius)
+        return hit_area.contains(point)
+
 
     def hoverEnterEvent(self, event):
         QApplication.setOverrideCursor(QCursor(self.cursor_shape))
