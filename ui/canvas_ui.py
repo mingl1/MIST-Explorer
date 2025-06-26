@@ -209,7 +209,6 @@ class ReferenceGraphicsViewUI(QGraphicsView):
 
     def mousePressEvent(self, event):
         if not self.is_empty() and len(self.np_channels) > 1:
-            print("mouse press")
             scene_pos = self.mapToScene(event.pos())
             if self.left_arrow and self.left_arrow.contains(
                 self.left_arrow.mapFromScene(scene_pos)
@@ -451,7 +450,6 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.update_floating_buttons_position()
 
     def set_selection_mode(self, mode):
-        print("set_selection_mode", mode)
         """Set the current selection mode"""
         # Reset all modes
         self.select = False
@@ -483,7 +481,6 @@ class ImageGraphicsViewUI(QGraphicsView):
             self.active_crop_rect = None
 
         self.setCursor(Qt.CursorShape.CrossCursor)
-        print("Crop mode activated - drag to create crop area")
 
     def cancel_crop_mode(self):
         """Cancel crop mode and clean up"""
@@ -496,7 +493,6 @@ class ImageGraphicsViewUI(QGraphicsView):
             self.active_crop_rect = None
 
         self.unsetCursor()
-        print("Crop mode cancelled")
 
     def isEmpty(self) -> bool:
         return self.pixmapItem is None
@@ -508,7 +504,6 @@ class ImageGraphicsViewUI(QGraphicsView):
     def updateCanvas(self, pixmap: QPixmap, reset=False, crop=False):
         """Updates canvas when current image is operated on"""
         if self.pixmapItem:
-            print("updating canvas and setting pixmap")
             self.pixmapItem.setPixmap(pixmap)
             self.pixmapItem.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
 
@@ -606,7 +601,6 @@ class ImageGraphicsViewUI(QGraphicsView):
         if event.button() == Qt.MouseButton.LeftButton:
             # Handle crop mode
             if self.crop_mode and not self.active_crop_rect:
-                print("[✓] Crop mode active")
                 scene_pos = self.mapToScene(event.pos())
                 self.crop_start_pos = scene_pos
 
@@ -720,7 +714,6 @@ class ImageGraphicsViewUI(QGraphicsView):
         image_rect = image_rect.intersected(QRect(0, 0, image_width, image_height))
 
         if image_rect.isEmpty():
-            print("[✘] Invalid crop area — outside image bounds.")
             return
 
         # Emit the crop signal
@@ -728,7 +721,6 @@ class ImageGraphicsViewUI(QGraphicsView):
 
         # Clean up crop mode
         self.cancel_crop_mode()
-        print(f"[✓] Crop confirmed: {image_rect}")
 
     def mouseMoveEvent(self, event: QMouseEvent):
         super().mouseMoveEvent(event)
@@ -740,7 +732,6 @@ class ImageGraphicsViewUI(QGraphicsView):
             and self.active_crop_rect is not None
             and self.is_resizing
         ):
-            print("[✓] Resizing crop rectangle")
             current_pos = self.mapToScene(event.pos())
             # Update the crop rectangle
             x1, y1 = self.crop_start_pos.x(), self.crop_start_pos.y()
@@ -847,7 +838,6 @@ class ImageGraphicsViewUI(QGraphicsView):
         # Handle crop mode mouse release
         if self.crop_mode and self.active_crop_rect and self.is_resizing:
             # Don't auto-confirm, let user press Enter or Escape
-            print("Crop area created. Press Enter to confirm or Escape to cancel.")
             self.initial_crop = True
             self.initial_crop_rect = self.active_crop_rect.rect()
             self.scene().removeItem(self.active_crop_rect)
@@ -929,19 +919,16 @@ class ResizeHandle(QGraphicsRectItem):
 
     def mousePressEvent(self, event):
         """Handle mouse press events on the resize handle"""
-        print("Resize handle pressed")
         self.parent.selected_edge = self.edge
         # super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event):
         """Handle mouse release events on the resize handle"""
-        print("Resize handle released")
         self.parent.selected_edge = Qt.Edge(0)
         # super().mouseReleaseEvent(event)
 
     def mouseMoveEvent(self, event):
         """Handle mouse move events on the resize handle"""
-        print("Resize handle moved")
         super().mouseMoveEvent(event)
         # Update the parent rectangle's position if needed
         self.parent.mouseMoveEvent(event)
@@ -1022,11 +1009,9 @@ class ResizableRect(QGraphicsRectItem):
         self.updateHandles()
 
     def mousePressEvent(self, event):
-        print("mouse press event")
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
-        print("resizable rect mouse move event")
         if self.selected_edge:
             rect = self.rect()
             pos = self.mapFromScene(event.scenePos())
