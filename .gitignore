@@ -7,5 +7,12 @@ docs/build
 Makefile
 make.bat
 .DS_Store
+# UV package manager gitignores
+.python-version
+pyproject.toml
+uv.lock
+.vscode
+*.ipynb
+test.sh
 
 assets/sample_data/demo/overlay.tif
