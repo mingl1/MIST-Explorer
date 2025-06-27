@@ -1,13 +1,22 @@
 import numpy as np
 import cv2
 import math
+import diplib as dip
+import SimpleITK as sitk
+import statistics
+import sep
 import astroalign as aa
 from pystackreg import StackReg
 from PIL import Image
 import time
 import pystackreg.util
-from PyQt6.QtCore import pyqtSignal, QThread
+from PyQt6.QtCore import pyqtSignal, QThread, pyqtSlot, QObject
 import re
+import tqdm
+import pickle
+import os
+
+from core.canvas import ImageStorage
 
 
 class Register(QThread):
@@ -16,6 +25,7 @@ class Register(QThread):
     imageReady = pyqtSignal(bool)
     progress = pyqtSignal(int, str)
     error = pyqtSignal(str)
+    alignment_complete = pyqtSignal(dict, np.ndarray, np.ndarray)
 
     def __init__(self):
         super().__init__()
@@ -26,14 +36,15 @@ class Register(QThread):
         self.protein_channels = None
         self.reference_channels = None
         self.protein_signal_array = None
-        self.has_blue = True
+        self.has_blue = False
+        self.storage = ImageStorage()
         self.params = {
             "alignment_layer": 0,
             "cell_layer": 1,  # 0 index
             "protein_detection_layer": 2,  # 0 index
             "max_size": 10000,
             "num_tiles": 10,
-            "overlap": 200,
+            "overlap": 250,
         }
         self.tifs = (
             {
@@ -87,12 +98,10 @@ class Register(QThread):
 
         # generate tiles
         for tif_n, tif in enumerate(self.tifs):
-
             # skip reference
             if tif_n == reference_tif_index:
                 self.tifs[tif_n]["outputs"] = None
                 continue
-
             alignable_brightfield = self.tifs[tif_n]["image_dict"][
                 f"Channel {reference_tif_index + 1}"
             ].data
@@ -116,44 +125,49 @@ class Register(QThread):
                 xmin = moving_bounds["xmin"]
 
                 radius = int(fixed_map.tile_size)
-                # cv2.imwrite("fixed_img_test.png", fixed_img)
-
-                # cv2.imwrite("moving_img_test.png", moving_img)
-
                 # import time
                 # time.sleep(20)
                 inputs.append((fixed_img, moving_img, ymin, xmin, radius, x, y))
 
             # Select the inputs number
             outputs = []
-            for tile_n, tile_set in enumerate(inputs):
-                try:
+            if os.path.exists(f"registration_results_tif{tif_n}.pkl"):
+                print(f"loading previous results for tif {tif_n}")
+                with open(f"registration_results_tif{tif_n}.pkl", "rb") as f:
+                    outputs = pickle.load(f)
+            else:
+                for tile_n, tile_set in enumerate(inputs):
+                    try:
 
-                    # update progress bar
-                    print(f"aligned a tile...{tile_n}")
-                    progress_update = int(((tile_n + 1) / len(inputs)) * 100)
-                    self.progress.emit(
-                        progress_update, str(f"aligning tile {tile_n+1}/{len(inputs)}")
-                    )
+                        # update progress bar
+                        print(f"aligned a tile...{tile_n}")
+                        progress_update = int(((tile_n + 1) / len(inputs)) * 100)
+                        self.progress.emit(
+                            progress_update,
+                            str(f"aligning tile {tile_n+1}/{len(inputs)}"),
+                        )
 
-                    if tif_n == 0:
-                        outputs.append(self.onskip(tile_set))
-                        continue
+                        if tif_n == 0:
+                            outputs.append(self.onskip(tile_set))
+                            continue
 
-                    t = time.time()
-                    result = self.align_two_img(tile_set)  # align
+                        t = time.time()
+                        result = self.align_two_img(tile_set)  # align
 
-                    print(time.time() - t)
+                        print(time.time() - t)
 
-                    if result == None:
-                        continue
-                    outputs.append(result)
-                except Exception as e:
-                    raise e
+                        if result == None:
+                            continue
+                        outputs.append(result)
+                    except Exception as e:
+                        raise e
 
             print("done aligning")
 
             self.tifs[tif_n]["outputs"] = outputs
+
+            # with open(f"registration_results_tif{tif_n}.pkl", "wb") as f:
+            #     pickle.dump(outputs, f)
 
         #########################################################
         # move the other layers
@@ -250,7 +264,7 @@ class Register(QThread):
             aligned_protein_signal = new_registered_tif
 
             ##alignment done
-
+        assert aligned_protein_signal is not None, "aligned_protein_signal is None"
         self.protein_signal_array = aligned_protein_signal[
             self.params["protein_detection_layer"], :, :
         ][
@@ -265,13 +279,28 @@ class Register(QThread):
             self.protein_signal_array
         )  # ->cell intensity table
         self.cell_image_signal.emit(cell_image)  # -> stardist
-        import tifffile as tiff
-
-        tiff.imwrite(
-            "aligned_protein_signal_output.tiff",
-            self.protein_signal_array.astype(np.uint16),
+        data = {}
+        for i in range(len(aligned_protein_signal)):
+            layer = aligned_protein_signal[i, :, :][
+                0 : self.params["max_size"], 0 : self.params["max_size"]
+            ]
+            data[f"Channel {i+1}"] = layer
+        result = {}
+        result["data"] = data
+        layers = list(data.keys())
+        layers.sort()
+        result["layer"] = layers
+        moving_uuid = self.storage.get_data("canvas_uuid")
+        assert moving_uuid is not None, "No canvas UUID found"
+        moving_uuid = moving_uuid["value"]
+        result["uuid"] = moving_uuid
+        self.alignment_complete.emit(
+            result,
+            aligned_protein_signal[self.params["alignment_layer"]][
+                : self.params["max_size"], : self.params["max_size"]
+            ],
+            alignment_layer[: self.params["max_size"], : self.params["max_size"]],
         )
-
         self.progress.emit(100, "Alignment Done")
 
     def align_two_img(self, param):
@@ -331,6 +360,49 @@ class Register(QThread):
         else:
             return [transf, []], ymin, xmin, radius, x, y
 
+    def hasBlueColor(self, hasblue) -> bool:
+        if hasblue == "Yes":
+            self.has_blue = True
+        else:
+            self.has_blue = False
+
+    def setAlignmentLayer(self, channel):
+        match = re.search(r"\d+", channel)
+        if match:
+            number = int(match.group())
+            result = number - 1  # 0 index
+            self.params["alignment_layer"] = result
+            print("alignment layer is: ", self.params["alignment_layer"])
+
+    def setCellLayer(self, channel):
+        match = re.search(r"\d+", channel)
+        if match:
+            number = int(match.group())
+            result = number - 1  # 0 index
+        self.params["cell_layer"] = result
+        print("cell layer is: ", self.params["cell_layer"])
+
+    def setProteinDetectionLayer(self, channel):
+        match = re.search(r"\d+", channel)
+        if match:
+            number = int(match.group())
+            result = number - 1  # 0 index
+        self.params["protein_detection_layer"] = result
+        print("protein_detection_layer is: ", self.params["protein_detection_layer"])
+
+    def setMaxSize(self, value):
+        self.params["max_size"] = value
+
+    def setNumTiles(self, value):
+        self.params["num_tiles"] = value
+
+    def setOverlap(self, value):
+        self.params["overlap"] = value
+
+    def onskip(self, param):
+        fixed_img, moving_img, ymin, xmin, radius, x, y = param
+        return (None, x, y, (None, ymin, xmin, radius, x, y))
+
     def adjust_contrast(self, img, min=2, max=98):
         # pixvals = np.array(img)
         minval = np.percentile(img, min)  # room for experimentation
@@ -363,12 +435,12 @@ class Register(QThread):
 
         return cy1_rescale, cy2_rescale
 
-    def update_protein_channels(self, channels) -> None:
+    def update_moving_image(self, channels) -> None:
         self.protein_channels = channels
         self.tifs[1]["image_dict"] = channels
         if not self.reference_channels is None:
             self.imageReady.emit(True)
-            print("protein signal image updated")
+            print("moving/protein signal image updated")
 
     def update_reference_channels(self, reference_channels: dict) -> None:
         self.reference_channels = reference_channels
@@ -376,57 +448,6 @@ class Register(QThread):
         if not self.protein_channels is None:
             self.imageReady.emit(True)
             print("reference image updated")
-
-    def hasBlueColor(self, hasblue) -> bool:
-        if hasblue == "Yes":
-            self.has_blue = True
-        else:
-            self.has_blue = False
-        return self.has_blue
-
-    def setAlignmentLayer(self, channel):
-        match = re.search(r"\d+", channel)
-        if match:
-            number = int(match.group())
-            result = number - 1  # 0 index
-            self.params["alignment_layer"] = result
-        else:
-            self.params["alignment_layer"] = 0  # default to 0 if no match
-        print("alignment layer is: ", self.params["alignment_layer"])
-
-    def setCellLayer(self, channel):
-        match = re.search(r"\d+", channel)
-        if match:
-            number = int(match.group())
-            result = number - 1  # 0 index
-            self.params["cell_layer"] = result
-        else:
-            self.params["cell_layer"] = 1  # default to 1 if no match found
-        print("cell layer is: ", self.params["cell_layer"])
-
-    def setProteinDetectionLayer(self, channel):
-        match = re.search(r"\d+", channel)
-        if match:
-            number = int(match.group())
-            result = number - 1  # 0 index
-            self.params["protein_detection_layer"] = result
-        else:
-            self.params["protein_detection_layer"] = 2
-        # default to 2 if no match found
-        print("protein_detection_layer is: ", self.params["protein_detection_layer"])
-
-    def setMaxSize(self, value):
-        self.params["max_size"] = value
-
-    def setNumTiles(self, value):
-        self.params["num_tiles"] = value
-
-    def setOverlap(self, value):
-        self.params["overlap"] = value
-
-    def onskip(self, param):
-        fixed_img, moving_img, ymin, xmin, radius, x, y = param
-        return (None, x, y, (None, ymin, xmin, radius, x, y))
 
     def cancel(self):
 

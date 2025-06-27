@@ -37,7 +37,7 @@ class CellLayerAligner(QThread):
         self.target_uuid = ""
         self.unaligned_channel = "Channel 1"
         self.unaligned_uuid = ""
-
+        self.debug = False  # Set to True for debugging
         # itk parameters, it takes a while to initialize but it is done lazily, if we can
         # intialize it here, it will shave 10s (?); i believe it is not initializing currently
         parameter_object = itk.elxParameterObjectPython.elastixParameterObject_New()
@@ -126,13 +126,15 @@ class CellLayerAligner(QThread):
             # Apply transformations sequentially for better accuracy
             _, padded_moving = make_same_shape(self.target_image, self.unaligned_image)
             intermediate_aligned = warp_image(padded_moving, full_coarse_transform)
-            tifffile.imwrite("intermediate_aligned.tif", intermediate_aligned)
+            if self.debug:
+                tifffile.imwrite("intermediate_aligned.tif", intermediate_aligned)
             intermediate_aligned = remove_padding(
                 intermediate_aligned, self.target_image.shape
             )
-            tifffile.imwrite(
-                "intermediate_aligned_after_padding.tif", intermediate_aligned
-            )
+            if self.debug:
+                tifffile.imwrite(
+                    "intermediate_aligned_after_padding.tif", intermediate_aligned
+                )
             final_aligned_image = warp_image(
                 intermediate_aligned, full_refinement_transform
             )

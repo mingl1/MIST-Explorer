@@ -7,14 +7,108 @@ import os
 import tempfile
 import cv2
 
+from ui.canvas_ui import ImageGraphicsViewUI
+
 # Add path to import microfilm
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "lib"))
 )
 
 
+from PyQt6.QtWidgets import (
+    QDialog,
+    QVBoxLayout,
+    QHBoxLayout,
+    QPushButton,
+    QLabel,
+    QGraphicsView,
+    QGraphicsScene,
+    QGraphicsPixmapItem,
+)
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPixmap, QImage, QWheelEvent
+import cv2
+import numpy as np
+
+
+class ZoomableImageView(QGraphicsView):
+    """Custom QGraphicsView with zoom and pan functionality"""
+
+    def __init__(self):
+        super().__init__()
+        self.setScene(QGraphicsScene())
+
+        # Enable drag mode for panning
+        self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+
+        # Set view properties
+        self.setRenderHint(self.renderHints() | self.renderHints().Antialiasing)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
+        # Zoom settings
+        self.zoom_factor = 1.15
+        self.min_zoom = 0.1
+        self.max_zoom = 100.0
+        self.current_zoom = 1.0
+
+        self.pixmap_item = None
+
+    def set_image(self, pixmap):
+        """Set the image to display"""
+        assert self.scene() is not None, "Scene should be initialized"
+        self.scene().clear()
+        self.pixmap_item = QGraphicsPixmapItem(pixmap)
+        self.scene().addItem(self.pixmap_item)
+        self.scene().setSceneRect(
+            pixmap.rect().x(), pixmap.rect().y(), pixmap.width(), pixmap.height()
+        )
+
+        # Fit image in view initially
+        self.fitInView(self.pixmap_item, Qt.AspectRatioMode.KeepAspectRatio)
+        self.current_zoom = 1.0
+
+    def wheelEvent(self, event: QWheelEvent):
+        """Handle mouse wheel for zooming"""
+        # Get the position of the mouse cursor
+        cursor_pos = event.position()
+        scene_pos = self.mapToScene(cursor_pos.toPoint())
+
+        # Determine zoom direction
+        if event.angleDelta().y() > 0:
+            zoom_factor = self.zoom_factor
+        else:
+            zoom_factor = 1.0 / self.zoom_factor
+
+        # Check zoom limits
+        new_zoom = self.current_zoom * zoom_factor
+        if new_zoom < self.min_zoom or new_zoom > self.max_zoom:
+            return
+
+        # Apply zoom
+        self.scale(zoom_factor, zoom_factor)
+        self.current_zoom = new_zoom
+
+        # Keep the cursor position centered during zoom
+        new_cursor_pos = self.mapFromScene(scene_pos)
+        delta = cursor_pos.toPoint() - new_cursor_pos
+        self.horizontalScrollBar().setValue(
+            self.horizontalScrollBar().value() - int(delta.x())
+        )
+        self.verticalScrollBar().setValue(
+            self.verticalScrollBar().value() - int(delta.y())
+        )
+
+    def reset_zoom(self):
+        """Reset zoom to fit the image in view"""
+        if self.pixmap_item:
+            self.resetTransform()
+            self.fitInView(self.pixmap_item, Qt.AspectRatioMode.KeepAspectRatio)
+            self.current_zoom = 1.0
+
+
 class AlignmentPreviewDialog(QDialog):
-    """Dialog to preview the alignment before confirming or canceling"""
+    """Dialog to preview the alignment with zoom and pan functionality"""
 
     def __init__(self, target_image, aligned_image, parent=None):
         super().__init__(parent)
@@ -22,34 +116,61 @@ class AlignmentPreviewDialog(QDialog):
         self.aligned_image = aligned_image
         self.result_accepted = False
 
-        self.setWindowTitle("Alignment Preview")
-        self.resize(800, 600)
+        self.setWindowTitle("Alignment Preview - Use mouse wheel to zoom, drag to pan")
+        self.resize(1000, 700)
 
         # Create layout
-        self.layout = QVBoxLayout(self)
+        self.setLayout(QVBoxLayout())
 
-        # Create preview image
-        self.preview_label = QLabel("Red = Target, Green = Aligned")
+        # Create preview label
+        self.preview_label = QLabel(
+            "Red = Target, Green = Aligned | Mouse wheel: zoom, Drag: pan, Double-click: reset zoom"
+        )
         self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.preview_label.setStyleSheet("font-weight: bold; font-size: 14px;")
+        self.preview_label.setStyleSheet(
+            "font-weight: bold; font-size: 12px; margin: 5px;"
+        )
 
-        # Create image display label
-        self.image_label = QLabel()
-        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.image_label.setMinimumSize(600, 400)
+        # Create zoomable image view instead of QLabel
+        self.image_view = ZoomableImageView()
+        self.image_view.setMinimumSize(800, 500)
 
-        # Create buttons
+        # Add double-click to reset zoom
+        self.image_view.mouseDoubleClickEvent = self.reset_zoom
+
+        # Create control buttons
+        self.control_layout = QHBoxLayout()
+
+        self.reset_zoom_button = QPushButton("Reset Zoom")
+        self.reset_zoom_button.clicked.connect(self.reset_zoom)
+        self.reset_zoom_button.setStyleSheet(
+            """
+            QPushButton {
+                background-color: #2196F3;
+                color: white;
+                font-weight: bold;
+                min-width: 80px;
+                min-height: 25px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #1976D2;
+            }
+        """
+        )
+
+        # Create main action buttons
         self.button_layout = QHBoxLayout()
 
-        self.confirm_button = QPushButton("Confirm and Replace")
+        self.confirm_button = QPushButton("Confirm Alignment")
         self.confirm_button.setStyleSheet(
             """
             QPushButton {
                 background-color: #4CAF50;
                 color: white;
                 font-weight: bold;
-                min-width: 100px;
-                min-height: 30px;
+                min-width: 120px;
+                min-height: 35px;
                 border-radius: 4px;
             }
             QPushButton:hover {
@@ -66,8 +187,8 @@ class AlignmentPreviewDialog(QDialog):
                 background-color: #f44336;
                 color: white;
                 font-weight: bold;
-                min-width: 100px;
-                min-height: 30px;
+                min-width: 120px;
+                min-height: 35px;
                 border-radius: 4px;
             }
             QPushButton:hover {
@@ -77,16 +198,28 @@ class AlignmentPreviewDialog(QDialog):
         )
         self.cancel_button.clicked.connect(self.reject)
 
+        # Arrange control buttons
+        self.control_layout.addStretch()
+        self.control_layout.addWidget(self.reset_zoom_button)
+        self.control_layout.addStretch()
+
+        # Arrange main buttons
         self.button_layout.addWidget(self.confirm_button)
         self.button_layout.addWidget(self.cancel_button)
 
         # Add widgets to layout
-        self.layout.addWidget(self.preview_label)
-        self.layout.addWidget(self.image_label)
-        self.layout.addLayout(self.button_layout)
+        assert self.layout() is not None, "Layout should be initialized"
+        self.layout().addWidget(self.preview_label)
+        self.layout().addWidget(self.image_view)
+        self.layout().addLayout(self.control_layout)
+        self.layout().addLayout(self.button_layout)
 
-        # Create the overlay image directly
+        # Create the overlay image
         self.create_direct_overlay()
+
+    def reset_zoom(self, event=None):
+        """Reset zoom to fit image in view"""
+        self.image_view.reset_zoom()
 
     def create_direct_overlay(self):
         """Create and display the overlay directly without using external libraries"""
@@ -130,6 +263,7 @@ class AlignmentPreviewDialog(QDialog):
             overlay = np.zeros((h, w, 3), dtype=np.uint8)
             overlay[:, :, 0] = target_gray  # Red channel = target
             overlay[:, :, 1] = aligned_gray  # Green channel = aligned
+
             # Convert to QImage
             print("Converting to QImage...")
             height, width, channels = overlay.shape
@@ -138,17 +272,10 @@ class AlignmentPreviewDialog(QDialog):
                 overlay.data, width, height, bytes_per_line, QImage.Format.Format_RGB888
             )
 
-            # Convert to QPixmap and display
+            # Convert to QPixmap and set in the zoomable view
             print("Setting pixmap...")
             pixmap = QPixmap.fromImage(q_image)
-            self.image_label.setPixmap(
-                pixmap.scaled(
-                    self.image_label.width(),
-                    self.image_label.height(),
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation,
-                )
-            )
+            self.image_view.set_image(pixmap)
             print("Overlay displayed successfully!")
 
         except Exception as e:
@@ -156,7 +283,6 @@ class AlignmentPreviewDialog(QDialog):
 
             traceback.print_exc()
             print(f"Error creating overlay: {str(e)}")
-            self.image_label.setText(f"Error creating overlay: {str(e)}")
 
     def _ensure_same_size(self, img1, img2):
         """Ensure both images have the same dimensions by cropping to the smallest common size"""
@@ -207,12 +333,6 @@ class AlignmentPreviewDialog(QDialog):
         if maxval > minval:
             img_adjusted = ((img_adjusted - minval) / (maxval - minval)) * 255
         return img_adjusted.astype(np.uint8)
-
-    def resizeEvent(self, event):
-        """Handle resize events to resize the displayed image"""
-        super().resizeEvent(event)
-        # Recreate the overlay on resize
-        self.create_direct_overlay()
 
     def accept_alignment(self):
         """Set result as accepted and close dialog"""

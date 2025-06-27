@@ -130,7 +130,6 @@ class CellLayerAlignmentUI(QWidget):
         """Set up the connections to the aligner thread"""
         self.aligner.progress.connect(self._handle_progress)
         self.aligner.error.connect(self._handle_error)
-        self.aligner.aligned_image_signal.connect(self._handle_aligned_image)
         self.aligner.finished.connect(self._handle_finished)
 
         self.image_1_channel_selector.currentIndexChanged.connect(
@@ -243,38 +242,6 @@ class CellLayerAlignmentUI(QWidget):
             self.image2_status.setStyleSheet(
                 "font-weight: bold; color: #FF0000;"
             )  # Red to indicate error
-
-    def _handle_aligned_image(self, aligned_data, target_small, aligned_small):
-        """Handle the aligned image result"""
-        # Store the aligned image
-        self.aligned_data = aligned_data
-        self.target_small = target_small
-        self.aligned_small = aligned_small
-
-        # Show the preview dialog
-        confirmed = self._show_preview_dialog(target_small, aligned_small)
-        if confirmed:
-            # add new image and replace canvas
-            # Generate a name for the aligned image
-            aligned_image = aligned_data["data"]
-            uuid = aligned_data["uuid"]
-            layer = aligned_data["layer"]
-            wrapped_image = ImageWrapper(aligned_image, layer)
-
-            item = self.storage.get_data(uuid)
-            data = item["data"]
-            filename = item["name"]
-            aligned_name = f"Aligned_{filename}"
-            data[layer] = wrapped_image
-            # self.alignmentCompleteSignal.emit(data, aligned_name)
-            self.loadOnCanvasSignal.emit(data, True, aligned_name)
-
-    def _show_preview_dialog(self, target_small, aligned_small):
-        """Show the preview dialog with red/green overlay"""
-        # Use the downscaled images for the preview dialog
-        preview_dialog = AlignmentPreviewDialog(target_small, aligned_small, self)
-        result = preview_dialog.exec()
-        return result == 1 and preview_dialog.result_accepted
 
     def _handle_finished(self):
         """Handle when the alignment thread finishes"""
