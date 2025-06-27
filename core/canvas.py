@@ -607,12 +607,16 @@ class ReferenceGraphicsView(__BaseGraphicsView):
             event.acceptProposedAction()
 
     def add_to_canvas(self, file_path: str):
-
         self.reference_worker = Worker(self.filename_to_image, file_path, False)
         self.reference_worker.start()
         self.reference_worker.signal.connect(self.filename_to_image_complete)
         self.reference_worker.finished.connect(self.reference_worker.quit)
         self.reference_worker.finished.connect(self.reference_worker.deleteLater)
+
+    def set_uuid(self, uuid):
+        """Set UUID for the reference image."""
+        self.uuid = uuid
+        self.storage.add_data("reference_uuid", {"value": uuid})
 
     def filename_to_image_complete(self, image):
 
@@ -638,6 +642,11 @@ class ImageGraphicsView(__BaseGraphicsView):
         self.crop_cursor = QCursor(Qt.CursorShape.CrossCursor)
         self.stardist_image_count = 0
         self.memory_cache = MemoryEfficientImageCache(max_cache_size_mb=300)
+
+    def set_uuid(self, uuid):
+        """Set UUID for the reference image."""
+        self.uuid = uuid
+        self.storage.add_data("canvas_uuid", {"value": uuid})
 
     def toPixmapItem(self, data: QPixmap | np.ndarray | QImage):
         """Sends a pixmap to the canvas for display"""

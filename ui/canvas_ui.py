@@ -314,9 +314,10 @@ class ImageGraphicsViewUI(QGraphicsView):
     requestFlipHorizontal = pyqtSignal()  # Signal to request horizontal flip
     requestFlipVertical = pyqtSignal()  # Signal to request vertical flip
 
-    def __init__(self, parent=None, enc=None):
+    def __init__(self, parent=None, enc=None, showButtons=True):
         super().__init__(parent)
         self.enc = enc
+        self.showButtons = showButtons
         self.setupUI()
 
         # Initialize variables
@@ -374,7 +375,8 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
 
         # Create floating selection buttons
-        self.create_floating_buttons()
+        if self.showButtons:
+            self.create_floating_buttons()
 
     def create_floating_buttons(self):
         """Create floating selection buttons that appear over the canvas"""

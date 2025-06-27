@@ -1,18 +1,21 @@
 """Class to handle signal connections"""
 
 import ui.Dialogs as Dialogs, numpy as np, cv2, core.canvas, core.stardist, core.cell_intensity, core.register
+from ui.alignment.alignment_preview_dialog import AlignmentPreviewDialog
 from ui.app import Ui_MainWindow
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 from PyQt6.QtGui import QPixmap
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import pyqtSignal, QObject
 from PIL import Image
 import uuid
+from core.canvas import ImageWrapper
 
 
-class Controller:
+class Controller(QObject):
 
     _instance = None
     controllerSignal = pyqtSignal(object)
+    add_to_canvas = pyqtSignal(object, bool, str)
 
     def __new__(cls, app):
         if cls._instance is None:
@@ -20,8 +23,7 @@ class Controller:
         return cls._instance
 
     def __init__(self, app: Ui_MainWindow):
-        if hasattr(self, "_initialized") and self._initialized:
-            return
+        super().__init__()
         self._initialized = True
         self.image_count = 0
         self.model_canvas = core.canvas.ImageGraphicsView()
@@ -35,6 +37,7 @@ class Controller:
         self.view.images_tab.set_model_stardist(self.model_stardist)
         self.signal_manager = SignalConnectionManager(self)
         self.signal_manager.setup_all_connections()
+        self.storage = self.view.images_tab.storage
 
         # Handle initial arguments
         initial_args = vars(app.args)
@@ -42,6 +45,13 @@ class Controller:
             self.model_canvas.add_to_canvas(initial_args["image"])
         if initial_args["reference"] is not None:
             self.reference_view.add_to_canvas(initial_args["reference"])
+
+        # self.need_preview_alignment.connect(self._handle_aligned_image)
+        self.view.cell_layer_alignment.aligner.aligned_image_signal.connect(
+            self._handle_aligned_image
+        )
+        self.model_register.alignment_complete.connect(self._handle_aligned_image)
+        self.add_to_canvas.connect(self.model_canvas.add_to_canvas)
 
     def handleError(self, error_message):
         QMessageBox.critical(self.view, "Error", error_message)
@@ -130,7 +140,43 @@ class Controller:
         storage_item["data"] = data
         my_uuid = str(uuid.uuid4())
         self.view.images_tab.add_to_storage(my_uuid, storage_item)
+        self.reference_view.set_uuid(my_uuid)
         self.view.images_tab.add_item(my_uuid)
+
+    def _handle_aligned_image(self, aligned_data, target_small, aligned_small):
+        """Handle the aligned image result"""
+        # Show the preview dialog
+        confirmed = self._show_preview_dialog(target_small, aligned_small)
+        if confirmed:
+            aligned_image = aligned_data["data"]
+            uuid = aligned_data["uuid"]
+            layer = aligned_data["layer"]
+            item = self.storage.get_data(uuid)
+            assert item is not None, "Aligned image data not found in storage"
+            data = item["data"]
+            filename = item["name"]
+            if isinstance(layer, list):
+                assert len(aligned_data["data"].keys()) == len(
+                    layer
+                ), "Aligned data keys do not match the expected layers"
+                data = {}
+                for l in layer:
+                    wrapped_image = ImageWrapper(aligned_image[l], l)
+                    data[l] = wrapped_image
+                aligned_name = "Restered_" + filename
+            else:
+                wrapped_image = ImageWrapper(aligned_image, layer)
+                aligned_name = f"Aligned_{filename}"
+                data[layer] = wrapped_image
+            # self.alignmentCompleteSignal.emit(data, aligned_name)
+            self.add_to_canvas.emit(data, True, aligned_name)
+
+    def _show_preview_dialog(self, target_small, aligned_small):
+        """Show the preview dialog with red/green overlay"""
+        # Use the downscaled images for the preview dialog
+        preview_dialog = AlignmentPreviewDialog(target_small, aligned_small)
+        result = preview_dialog.exec()
+        return result == 1 and preview_dialog.result_accepted
 
 
 class SignalConnectionManager:
@@ -356,6 +402,8 @@ class SignalConnectionManager:
             self.c.model_register.cancel
         )
 
+        # Results
+
     def _setup_cell_intensity_connections(self):
         """Cell intensity-related connections"""
         self.c.view.cellIntensity_groupbox.bead_data.clicked.connect(
@@ -404,7 +452,7 @@ class SignalConnectionManager:
         image_signal.connect(self.c.view.canvas.loadChannels)
         image_signal.connect(self.c.model_stardist.updateChannels)
         image_signal.connect(self.c.view.gaussian_blur.updateChannelSelector)
-        image_signal.connect(self.c.model_register.update_protein_channels)
+        image_signal.connect(self.c.model_register.update_moving_image)
 
         ref_image = self.c.reference_view.image_signal
         ref_image.connect(self.c.model_register.update_reference_channels)
