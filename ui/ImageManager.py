@@ -4,7 +4,7 @@ from PyQt6.QtGui import *
 from PyQt6.QtCore import *
 from PyQt6.QtWidgets import *
 import numpy as np
-from core.canvas import ImageStorage
+from core import ImageStorage
 from utils import numpy_to_qimage
 from PyQt6.QtCore import pyqtSignal
 from models.image_list_model import ImageTreeModel, ImageTreeItem

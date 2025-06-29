@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import QFileDialog, QMessageBox
 import cv2
 import os
 from numba import njit
-from core.Worker import Worker
+from core import Worker
 
 Image.MAX_IMAGE_PIXELS = None
 
@@ -50,8 +50,8 @@ color_dict = {
 
 class ControlsBox:
     def __init__(self):
-        self.name = None
-        self.image = None
+        self.name = ""
+        self.image = np.array([[]])
         self.q_image = None
 
         self.current_opacity = 1.0
@@ -94,7 +94,6 @@ def write_protein_sub(protein_data=np.array([]), reduced_cell_img=np.array([[]])
     protein_1 = np.clip(protein_1, lower, upper)
     # protein_1 = 60 + (protein_1 - lower) * (255 - 60) / (upper - lower)
 
-    
     for i in range(cnv.shape[0]):
         for j in range(cnv.shape[1]):
             id = reduced_cell_img[i, j]
@@ -103,9 +102,10 @@ def write_protein_sub(protein_data=np.array([]), reduced_cell_img=np.array([[]])
 
     return cnv
 
+
 def precompile_jit():
     """Precompile the function in the background."""
-    
+
     # Dummy protein data: Random values between 0 and 255
     dummy_protein_data = np.random.randint(0, 256, size=100, dtype=np.uint8)
 
@@ -113,8 +113,6 @@ def precompile_jit():
     dummy_reduced_cell_img = np.random.randint(0, 101, size=(10, 10), dtype=np.uint8)
 
     write_protein(dummy_protein_data, dummy_reduced_cell_img)
-
-
 
 
 def tint_grayscale_image(grayscale_image, color):
@@ -200,23 +198,23 @@ class LayerDialog(QDialog):
         self.setGeometry(100, 100, 400, 300)
 
         self.layers = layers
-
-        self.layout = QHBoxLayout()
+        my_layout = QHBoxLayout()
+        assert my_layout is not None
 
         self.layer_list = QListWidget()
         for i, layer in enumerate(layers):
             item = QListWidgetItem(layer["name"])
             self.layer_list.addItem(item)
-        self.layout.addWidget(self.layer_list)
+        my_layout.addWidget(self.layer_list)
 
         self.buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
-        self.layout.addWidget(self.buttons)
+        my_layout.addWidget(self.buttons)
 
-        self.setLayout(self.layout)
+        self.setLayout(my_layout)
 
     def get_selected_layer_index(self):
         print([item.text() for item in self.layer_list.selectedItems()])
@@ -245,23 +243,22 @@ class ColorDialog(QDialog):
         self.setGeometry(100, 100, 400, 300)
 
         self.colors = colors
-
-        self.layout = QVBoxLayout()
+        my_layout = QVBoxLayout()
 
         self.color_list = QListWidget()
         for color_name in colors.keys():
             item = QListWidgetItem(color_name)
             self.color_list.addItem(item)
-        self.layout.addWidget(self.color_list)
+        my_layout.addWidget(self.color_list)
 
         self.buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
-        self.layout.addWidget(self.buttons)
+        my_layout.addWidget(self.buttons)
 
-        self.setLayout(self.layout)
+        self.setLayout(my_layout)
 
     def get_selected_color_name(self):
         selected_items = self.color_list.selectedItems()
@@ -314,8 +311,8 @@ class ImageOverlay(QWidget):
         self.initUI()
 
     def load_stardist_image(self):
-        if self.im_path == None:
-            return None
+        if self.im_path is None:
+            raise ValueError("im_path is None")
 
         stardist_labels = Image.open(self.im_path)
         stardist_labels = np.array(stardist_labels)
@@ -337,51 +334,56 @@ class ImageOverlay(QWidget):
 
     def load_df(self):
         if self.df_path == None:
-            return None
+            raise ValueError("df_path is None")
 
         if self.loaded_df is not None:
             return self.loaded_df
-
-        # print("df path", self.df_path)
+        df = None
         if self.df_path.endswith("csv"):
             df = pd.read_csv(self.df_path)
-        if self.df_path.endswith("xlsx"):
+        elif self.df_path.endswith("xlsx"):
             df = pd.read_excel(self.df_path)
+        else:
+            raise ValueError("Unsupported file format. Please use .csv or .xlsx")
 
         # print("df raw", df)
         df = df[df.columns.drop(list(df.filter(regex="N/A")))]
 
         self.loaded_df = df
         return df
-    
+
     def generate_image(self, index):
 
-        
         # protein_name = self.df.columns[3 + index]
         # im = write_protein(np.array(self.df[protein_name]), np.array(self.reduced_cell_img))
         # im = adjust_contrast(im)
         # return tint_grayscale_image(im, [255, 255, 255])
 
-
         start = time.perf_counter()
-        
-        protein_name = self.df.columns[3 + index]
-        print(f"Time after fetching protein name: {time.perf_counter() - start:.6f} sec")
+        if self.df is None:
+            self.load_df()
+            print("Automatically loaded df from", self.df_path)
+        assert self.df is not None
 
-        im = write_protein(np.array(self.df[protein_name]), np.array(self.reduced_cell_img))
+        protein_name = self.df.columns[3 + index]
+        print(
+            f"Time after fetching protein name: {time.perf_counter() - start:.6f} sec"
+        )
+
+        im = write_protein(
+            np.array(self.df[protein_name]), np.array(self.reduced_cell_img)
+        )
         print(f"Time after writing protein: {time.perf_counter() - start:.6f} sec")
 
         im = adjust_contrast(im)
         print(f"Time after adjusting contrast: {time.perf_counter() - start:.6f} sec")
 
         result = tint_grayscale_image(im, [255, 255, 255])
-        print(f"Time after tinting grayscale image: {time.perf_counter() - start:.6f} sec")
+        print(
+            f"Time after tinting grayscale image: {time.perf_counter() - start:.6f} sec"
+        )
 
         return result
-    
-    
-        
-        
 
     def build_all(self):
 
@@ -404,13 +406,11 @@ class ImageOverlay(QWidget):
                 ui.app.Ui_MainWindow(), "Error", "Please load data first!"
             )
             return
-        
-        
+
         # Start compilation in a background thread
 
         start = time.time()
         self.progress.emit(15, "Compiling `write_protein`function...")
-        
 
         threading.Thread(target=precompile_jit, daemon=True).start()
 
@@ -424,12 +424,8 @@ class ImageOverlay(QWidget):
 
         print("TOTAL TIME ", end - start)
         # self.progress.emit(35, "Loaded Stardist image")
-        
-        
         print(" df loaded")
         # self.progress.emit(75, "Loaded Dataframe")
-
-        
 
         ims = [None for i in range(len(df.columns[3:]))]
 
@@ -526,7 +522,9 @@ class ImageOverlay(QWidget):
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
         self.scroll_area.setMinimumHeight(450)  # Set a reasonable minimum height
-        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)  # Disable horizontal scroll
+        self.scroll_area.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )  # Disable horizontal scroll
 
         self.scroll_content = QWidget()
         self.scroll_content.setSizePolicy(
@@ -579,7 +577,7 @@ class ImageOverlay(QWidget):
         main_layout.addWidget(self.scale_down_label)
 
         self.scale_down = QSlider(Qt.Orientation.Horizontal)
-        self.scale_down.setTickPosition(QSlider.TicksAbove)
+        self.scale_down.setTickPosition(QSlider.TickPosition.TicksAbove)
         self.scale_down.valueChanged.connect(self.scale_slider_update)
 
         self.scale_down.setRange(1, 10)
@@ -591,15 +589,15 @@ class ImageOverlay(QWidget):
         self.apply_button = QPushButton("Apply")
         self.apply_button.clicked.connect(self.start_build_all_worker)
         main_layout.addWidget(self.apply_button)
-        
+
         self.export_tif_button = QPushButton("Export to TIF")
         self.export_tif_button.clicked.connect(self.export_to_tif)
         self.export_tif_button.setVisible(False)
         main_layout.addWidget(self.export_tif_button)
-        
+
         # Add a spacer to ensure content can scroll all the way down
         main_layout.addStretch(1)  # Add stretch at the end to push content up
-        
+
         self.setLayout(main_layout)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.update_image()
@@ -711,10 +709,12 @@ class ImageOverlay(QWidget):
 
                 try:
                     if self.layers[selected_index]["image"] == None:
-                        self.layers[selected_index]["image"] = self.generate_image(selected_index)
+                        self.layers[selected_index]["image"] = self.generate_image(
+                            selected_index
+                        )
                 except:
                     pass
-                
+
                 c.image = self.layers[selected_index]["image"]
                 c.name = self.layers[selected_index]["name"]
                 self.add_layer(c)
@@ -762,7 +762,9 @@ class ImageOverlay(QWidget):
         idx = len(self.controls) - 1
 
         group_box = QGroupBox(f"Layer {idx + 1}: {c.name}")
-        group_box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        group_box.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
 
         group_layout = QFormLayout()
         group_layout.setSpacing(8)  # Add spacing between form rows
@@ -892,7 +894,6 @@ class ImageOverlay(QWidget):
 
         q_image = numpy_to_qimage(combined_image)
 
-
         # commented out
         self.changePix.emit(QGraphicsPixmapItem(QPixmap.fromImage(q_image)))
 
@@ -900,62 +901,67 @@ class ImageOverlay(QWidget):
         if len(self.controls) == 0:
             QMessageBox.warning(None, "Warning", "No layers to export")
             return
-            
+
         file_name, _ = QFileDialog.getSaveFileName(
             None, "Save TIF File", "protein_layers.tif", "*.tif;;All Files (*)"
         )
-        
+
         if not file_name:
             return
-            
+
         # Create an array to hold all the protein layer images as grayscale
         layers_data = []
         layer_names = []
-        
+
         for i, c in enumerate(self.controls):
             if True:
                 img = c.image.copy()
-                
+
                 # Get original protein data in grayscale
                 # If the image has 3 channels (RGB), convert to grayscale
                 if len(img.shape) == 3 and img.shape[2] == 3:
                     img_gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
                 else:
                     img_gray = img
-                
+
                 # Apply contrast adjustment if needed
                 if type(c.current_contrast) == type([]):
-                    img_gray = np.clip(img_gray, c.current_contrast[0], c.current_contrast[1])
-                
+                    img_gray = np.clip(
+                        img_gray, c.current_contrast[0], c.current_contrast[1]
+                    )
+
                 # Scale to 0-255 range
                 img_gray = scale_image_to_255(img_gray)
-                
+
                 # Add to our stack
                 layers_data.append(img_gray)
                 layer_names.append(c.name)
-        
+
         if not layers_data:
             QMessageBox.warning(None, "Warning", "No visible layers to export")
             return
-            
+
         # Stack all layers into a single 3D array (Z,Y,X) where Z is the protein layer
         tif_data = np.stack(layers_data)
-        
+
         # Save as multi-layer TIF file
         try:
             # Use tifffile to save with ImageJ compatibility
             tiff.imwrite(file_name, tif_data.astype(np.uint8), imagej=True)
-            
+
             # Save layer names to a text file
             txt_file = os.path.splitext(file_name)[0] + "_protein_order.txt"
-            with open(txt_file, 'w') as f:
+            with open(txt_file, "w") as f:
                 for i, name in enumerate(layer_names):
                     f.write(f"Layer {i+1}: {name}\n")
-                    
-            QMessageBox.information(None, "Success", 
+
+            QMessageBox.information(
+                None,
+                "Success",
                 f"Multi-layered TIF file saved to {file_name}\n"
                 f"Each layer contains a separate protein in grayscale\n"
-                f"Protein order saved to {txt_file}")
+                f"Protein order saved to {txt_file}",
+            )
         except Exception as e:
             QMessageBox.critical(None, "Error", f"Failed to save TIF file: {str(e)}")
 

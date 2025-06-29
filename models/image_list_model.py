@@ -1,7 +1,7 @@
 from PyQt6.QtCore import QModelIndex, Qt
 from PyQt6.QtGui import QPixmap, QIcon
 
-from core.canvas import ImageStorage
+from core import ImageStorage
 from utils import numpy_to_qimage
 from PyQt6.QtGui import QStandardItemModel, QStandardItem
 from PyQt6.QtCore import QSize
