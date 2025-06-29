@@ -9,7 +9,6 @@ make.bat
 .DS_Store
 # UV package manager gitignores
 .python-version
-pyproject.toml
 uv.lock
 .vscode
 *.ipynb

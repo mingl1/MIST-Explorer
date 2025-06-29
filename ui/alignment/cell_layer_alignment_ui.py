@@ -10,10 +10,9 @@ from PyQt6.QtWidgets import (
     QCheckBox,
 )
 from PyQt6.QtCore import QCoreApplication, QMetaObject, pyqtSignal, pyqtSlot
-from core.cell_layer_alignment import CellLayerAligner
 from ui.alignment.alignment_preview_dialog import AlignmentPreviewDialog
 from PyQt6.QtWidgets import QGraphicsPixmapItem, QComboBox
-from core.canvas import ImageStorage, ImageWrapper
+from core import ImageStorage, ImageWrapper, CellLayerAligner
 
 
 class CellLayerAlignmentUI(QWidget):

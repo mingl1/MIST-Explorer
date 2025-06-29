@@ -1,3 +1,4 @@
+from multiprocessing import Value
 from typing import List
 from PyQt6.QtGui import QImage, QPixmap
 from PyQt6.QtCore import QTimer
@@ -58,7 +59,7 @@ def qimage_to_numpy(qimage: QImage):
     # convert to grayscale
     if qimage.format() not in valid_formats:
         if qimage.format() == QImage.Format.Format_RGB32:
-
+            assert ptr is not None, "QImage bits() returned None"
             ptr.setsize(width * height * 4)
             arr = np.array(ptr, dtype=np.uint8).reshape(height, width, 4)
 
@@ -75,6 +76,7 @@ def qimage_to_numpy(qimage: QImage):
         raise ValueError("Unsupported dtype")
 
     # Set buffer size based on dtype
+    assert ptr is not None, "QImage bits() returned None"
     ptr.setsize(width * height)
 
     print(qimage.format())
@@ -95,6 +97,7 @@ def pixmap_to_image(pixmap: QPixmap):
     width = qimage.width()
     height = qimage.height()
     ptr = qimage.bits()
+    assert ptr is not None, "QImage bits() returned None"
     ptr.setsize(height * width * 4)
     arr = np.array(ptr).reshape(height, width, 4)  # 4 for RGBA
 
@@ -156,16 +159,16 @@ def adjustContrast(img, alpha=5, beta=15):
 
 
 # uint16 to uint8
-def scale_adjust(arr: np.ndarray):
+def scale_adjust(arr: np.ndarray) -> NDArray[np.uint8]:
     if arr.dtype == np.uint16:
-        return cv2.convertScaleAbs(arr, alpha=(255.0 / 65535.0))
+        return cv2.convertScaleAbs(arr, alpha=(255.0 / 65535.0)).astype(np.uint8)
     elif arr.dtype == np.uint8:
         return arr
     elif arr.dtype == np.uint32:
         array_uint8 = ((arr / arr.max()) * 255).astype(np.uint8)
         return array_uint8
     else:
-        print("unsupported array type: ", arr.dtype)
+        raise ValueError("unsupported array type: ", arr.dtype)
 
 
 # def to_float64(arr: np.ndarray):
@@ -399,7 +402,6 @@ def match_histograms(src_image, ref_histogram, bins=256):
         lookup_table = np.zeros(256)
         lookup_val = 0
         for src_pixel_val in range(len(src_cdf)):
-            lookup_val
             for ref_pixel_val in range(len(ref_cdf)):
                 if ref_cdf[ref_pixel_val] >= src_cdf[src_pixel_val]:
                     lookup_val = ref_pixel_val

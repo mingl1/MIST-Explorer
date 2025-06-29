@@ -6,22 +6,16 @@ from PyQt6.QtGui import QPen, QBrush, QColor
 from PyQt6.QtWidgets import (
     QToolTip,
     QGraphicsView,
-    QRubberBand,
     QGraphicsScene,
     QGraphicsPixmapItem,
     QGraphicsItem,
     QGraphicsRectItem,
     QGraphicsOpacityEffect,
-    QGraphicsItemGroup,
-    QGraphicsSimpleTextItem,
     QApplication,
-    QMainWindow,
     QWidget,
     QHBoxLayout,
     QPushButton,
     QLabel,
-    QMenu,
-    QMessageBox,
 )
 from PyQt6.QtGui import (
     QDragEnterEvent,
@@ -30,9 +24,6 @@ from PyQt6.QtGui import (
     QDragMoveEvent,
     QMouseEvent,
     QCursor,
-    QImage,
-    QPalette,
-    QPainter,
     QBrush,
     QColor,
     QPen,
@@ -45,23 +36,16 @@ from PyQt6.QtCore import (
     QSize,
     QPoint,
     pyqtSignal,
-    pyqtSlot,
     QPointF,
     QPropertyAnimation,
     QEasingCurve,
     QRectF,
-    QSizeF,
 )
 
 import numpy as np
-import cv2
 import pandas as pd
-import random
-import traceback
 import utils
 
-from core.Worker import Worker
-import ui.Dialogs as Dialogs
 
 from ui.lassos.CircleLasso import CircleLasso
 from ui.lassos.RectLasso import RectLasso

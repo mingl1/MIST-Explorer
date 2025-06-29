@@ -18,7 +18,7 @@ class RegisterUI(QWidget):
     emitBeadData = pyqtSignal(np.ndarray)
     emitColorCode = pyqtSignal(pd.DataFrame)
 
-    def __init__(self, parent=None, containing_layout: QVBoxLayout = None):
+    def __init__(self, parent, containing_layout: QVBoxLayout):
         super().__init__()
         self.setupUI(parent, containing_layout)
 

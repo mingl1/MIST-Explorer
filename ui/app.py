@@ -14,7 +14,7 @@ from ui.alignment.register_ui import RegisterUI
 from ui.view_tab import ImageOverlay
 from ui.analysis.AnalysisTab import AnalysisTab
 from ui.processing.gaussian_blur import GaussianBlur
-from core.canvas import MetaData
+from core import MetaData
 from ui.ImageManager import Manager
 from ui.alignment.cell_layer_alignment_ui import CellLayerAlignmentUI
 import numpy as np
