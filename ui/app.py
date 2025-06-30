@@ -240,6 +240,7 @@ class Ui_MainWindow(QMainWindow):
 
         # Ensure images_tab has a layout before adding widgets
         images_tab_layout = self.images_tab.layout()
+        assert images_tab_layout is not None, "images_tab layout is not set"
 
         images_tab_layout.addWidget(self.flip_groupbox)
 
@@ -252,10 +253,10 @@ class Ui_MainWindow(QMainWindow):
         )
 
         # Now that cell_layer_alignment exists, connect the signals
-        self.images_tab.tissue_target_selected.connect(
+        self.images_tab.image_tree_view.tissue_target_selected.connect(
             self.cell_layer_alignment.set_target_image
         )
-        self.images_tab.tissue_unaligned_selected.connect(
+        self.images_tab.image_tree_view.tissue_unaligned_selected.connect(
             self.cell_layer_alignment.set_unaligned_image
         )
 

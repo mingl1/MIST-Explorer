@@ -339,6 +339,24 @@ class BaseGraphicsView(QWidget):
     def dragMoveEvent(self, event: QDragMoveEvent | None):  # type: ignore
         self._accept_if_valid(event)
 
+    def clear_canvas(self):
+        scene = self.scene.scene()
+        if scene:
+            scene.clear()
+        self.pixmap = None
+        self.pixmap_item = None
+        self.reset_pixmap = None
+        self.reset_pixmap_item = None
+        self.np_channels = {}
+        self.reset_np_channels = {}
+        self.current_channel = 0
+        self.image_cache = {}
+        self.lut_cache = {}
+        self.image_wrapper = ImageWrapper(np.array([]), "")
+        self.uuid = None
+        self.num_channels = 0
+        gc.collect()
+
     def _accept_if_valid(
         self, event: QDragEnterEvent | QDragMoveEvent | QDropEvent | None
     ):

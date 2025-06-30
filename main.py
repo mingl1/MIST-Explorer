@@ -5,7 +5,7 @@ Main script for starting the MIST-Explorer application.
 import numpy as np
 
 if not hasattr(np, "bool"):
-    np.bool = np.bool_
+    np.bool = np.bool_  # type: ignore
 from PyQt6.QtWidgets import QApplication
 import ui.app as app
 from controller import Controller

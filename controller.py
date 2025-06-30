@@ -196,7 +196,7 @@ class Controller:
                 for l in layer:
                     wrapped_image = ImageWrapper(aligned_image[l], l)
                     data[l] = wrapped_image
-                aligned_name = "Restered_" + filename
+                aligned_name = "Registered_" + filename
             else:
                 wrapped_image = ImageWrapper(aligned_image, layer)
                 aligned_name = f"Aligned_{filename}"
@@ -235,12 +235,12 @@ class SignalConnectionManager:
 
     def _setup_alignment_connections(self):
         """Alignment section signal connections"""
-        self.c.view.images_tab.tissue_target_selected.connect(
-            self.c.view.cell_layer_alignment.set_target_image
-        )
-        self.c.view.images_tab.tissue_unaligned_selected.connect(
-            self.c.view.cell_layer_alignment.set_unaligned_image
-        )
+        # self.c.view.images_tab.tissue_target_selected.connect(
+        #     self.c.view.cell_layer_alignment.set_target_image
+        # )
+        # self.c.view.images_tab.tissue_unaligned_selected.connect(
+        #     self.c.view.cell_layer_alignment.set_unaligned_image
+        # )
         self.c.view.cell_layer_alignment.alignmentCompleteSignal.connect(
             self.c.handle_new_image
         )
