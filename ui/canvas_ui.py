@@ -97,7 +97,7 @@ class ArrowItem(QGraphicsPixmapItem):
 class ReferenceGraphicsViewUI(QGraphicsView):
     """Reference view for displaying images with navigation arrows"""
 
-    imageDropped = pyqtSignal(str)
+    image_dropped = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -105,7 +105,7 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         self.zoom = 1
         self.left_arrow = None
         self.right_arrow = None
-        self.pixmapItem = None
+        self.pixmap_item = None
         self.current_index = 1
         self.np_channels = {}
         self.pixmap = None
@@ -119,7 +119,7 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
 
     def is_empty(self) -> bool:
-        return self.pixmapItem is None
+        return self.pixmap_item is None
 
     def load_channels(self, np_channels):
         self.np_channels = np_channels
@@ -160,7 +160,7 @@ class ReferenceGraphicsViewUI(QGraphicsView):
             self.fitInView(self.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
 
     def wheelEvent(self, event):
-        if self.pixmapItem is not None:
+        if self.pixmap_item is not None:
             zooming_out = event.angleDelta().y() > 0
 
             # Prevent excessive zooming in either direction
@@ -188,7 +188,7 @@ class ReferenceGraphicsViewUI(QGraphicsView):
             for url in event.mimeData().urls():
                 file_path = url.toLocalFile()
                 if file_path is not None:
-                    self.imageDropped.emit(file_path)
+                    self.image_dropped.emit(file_path)
             event.acceptProposedAction()
 
     def mousePressEvent(self, event):
@@ -236,16 +236,16 @@ class ReferenceGraphicsViewUI(QGraphicsView):
                 self.np_channels[f"Channel {self.current_index}"].data
             )
         )
-        self.pixmapItem.setPixmap(self.pixmap)
-        item_rect = self.pixmapItem.boundingRect()
+        self.pixmap_item.setPixmap(self.pixmap)
+        item_rect = self.pixmap_item.boundingRect()
         self.setSceneRect(item_rect)
         self.fitInView(self.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
 
     def __centerImage(self):
-        item_rect = self.pixmapItem.boundingRect()
+        item_rect = self.pixmap_item.boundingRect()
         self.setSceneRect(item_rect)
-        self.fitInView(self.pixmapItem, Qt.AspectRatioMode.KeepAspectRatio)
-        self.centerOn(self.pixmapItem)
+        self.fitInView(self.pixmap_item, Qt.AspectRatioMode.KeepAspectRatio)
+        self.centerOn(self.pixmap_item)
 
     # def mouseMoveEvent(self, event: QMouseEvent):
     #     """Handle mouse move events for panning"""
@@ -270,13 +270,13 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         self.slideshow()  # Initialize arrows
 
         self.pixmap = pixmap
-        if not hasattr(self, "pixmapItem") or self.pixmapItem is None:
-            self.pixmapItem = QGraphicsPixmapItem(self.pixmap)
-            self.scene().addItem(self.pixmapItem)
+        if not hasattr(self, "pixmapItem") or self.pixmap_item is None:
+            self.pixmap_item = QGraphicsPixmapItem(self.pixmap)
+            self.scene().addItem(self.pixmap_item)
 
         else:
             print("setting pixmap")
-            self.pixmapItem.setPixmap(self.pixmap)
+            self.pixmap_item.setPixmap(self.pixmap)
 
         print("is layer: ", is_layer)
 
@@ -309,12 +309,12 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         self.left_arrow.setPos(self.mapToScene(left_arrow_pos_x, arrow_pos_y))
 
         # Set Z-order
-        self.pixmapItem.setZValue(0)
+        self.pixmap_item.setZValue(0)
         self.right_arrow.setZValue(1)
         self.left_arrow.setZValue(1)
 
         # Setup scene
-        item_rect = self.pixmapItem.boundingRect()
+        item_rect = self.pixmap_item.boundingRect()
         self.setSceneRect(item_rect)
         self.fitInView(self.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
 
@@ -328,10 +328,13 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         if hasattr(self, "pixel_highlight") and self.pixel_highlight:
             self.scene().removeItem(self.pixel_highlight)
 
+        if self.pixmap_item is None:
+            return
+
         # Create a small rectangle to highlight the pixel
         # Convert pixel coordinates to scene coordinates
         pixel_rect = QRectF(x, y, 1, 1)  # 1x1 pixel
-        scene_rect = self.pixmapItem.mapRectToScene(pixel_rect)
+        scene_rect = self.pixmap_item.mapRectToScene(pixel_rect)
 
         # Create highlight rectangle
         self.pixel_highlight = QGraphicsRectItem(scene_rect)
@@ -359,19 +362,19 @@ class ReferenceGraphicsViewUI(QGraphicsView):
 class ImageGraphicsViewUI(QGraphicsView):
     """Main image view with support for selection, cropping and other operations"""
 
-    imageDropped = pyqtSignal(str)
-    showCrop = pyqtSignal(QRect)
-    requestFlipHorizontal = pyqtSignal()  # Signal to request horizontal flip
-    requestFlipVertical = pyqtSignal()  # Signal to request vertical flip
+    image_dropped = pyqtSignal(str)
+    show_crop = pyqtSignal(QRect)
+    horizontal_flip = pyqtSignal()  # Signal to request horizontal flip
+    vertical_flip = pyqtSignal()  # Signal to request vertical flip
 
-    def __init__(self, parent=None, enc=None, showButtons=True):
+    def __init__(self, parent=None, enc=None, show_buttons=True):
         super().__init__(parent)
         self.enc = enc
-        self.showButtons = showButtons
+        self.show_buttons = show_buttons
         self.setupUI()
 
         # Initialize variables
-        self.pixmapItem = None
+        self.pixmap_item = None
         self.rubberBand = None
         self.rubberBands = []
         self.rubberBandColors = []
@@ -398,25 +401,25 @@ class ImageGraphicsViewUI(QGraphicsView):
 
     def flip_horizontal(self):
         """Flip the image horizontally"""
-        if self.pixmapItem:
-            img = self.pixmapItem.pixmap().toImage()
+        if self.pixmap_item:
+            img = self.pixmap_item.pixmap().toImage()
             flipped_img = img.mirrored(horizontal=True, vertical=False)
             flipped_pixmap = QPixmap.fromImage(flipped_img)
-            self.pixmapItem.setPixmap(flipped_pixmap)
+            self.pixmap_item.setPixmap(flipped_pixmap)
             self.scene().update()
             # Emit signal to update the underlying data model
-            self.requestFlipHorizontal.emit()
+            self.horizontal_flip.emit()
 
     def flip_vertical(self):
         """Flip the image vertically"""
-        if self.pixmapItem:
-            img = self.pixmapItem.pixmap().toImage()
+        if self.pixmap_item:
+            img = self.pixmap_item.pixmap().toImage()
             flipped_img = img.mirrored(horizontal=False, vertical=True)
             flipped_pixmap = QPixmap.fromImage(flipped_img)
-            self.pixmapItem.setPixmap(flipped_pixmap)
+            self.pixmap_item.setPixmap(flipped_pixmap)
             self.scene().update()
             # Emit signal to update the underlying data model
-            self.requestFlipVertical.emit()
+            self.vertical_flip.emit()
 
     def setupUI(self):
         self.setMinimumSize(QSize(600, 600))
@@ -427,7 +430,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
 
         # Create floating selection buttons
-        if self.showButtons:
+        if self.show_buttons:
             self.create_floating_buttons()
 
     def create_floating_buttons(self):
@@ -549,35 +552,35 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.unsetCursor()
 
     def isEmpty(self) -> bool:
-        return self.pixmapItem is None
+        return self.pixmap_item is None
 
     def mouseDoubleClickEvent(self, event):
         if not self.isEmpty():
             self.__centerImage()
 
-    def updateCanvas(self, pixmap: QPixmap, reset=False, crop=False):
+    def update_canvas(self, pixmap: QPixmap, reset=False, crop=False):
         """Updates canvas when current image is operated on"""
-        if self.pixmapItem:
-            self.pixmapItem.setPixmap(pixmap)
-            self.pixmapItem.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
+        if self.pixmap_item:
+            self.pixmap_item.setPixmap(pixmap)
+            self.pixmap_item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
 
-    def addNewImage(self, pixmapItem: QGraphicsPixmapItem):
+    def add_new_image(self, pixmapItem: QGraphicsPixmapItem):
         """Update the pixmap of the existing image or add a new one"""
-        if not hasattr(self, "pixmapItem") or self.pixmapItem is None:
+        if not hasattr(self, "pixmapItem") or self.pixmap_item is None:
             # If no pixmapItem exists, add it to the scene
-            self.pixmapItem = pixmapItem
-            self.pixmapItem.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
-            self.scene().addItem(self.pixmapItem)
+            self.pixmap_item = pixmapItem
+            self.pixmap_item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
+            self.scene().addItem(self.pixmap_item)
             self.__centerImage()
         else:
             # Update the pixmap of the existing item
-            self.pixmapItem.setPixmap(pixmapItem.pixmap())
+            self.pixmap_item.setPixmap(pixmapItem.pixmap())
 
     def __centerImage(self):
-        item_rect = self.pixmapItem.boundingRect()
+        item_rect = self.pixmap_item.boundingRect()
         self.setSceneRect(item_rect)
-        self.fitInView(self.pixmapItem, Qt.AspectRatioMode.KeepAspectRatio)
-        self.centerOn(self.pixmapItem)
+        self.fitInView(self.pixmap_item, Qt.AspectRatioMode.KeepAspectRatio)
+        self.centerOn(self.pixmap_item)
         # if self.reference_view:
         #     self.reference_view.__centerImage()
 
@@ -593,7 +596,7 @@ class ImageGraphicsViewUI(QGraphicsView):
             for url in event.mimeData().urls():
                 file_path = url.toLocalFile()
                 if file_path is not None:
-                    self.imageDropped.emit(file_path)
+                    self.image_dropped.emit(file_path)
             event.acceptProposedAction()
 
     def wheelEvent(self, event):
@@ -648,7 +651,7 @@ class ImageGraphicsViewUI(QGraphicsView):
     def update_starting_position(self, event):
         """Update the starting position for rubber band operations"""
         scene_pos = self.mapToScene(event.pos())
-        self.image_pos = self.pixmapItem.mapFromScene(scene_pos)
+        self.image_pos = self.pixmap_item.mapFromScene(scene_pos)
         self.starting_x = int(self.image_pos.x())
         self.starting_y = int(self.image_pos.y())
 
@@ -702,7 +705,7 @@ class ImageGraphicsViewUI(QGraphicsView):
                 elif self.select == "poly":
                     if not self.current_polygon:
                         self.current_polygon = PolyLasso(
-                            self.pixmapItem
+                            self.pixmap_item
                         )  # Set pixmapItem as parent
                         self.scene().addItem(self.current_polygon)
                         # Enable mouse tracking for live preview
@@ -710,9 +713,9 @@ class ImageGraphicsViewUI(QGraphicsView):
 
                     # Add point in scene coordinates, but relative to the image
                     scene_pos = self.mapToScene(event.pos())
-                    image_pos = self.pixmapItem.mapFromScene(scene_pos)
+                    image_pos = self.pixmap_item.mapFromScene(scene_pos)
                     # Convert image_pos to scene coordinates relative to the image
-                    polygon_pos = self.pixmapItem.mapToScene(image_pos)
+                    polygon_pos = self.pixmap_item.mapToScene(image_pos)
                     self.current_polygon.add_point(polygon_pos, image_pos)
 
                 if self.begin_crop:
@@ -747,15 +750,15 @@ class ImageGraphicsViewUI(QGraphicsView):
 
     def confirm_crop(self):
         """Confirm the current crop selection"""
-        if not self.active_crop_rect or not self.pixmapItem:
+        if not self.active_crop_rect or not self.pixmap_item:
             return
 
         # Get the crop rectangle in scene coordinates
         crop_rect = self.active_crop_rect.rect()
 
         # Convert to image coordinates
-        image_top_left = self.pixmapItem.mapFromScene(crop_rect.topLeft())
-        image_bottom_right = self.pixmapItem.mapFromScene(crop_rect.bottomRight())
+        image_top_left = self.pixmap_item.mapFromScene(crop_rect.topLeft())
+        image_bottom_right = self.pixmap_item.mapFromScene(crop_rect.bottomRight())
 
         # Create image rectangle and clamp to image bounds
         image_rect = QRect(
@@ -766,7 +769,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         ).normalized()
 
         # Make sure rect is within image bounds
-        image = self.pixmapItem.pixmap().toImage()
+        image = self.pixmap_item.pixmap().toImage()
         image_width, image_height = image.width(), image.height()
         image_rect = image_rect.intersected(QRect(0, 0, image_width, image_height))
 
@@ -774,7 +777,7 @@ class ImageGraphicsViewUI(QGraphicsView):
             return
 
         # Emit the crop signal
-        self.showCrop.emit(image_rect)
+        self.show_crop.emit(image_rect)
 
         # Clean up crop mode
         self.cancel_crop_mode()
@@ -806,18 +809,18 @@ class ImageGraphicsViewUI(QGraphicsView):
         if self.current_polygon and len(self.current_polygon.points) > 0:
             # Update temp point in scene coordinates relative to the image
             scene_pos = self.mapToScene(event.pos())
-            image_pos = self.pixmapItem.mapFromScene(scene_pos)
-            polygon_pos = self.pixmapItem.mapToScene(image_pos)
+            image_pos = self.pixmap_item.mapFromScene(scene_pos)
+            polygon_pos = self.pixmap_item.mapToScene(image_pos)
             self.current_polygon.set_temp_point(polygon_pos)
 
         # # Handle pixel info display
-        if self.pixmapItem:
+        if self.pixmap_item:
             scene_pos = self.mapToScene(event.pos())
-            image_pos = self.pixmapItem.mapFromScene(scene_pos)
+            image_pos = self.pixmap_item.mapFromScene(scene_pos)
 
             x = int(image_pos.x())
             y = int(image_pos.y())
-            img = self.pixmapItem.pixmap().toImage()
+            img = self.pixmap_item.pixmap().toImage()
 
             # Show pixel info in tooltip
             if 0 <= x < img.width() and 0 <= y < img.height():
@@ -933,7 +936,7 @@ class ImageGraphicsViewUI(QGraphicsView):
 
                 if self.select == "rect" or self.select == "circle":
                     scene_pos = self.mapToScene(event.pos())
-                    image_pos = self.pixmapItem.mapFromScene(scene_pos)
+                    image_pos = self.pixmap_item.mapFromScene(scene_pos)
                     image_rect = (
                         self.select,
                         (
@@ -951,7 +954,7 @@ class ImageGraphicsViewUI(QGraphicsView):
     def loadChannels(self, np_channels):
         """Load channel data"""
         self.np_channels = np_channels
-        if self.pixmapItem is not None:
+        if self.pixmap_item is not None:
             self.__centerImage()
 
     def highlight_pixel(self, x, y):
@@ -959,11 +962,13 @@ class ImageGraphicsViewUI(QGraphicsView):
         # Remove existing pixel highlight if any
         if hasattr(self, "pixel_highlight") and self.pixel_highlight:
             self.scene().removeItem(self.pixel_highlight)
+        if self.pixmap_item is None:
+            return
 
         # Create a small rectangle to highlight the pixel
         # Convert pixel coordinates to scene coordinates
         pixel_rect = QRectF(x, y, 1, 1)  # 1x1 pixel
-        scene_rect = self.pixmapItem.mapRectToScene(pixel_rect)
+        scene_rect = self.pixmap_item.mapRectToScene(pixel_rect)
 
         # Create highlight rectangle
         self.pixel_highlight = QGraphicsRectItem(scene_rect)

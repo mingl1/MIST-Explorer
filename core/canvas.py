@@ -959,9 +959,14 @@ class ImageGraphicsView(BaseGraphicsView):
         )
         self.update_image(cmap_text=cmap)
         # !TODO: need to fix; think is broken now after changing update_manger behavior
+        item = self.storage.get_data(self.uuid)
+        if item:
+            name = item["name"]
+        else:
+            name = f"Unnamed"
         self.update_manager.emit(
             cmap,
-            self.image_wrapper.name + " " + str(self.stardist_image_count),
+            f"Stardist_{name}",
         )
 
     def add_to_canvas(

@@ -235,5 +235,5 @@ class StarDist(QThread):
         self.params["radius"] = value
 
     def _fatal_error_message(self, msg):
-        self.errorSignal.emit(msg)
+        self.error_signal.emit(msg)
         self.progress.emit(100, "")

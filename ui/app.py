@@ -414,8 +414,8 @@ class Ui_MainWindow(QMainWindow):
 
         if file_name:
             # Use pixmapItem directly if available
-            if hasattr(self.canvas, "pixmapItem") and self.canvas.pixmapItem:
-                pixmap = self.canvas.pixmapItem.pixmap()
+            if hasattr(self.canvas, "pixmapItem") and self.canvas.pixmap_item:
+                pixmap = self.canvas.pixmap_item.pixmap()
             else:
                 pixmap = self.canvas.grab()
 

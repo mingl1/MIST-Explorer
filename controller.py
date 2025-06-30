@@ -277,12 +277,14 @@ class SignalConnectionManager:
 
     def _setup_image_handling_connections(self):
         """Image loading and display connections"""
-        self.c.view.canvas.imageDropped.connect(self.c.model_canvas.add_to_canvas)
-        self.c.view.small_view.imageDropped.connect(self.c.reference_view.add_to_canvas)
+        self.c.view.canvas.image_dropped.connect(self.c.model_canvas.add_to_canvas)
+        self.c.view.small_view.image_dropped.connect(
+            self.c.reference_view.add_to_canvas
+        )
         self.c.reference_view.update_reference.connect(self.c.view.small_view.display)
-        self.c.model_canvas.new_image_added.connect(self.c.view.canvas.addNewImage)
-        self.c.view.view_tab.changePix.connect(self.c.view.canvas.addNewImage)
-        self.c.model_canvas.canvas_updated.connect(self.c.view.canvas.updateCanvas)
+        self.c.model_canvas.new_image_added.connect(self.c.view.canvas.add_new_image)
+        self.c.view.view_tab.changePix.connect(self.c.view.canvas.add_new_image)
+        self.c.model_canvas.canvas_updated.connect(self.c.view.canvas.update_canvas)
         self.c.model_canvas.update_manager.connect(self.c.handle_new_image)
         self.c.reference_view.update_manager.connect(self.c.handle_new_reference_image)
 
@@ -290,7 +292,7 @@ class SignalConnectionManager:
         """Canvas-related signal connections"""
         self.c.model_canvas.update_progress.connect(self.c.view.update_progress_bar)
         self.c.model_canvas.error_signal.connect(self.c.handle_error)
-        self.c.view.canvas.showCrop.connect(self.c.model_canvas.crop)
+        self.c.view.canvas.show_crop.connect(self.c.model_canvas.crop)
         # self.c.model_canvas.cropSignal.connect(self.c.view.canvas.set_crop_status)
         self.c.model_canvas.update_cmap.connect(
             self.c.view.toolBarUI.update_cmap_selector
@@ -323,12 +325,8 @@ class SignalConnectionManager:
     def _setup_transform_connections(self):
         """Image transformation connections"""
         # Flip operations
-        self.c.view.canvas.requestFlipHorizontal.connect(
-            self.c.model_canvas.flip_horizontal
-        )
-        self.c.view.canvas.requestFlipVertical.connect(
-            self.c.model_canvas.flip_vertical
-        )
+        self.c.view.canvas.horizontal_flip.connect(self.c.model_canvas.flip_horizontal)
+        self.c.view.canvas.vertical_flip.connect(self.c.model_canvas.flip_vertical)
 
         # Rotation
         self.c.view.rotate_groupbox.rotate_confirm.pressed.connect(
