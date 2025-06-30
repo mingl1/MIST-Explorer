@@ -1,14 +1,33 @@
-from PyQt6.QtCore import pyqtSignal, QThread
-from PyQt6.QtWidgets import QMessageBox, QFileDialog
-import numpy as np, cv2 as cv, math, time, pandas as pd, itertools
-from core.canvas import ImageGraphicsView, ImageWrapper
-from tqdm import tqdm
+"""
+Cell Intensity Analysis Module for MIST-Explorer
 
-# import SimpleITK as sitk
+This module provides the CellIntensity class for quantifying protein signal intensities
+within segmented cells using bead-based decoding. It supports:
+    - Calculation of median-adjusted protein intensities per cell
+    - Handling of missing protein data via nearest-neighbor bead search
+    - Flexible decoding cycles/colors and region radii
+    - Export of results to CSV or Excel
+    - Progress and error signaling for integration with PyQt GUIs
+
+Classes:
+    CellIntensity: QThread subclass for background computation of cell intensity tables
+
+Typical usage involves setting the required data (stardist labels, bead data, color code, and protein signal array),
+then calling generateCellIntensityTable() to compute and save the results.
+"""
+
+from PyQt6.QtCore import pyqtSignal, QThread
+from PyQt6.QtWidgets import QFileDialog
+import numpy as np
+import cv2 as cv
+import pandas as pd
+import itertools
+from core import ImageWrapper
+
 
 
 class CellIntensity(QThread):
-    errorSignal = pyqtSignal(str)
+    error_signal = pyqtSignal(str)
     progress = pyqtSignal(int, str)
 
     def __init__(self):
@@ -21,13 +40,14 @@ class CellIntensity(QThread):
             "radius_bg": 6,
         }
 
+        self.color_code = None
         self.stardist_labels = None
         self.df_cell_data = None
 
-    def loadProteinSignalArray(self, arr):
+    def load_protein_signal_array(self, arr):
         self.protein_signal_array = arr
 
-    def generateCellIntensityTable(self):
+    def generate_cell_intensity_table(self):
 
         self.start()
         self.finished.connect(self.quit)
@@ -41,7 +61,7 @@ class CellIntensity(QThread):
             or self.bead_data is None
             or self.color_code is None
         ):
-            self.errorSignal.emit("Please select all necessary parameters")
+            self.error_signal.emit("Please select all necessary parameters")
             return
 
         else:
@@ -89,11 +109,11 @@ class CellIntensity(QThread):
                     for bead in self.bead_data
                 ]
             )  # join all columns into a list of strings and convert to an nparray
-            data_modified = data_modified
 
             radius_bg = self.params["radius_bg"]
-            radius_fg = self.params["radius_fg"]
-            radius = radius_bg - radius_fg
+            # radius_fg = self.params["radius_fg"]
+            max_size = self.params["max_size"]
+            # radius = radius_bg - radius_fg
 
             for i, bead in enumerate(data_modified):
                 progress_update = int(((i + 1) / len(data_modified)) * 100)
@@ -109,7 +129,6 @@ class CellIntensity(QThread):
                 if cell_associated_id != 0:
                     color_code = bead[2]
                     # bounds checking
-                    max_size = self.params["max_size"]
                     if (
                         bead_x > radius_bg
                         and bead_y > radius_bg
@@ -218,6 +237,7 @@ class CellIntensity(QThread):
                 median_values_for_cell_data_dict[cell_id] = array_of_subarrays_medians
 
             # drop rows with NaN that pandas includes for some reason lol
+            assert isinstance(self.color_code, pd.DataFrame)
             self.color_code = self.color_code.dropna(how="all", axis=1).dropna(
                 how="all", axis=0
             )
@@ -269,7 +289,7 @@ class CellIntensity(QThread):
         if not self.df_cell_data is None:
             self.df_cell_data.to_csv(file_name, index=False)
         else:
-            self.errorSignal.emit("Cannot save. Cell data not available")
+            self.error_signal.emit("Cannot save. Cell data not available")
 
     def find_nearest_neighbor(self, query_point, data_points):
         """
@@ -312,12 +332,13 @@ class CellIntensity(QThread):
         contours, _ = cv.findContours(
             just_cell_id_stardist_labels, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE
         )
+        cx, cy = -1, -1
         for contour in contours:
-            M = cv.moments(contour)
-            if M["m00"] != 0:
-                cx = int(M["m10"] / M["m00"])
-                cy = int(M["m01"] / M["m00"])
-
+            moment = cv.moments(contour)
+            if moment["m00"] != 0:
+                cx = int(moment["m10"] / moment["m00"])
+                cy = int(moment["m01"] / moment["m00"])
+        assert cx != -1 and cy != -1, "Centroid not found"
         return (cx, cy)
 
     def get_adjusted_median_intensity(self, bead_x, bead_y, bead_median_threshold=5000):
@@ -394,25 +415,25 @@ class CellIntensity(QThread):
         """Define the linear function for the correction equation"""
         return 0.8266 * x + 3970.1
 
-    def loadStardistLabels(self, stardist: np.ndarray) -> None:
-        self.stardist_labels = stardist
+    def load_stardist_labels(self, stardist: ImageWrapper) -> None:
+        self.stardist_labels = stardist.data
 
-    def getBeadData(self, bead_data):
+    def get_bead_data(self, bead_data):
         if isinstance(bead_data, np.ndarray):
             self.bead_data = bead_data
 
-    def getColorCode(self, color_code):
+    def get_color_code(self, color_code):
         if isinstance(color_code, pd.DataFrame):
             self.color_code = color_code
 
-    def setNumDecodingCycles(self, value):
+    def set_num_decoding_cycles(self, value):
         self.params["num_decoding_cycles"] = value
 
-    def setNumDecodingColors(self, value):
+    def set_num_decoding_colors(self, value):
         self.params["num_decoding_colors"] = value
 
-    def setRadiusFG(self, value):
+    def set_radius_fg(self, value):
         self.params["radius_fg"] = value
 
-    def setRadiusBG(self, value):
+    def set_radius_bg(self, value):
         self.params["radius_bg"] = value

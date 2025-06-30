@@ -14,7 +14,7 @@ from ui.alignment.register_ui import RegisterUI
 from ui.view_tab import ImageOverlay
 from ui.analysis.AnalysisTab import AnalysisTab
 from ui.processing.gaussian_blur import GaussianBlur
-from core.canvas import MetaData
+from core import MetaData
 from ui.ImageManager import Manager
 from ui.alignment.cell_layer_alignment_ui import CellLayerAlignmentUI
 import numpy as np
@@ -186,7 +186,6 @@ class Ui_MainWindow(QMainWindow):
         self.save_button = QPushButton("Save Canvas")
         self.save_button.clicked.connect(self.save_canvas)
 
-        # Crop and rotate components
         self.register_groupbox = RegisterUI(
             self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout
         )
@@ -242,6 +241,7 @@ class Ui_MainWindow(QMainWindow):
 
         # Ensure images_tab has a layout before adding widgets
         images_tab_layout = self.images_tab.layout()
+        assert images_tab_layout is not None, "images_tab layout is not set"
 
         images_tab_layout.addWidget(self.flip_groupbox)
 
@@ -254,10 +254,10 @@ class Ui_MainWindow(QMainWindow):
         )
 
         # Now that cell_layer_alignment exists, connect the signals
-        self.images_tab.tissue_target_selected.connect(
+        self.images_tab.image_tree_view.tissue_target_selected.connect(
             self.cell_layer_alignment.set_target_image
         )
-        self.images_tab.tissue_unaligned_selected.connect(
+        self.images_tab.image_tree_view.tissue_unaligned_selected.connect(
             self.cell_layer_alignment.set_unaligned_image
         )
 

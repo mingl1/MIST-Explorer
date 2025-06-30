@@ -15,9 +15,10 @@ from utils import (
 
 import cv2
 import concurrent.futures
-import itk
 from scipy.ndimage import rotate
-import itk.itkElastixRegistrationMethodPython
+from scipy.ndimage import zoom
+from scipy.ndimage import affine_transform
+from itk import elxParameterObjectPython, itkElastixRegistrationMethodPython
 
 
 class CellLayerAligner(QThread):
@@ -37,10 +38,10 @@ class CellLayerAligner(QThread):
         self.target_uuid = ""
         self.unaligned_channel = "Channel 1"
         self.unaligned_uuid = ""
-
+        self.debug = False  # Set to True for debugging
         # itk parameters, it takes a while to initialize but it is done lazily, if we can
         # intialize it here, it will shave 10s (?); i believe it is not initializing currently
-        parameter_object = itk.elxParameterObjectPython.elastixParameterObject_New()
+        parameter_object = elxParameterObjectPython.elastixParameterObject_New()
         default = parameter_object.GetDefaultParameterMap("affine")
         parameter_object.AddParameterMap(default)
         self.parameter_object = parameter_object
@@ -126,13 +127,15 @@ class CellLayerAligner(QThread):
             # Apply transformations sequentially for better accuracy
             _, padded_moving = make_same_shape(self.target_image, self.unaligned_image)
             intermediate_aligned = warp_image(padded_moving, full_coarse_transform)
-            tifffile.imwrite("intermediate_aligned.tif", intermediate_aligned)
+            if self.debug:
+                tifffile.imwrite("intermediate_aligned.tif", intermediate_aligned)
             intermediate_aligned = remove_padding(
                 intermediate_aligned, self.target_image.shape
             )
-            tifffile.imwrite(
-                "intermediate_aligned_after_padding.tif", intermediate_aligned
-            )
+            if self.debug:
+                tifffile.imwrite(
+                    "intermediate_aligned_after_padding.tif", intermediate_aligned
+                )
             final_aligned_image = warp_image(
                 intermediate_aligned, full_refinement_transform
             )
@@ -160,13 +163,15 @@ class CellLayerAligner(QThread):
             self._fatal_error_message(f"Error during alignment: {str(e)}")
 
     def _coarse_alignment(self):
-        moving, fixed = self.coarse_moving, self.coarse_target
+        moving, _ = self.coarse_moving, self.coarse_target
         best_result, angle, flip, params = self._itk_align(
             self.parameter_object,
             self.rotation_angles,
             self.coarse_target,
             self.coarse_moving,
         )
+        if self.debug:
+            tifffile.imwrite("best_coarse_result.tif", best_result)
         transform_info = extract_complete_transformation(
             params,  # ITK parameters from registration
             angle,  # Angle used in preprocessing
@@ -217,15 +222,15 @@ class CellLayerAligner(QThread):
         coarse_moving = np.clip(coarse_moving, 32, 255) - 32
 
         # Adjust contrast for both images
-        coarse_target = adjust_contrast(coarse_target, 50, 99)
-        coarse_moving = adjust_contrast(coarse_moving, 50, 99)
+        coarse_target = adjust_contrast(coarse_target.astype(np.float64), 50, 99)
+        coarse_moving = adjust_contrast(coarse_moving.astype(np.float64), 50, 99)
 
         # Normalize both images
         coarse_moving = cv2.normalize(
-            coarse_moving, None, 255, 0, cv2.NORM_MINMAX, cv2.CV_8U
+            coarse_moving, coarse_moving, 255, 0, cv2.NORM_MINMAX, cv2.CV_8U
         )
         coarse_target = cv2.normalize(
-            coarse_target, None, 255, 0, cv2.NORM_MINMAX, cv2.CV_8U
+            coarse_target, coarse_target, 255, 0, cv2.NORM_MINMAX, cv2.CV_8U
         )
 
         # Apply morphological opening
@@ -269,7 +274,7 @@ class CellLayerAligner(QThread):
         top3_angles = sorted_angle_results[:3]
 
         print("Top 3 angles:")
-        for i, (score, angle, flip, res_img, params) in enumerate(top3_angles):
+        for i, (score, angle, _, _, params) in enumerate(top3_angles):
             print(f"  {i+1}. Angle {angle}: score = {score}")
 
         # Stage 2: Test flip options for top 3 angles
@@ -278,7 +283,7 @@ class CellLayerAligner(QThread):
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
             futures = []
-            for score, angle, flip, res_img, params in top3_angles:
+            for score, angle, _, _, params in top3_angles:
                 futures.append(
                     executor.submit(
                         register_combination,
@@ -378,9 +383,9 @@ class CellLayerAligner(QThread):
             scaled_matrix[1, 2] *= scale_factor  # y translation
         elif matrix.shape == (3, 3):  # Homography matrix
             # Scale coordinates: H_scaled = S_to^-1 @ H @ S_from
-            S_from = np.diag([from_scale, from_scale, 1.0])
-            S_to_inv = np.diag([1 / to_scale, 1 / to_scale, 1.0])
-            scaled_matrix = S_to_inv @ matrix @ S_from
+            s_from = np.diag([from_scale, from_scale, 1.0])
+            s_to_inv = np.diag([1 / to_scale, 1 / to_scale, 1.0])
+            scaled_matrix = s_to_inv @ matrix @ s_from
 
         return scaled_matrix
 
@@ -410,7 +415,7 @@ class CellLayerAligner(QThread):
         """Process and remove padding from aligned images"""
 
         # Remove padding from main image
-        finalH, finalW = original_target_shape
+        final_height, final_width = original_target_shape
         final_aligned_image_cropped = remove_padding(
             final_aligned_image, original_target_shape
         )
@@ -419,8 +424,8 @@ class CellLayerAligner(QThread):
         scaling = target_preview.shape[0] / final_aligned_image.shape[0]
 
         # Calculate preview dimensions after scaling
-        preview_height = int(finalH * scaling)
-        preview_width = int(finalW * scaling)
+        preview_height = int(final_height * scaling)
+        preview_width = int(final_width * scaling)
 
         # Remove padding from preview images
         target_preview_cropped = remove_padding(
@@ -445,7 +450,6 @@ def calculate_alignment_metrics(fixed_array, aligned_array):
     # Ensure same shape
     if fixed_array.shape != aligned_array.shape:
         # Resize if needed
-        from scipy.ndimage import zoom
 
         zoom_factors = [f / a for f, a in zip(fixed_array.shape, aligned_array.shape)]
         aligned_array = zoom(aligned_array, zoom_factors, order=1)
@@ -467,7 +471,7 @@ def register_combination(fixed, moving, angle, flip, parameter_object):
 
     try:
         res_img, params = (
-            itk.itkElastixRegistrationMethodPython.elastix_registration_method(
+            itkElastixRegistrationMethodPython.elastix_registration_method(
                 fixed, rotated, parameter_object=parameter_object
             )
         )
@@ -482,7 +486,7 @@ def register_combination(fixed, moving, angle, flip, parameter_object):
 def morph_open(img):
     blur = cv2.GaussianBlur(img, (7, 7), 0)
     # blur = img
-    ret3, t = cv2.threshold(blur, 32, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    _, t = cv2.threshold(blur, 32, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     kernel = np.ones((5, 5), np.uint8)
     closed = cv2.morphologyEx(t, cv2.MORPH_OPEN, kernel)
     output = closed.copy()
@@ -557,19 +561,19 @@ def extract_itk_transform_matrix_verbose(params):
         m00, m01, m10, m11, tx, ty = transform_parameters[:6]
 
         # Show the decomposition
-        R = np.array([[m00, m01], [m10, m11]])
+        rotation_matrix = np.array([[m00, m01], [m10, m11]])
         center = np.array([cx, cy])
         translation = np.array([tx, ty])
 
-        print(f"Rotation/scaling matrix R:\n{R}")
+        print(f"Rotation/scaling matrix R:\n{rotation_matrix}")
         print(f"Original translation: {translation}")
         print(f"Center of rotation: {center}")
 
         # Calculate effective translation
-        R_times_center = R @ center
-        effective_translation = translation + center - R_times_center
+        rotation_times_center = rotation_matrix @ center
+        effective_translation = translation + center - rotation_times_center
 
-        print(f"R * center: {R_times_center}")
+        print(f"R * center: {rotation_times_center}")
         print(f"Effective translation: {effective_translation}")
 
         # Final matrix
@@ -607,27 +611,29 @@ def create_preprocessing_matrix(angle, flip, image_shape):
     center_x, center_y = width / 2.0, height / 2.0
 
     # Step 1: Translate to origin
-    T1 = np.array([[1, 0, -center_x], [0, 1, -center_y], [0, 0, 1]])
+    translate_to_origin = np.array([[1, 0, -center_x], [0, 1, -center_y], [0, 0, 1]])
 
     # Step 2: Y-flip (if applied)
     if flip:
-        F = np.array([[-1, 0, 0], [0, 1, 0], [0, 0, 1]])
+        flip_matrix = np.array([[-1, 0, 0], [0, 1, 0], [0, 0, 1]])
     else:
-        F = np.eye(3)
+        flip_matrix = np.eye(3)
 
     # Step 3: Rotation (if applied)
     if angle != 0:
         angle_rad = np.radians(angle)
         cos_a, sin_a = np.cos(angle_rad), np.sin(angle_rad)
-        R = np.array([[cos_a, -sin_a, 0], [sin_a, cos_a, 0], [0, 0, 1]])
+        rotation_matrix = np.array([[cos_a, -sin_a, 0], [sin_a, cos_a, 0], [0, 0, 1]])
     else:
-        R = np.eye(3)
+        rotation_matrix = np.eye(3)
 
     # Step 4: Translate back to center
-    T2 = np.array([[1, 0, center_x], [0, 1, center_y], [0, 0, 1]])
+    translate_back = np.array([[1, 0, center_x], [0, 1, center_y], [0, 0, 1]])
 
     # Combine: T2 * R * F * T1
-    preprocessing_matrix = T2 @ R @ F @ T1
+    preprocessing_matrix = (
+        translate_back @ rotation_matrix @ flip_matrix @ translate_to_origin
+    )
 
     return preprocessing_matrix
 
@@ -738,7 +744,6 @@ def apply_combined_transform(image, combined_matrix):
     Returns:
         numpy.ndarray: Transformed image
     """
-    from scipy.ndimage import affine_transform
 
     is_2d = len(image.shape) == 2
 

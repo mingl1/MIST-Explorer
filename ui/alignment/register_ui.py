@@ -18,7 +18,7 @@ class RegisterUI(QWidget):
     emitBeadData = pyqtSignal(np.ndarray)
     emitColorCode = pyqtSignal(pd.DataFrame)
 
-    def __init__(self, parent=None, containing_layout: QVBoxLayout = None):
+    def __init__(self, parent, containing_layout: QVBoxLayout):
         super().__init__()
         self.setupUI(parent, containing_layout)
 
@@ -34,6 +34,7 @@ class RegisterUI(QWidget):
 
         self.has_blue_color = QComboBox(self.register_groupbox)
         self.has_blue_color.addItems(["Yes", "No"])
+        self.has_blue_color.setCurrentIndex(1)  # Default to "No"
 
         self.hasblue_label = QLabel()
         self.hasblue_layout.addWidget(self.hasblue_label)
@@ -111,9 +112,11 @@ class RegisterUI(QWidget):
         QMetaObject.connectSlotsByName(self)
 
     def updateChannelSelector(self, channels: dict):
+        """Update the channel selectors with available channels."""
         self.alignment_layer.clear()
         self.protein_cell_layer.clear()
         self.intensity_layer.clear()
+
         self.alignment_layer.addItems(list(channels.keys()))
         self.protein_cell_layer.addItems(list(channels.keys()))
         self.intensity_layer.addItems(list(channels.keys()))
