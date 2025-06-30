@@ -87,6 +87,10 @@ class StarDist(QThread):
 
     def run(self):
         cell_image = self.__get_cell_image()
+        if cell_image is None:
+            self._fatal_error_message("No image to process")
+            return
+        assert isinstance(cell_image, np.ndarray), "cell_image must be a numpy array"
 
         if cell_image is None:
             self._critical_error("No cell image available for processing")
@@ -109,7 +113,8 @@ class StarDist(QThread):
         self.progress.emit(25, "Training model")
 
         print("here2")
-        if self.params["n_tiles"] == 0:
+        guess_tiles = self.params["n_tiles"]
+        if guess_tiles == 0:
             guess_tiles = model._guess_n_tiles(cell_image)
             # total_tiles = int(guess_tiles[0] * guess_tiles[1])
             # self.setNumberTiles(n_tiles)
@@ -141,9 +146,16 @@ class StarDist(QThread):
         print("here3")
         radius = self.params["radius"]
         self.progress.emit(95, "Dilating")
-        self.stardist_labels_grayscale = np.array(
-            dilate_labels(stardist_labels, radius=radius), dtype=np.uint16
-        )
+        # If error is platform not found, ask user to install run "sudo apt install pocl-opencl-icd"
+        try:
+            self.stardist_labels_grayscale = np.array(
+                dilate_labels(stardist_labels, radius=radius), dtype=np.uint16
+            )
+        except Exception as e:
+            self._fatal_error_message(
+                f"Error during dilation: {e}. You may need to install pocl-opencl-icd(wsl2 users)."
+            )
+            return
         print("here 4")
         self.progress.emit(100, "Stardist Done")
         stardist_result = ImageWrapper(self.stardist_labels_grayscale, name="stardist")
@@ -221,3 +233,7 @@ class StarDist(QThread):
 
     def set_dialation_radisu(self, value):
         self.params["radius"] = value
+
+    def _fatal_error_message(self, msg):
+        self.error_signal.emit(msg)
+        self.progress.emit(100, "")

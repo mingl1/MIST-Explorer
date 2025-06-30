@@ -127,9 +127,11 @@ class Register(QThread):
 
             # Select the inputs number
             outputs = []
-            if os.path.exists(f"registration_results_tif{tif_n}_300.pkl"):
+            if os.path.exists(f"registration_results_tif{tif_n}_150_decoding.pkl"):
                 print(f"loading previous results for tif {tif_n}")
-                with open(f"registration_results_tif{tif_n}_300.pkl", "rb") as f:
+                with open(
+                    f"registration_results_tif{tif_n}_150_decoding.pkl", "rb"
+                ) as f:
                     outputs = pickle.load(f)
             else:
                 for tile_n, tile_set in enumerate(inputs):
@@ -162,7 +164,9 @@ class Register(QThread):
 
             self.tifs[tif_n]["outputs"] = outputs
             if self.has_blue:
-                with open(f"registration_results_tif{tif_n}_300.pkl", "wb") as f:
+                with open(
+                    f"registration_results_tif{tif_n}_150_decoding.pkl", "wb"
+                ) as f:
                     pickle.dump(outputs, f)
 
         #########################################################
@@ -341,7 +345,7 @@ class Register(QThread):
         print("finding alignment")
         try:
             transf, _ = aa.find_transform(
-                source, target, detection_sigma=3, min_area=10, max_control_points=300
+                source, target, detection_sigma=3, min_area=10, max_control_points=150
             )
 
             if self.has_blue:

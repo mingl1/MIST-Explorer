@@ -4,10 +4,8 @@ from PyQt6.QtGui import QPixmap, QImage
 import numpy as np
 import sys
 import os
-import tempfile
 import cv2
 
-from ui.canvas_ui import ImageGraphicsViewUI
 
 # Add path to import microfilm
 sys.path.append(

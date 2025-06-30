@@ -158,10 +158,11 @@ class CellLayerAlignmentUI(QWidget):
         self.image2_label.setText(_translate("MainWindow", "Unaligned Image:"))
         self.register_button.setText(_translate("MainWindow", "Register Images"))
 
-    def set_target_image(self, uuid):
+    def set_target_image(self, uuid, is_leaf, channel):
         """Set the target image for alignment"""
         self.target_uuid = uuid
         item = self.storage.get_data(uuid)
+        assert item is not None, f"No data found for UUID: {uuid}"
         obj, name = item["data"], item["name"]
         self.target_image = obj
 
@@ -174,12 +175,14 @@ class CellLayerAlignmentUI(QWidget):
         self.image_1_channel_selector.setVisible(True)
         self.image_1_channel_selector.clear()
         self.image_1_channel_selector.addItems(obj.keys())
+        self.image_1_channel_selector.setCurrentIndex(channel)
         self._check_can_register()
 
-    def set_unaligned_image(self, uuid):
+    def set_unaligned_image(self, uuid, is_leaf, channel):
         """Set the unaligned image that will be registered to the target"""
         self.unaligned_uuid = uuid
         item = self.storage.get_data(uuid)
+        assert item is not None, f"No data found for UUID: {uuid}"
         obj, name = item["data"], item["name"]
         self.unaligned_image = obj
         self.unaligned_name = name
@@ -189,7 +192,9 @@ class CellLayerAlignmentUI(QWidget):
             "font-weight: bold; color: #007700;"
         )  # Green to indicate it's loaded
         self.image_2_channel_selector.setVisible(True)
+        self.image_2_channel_selector.clear()
         self.image_2_channel_selector.addItems(obj.keys())
+        self.image_2_channel_selector.setCurrentIndex(channel)
 
         self._check_can_register()
 
