@@ -129,6 +129,14 @@ class AlignmentPreviewDialog(QDialog):
             "font-weight: bold; font-size: 12px; margin: 5px;"
         )
 
+        # Create NCC metric label
+        self.ncc_label = QLabel("Calculating NCC...")
+        self.ncc_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.ncc_label.setStyleSheet(
+            "font-weight: bold; font-size: 14px; margin: 5px; color: #2196F3; "
+            "padding: 5px; border: 2px solid #2196F3; border-radius: 5px;"
+        )
+
         # Create zoomable image view instead of QLabel
         self.image_view = ZoomableImageView()
         self.image_view.setMinimumSize(800, 500)
@@ -208,12 +216,69 @@ class AlignmentPreviewDialog(QDialog):
         # Add widgets to layout
         assert self.layout() is not None, "Layout should be initialized"
         self.layout().addWidget(self.preview_label)
+        self.layout().addWidget(self.ncc_label)
         self.layout().addWidget(self.image_view)
         self.layout().addLayout(self.control_layout)
         self.layout().addLayout(self.button_layout)
 
-        # Create the overlay image
+        # Create the overlay image and calculate NCC
         self.create_direct_overlay()
+
+    def calculate_ncc(self, img1, img2):
+        """
+        Calculate NCC (Normalized Cross-Correlation) between two images.
+
+        Args:
+            img1: First image (reference/target)
+            img2: Second image (aligned)
+
+        Returns:
+            NCC value between -1 and 1 (1 = perfect correlation)
+        """
+        try:
+            # Ensure images have the same shape
+            if img1.shape != img2.shape:
+                min_h = min(img1.shape[0], img2.shape[0])
+                min_w = min(img1.shape[1], img2.shape[1])
+                img1 = img1[:min_h, :min_w]
+                img2 = img2[:min_h, :min_w]
+
+            # Convert to float to avoid overflow
+            img1_float = img1.astype(np.float64)
+            img2_float = img2.astype(np.float64)
+
+            # Flatten images
+            img1_flat = img1_float.flatten()
+            img2_flat = img2_float.flatten()
+
+            # Calculate means
+            mean1 = np.mean(img1_flat)
+            mean2 = np.mean(img2_flat)
+
+            # Center the data
+            img1_centered = img1_flat - mean1
+            img2_centered = img2_flat - mean2
+
+            # Calculate NCC
+            numerator = np.sum(img1_centered * img2_centered)
+            denominator = np.sqrt(np.sum(img1_centered**2) * np.sum(img2_centered**2))
+
+            if denominator == 0:
+                return 0.0  # No correlation if one image is constant
+
+            ncc = numerator / denominator
+            return ncc
+
+        except Exception as e:
+            print(f"Error calculating NCC: {str(e)}")
+            return None
+
+    def format_ncc_display(self, ncc_value):
+        """Format NCC value for display"""
+        if ncc_value is None:
+            return "NCC: Unable to calculate"
+        else:
+            return f"NCC: {ncc_value:.4f}"
 
     def reset_zoom(self, event=None):
         """Reset zoom to fit image in view"""
@@ -252,7 +317,13 @@ class AlignmentPreviewDialog(QDialog):
             if aligned_gray.dtype != np.uint8:
                 aligned_gray = self.to_uint8(aligned_gray)
 
-            # Adjust contrast
+            # Calculate NCC before contrast adjustment for more accurate measurement
+            ncc_value = self.calculate_ncc(target_gray, aligned_gray)
+            ncc_display = self.format_ncc_display(ncc_value)
+
+            self.ncc_label.setText(ncc_display)
+
+            # Adjust contrast for better visualization
             target_gray = self.adjust_contrast(target_gray)
             aligned_gray = self.adjust_contrast(aligned_gray)
 
@@ -274,13 +345,18 @@ class AlignmentPreviewDialog(QDialog):
             print("Setting pixmap...")
             pixmap = QPixmap.fromImage(q_image)
             self.image_view.set_image(pixmap)
-            print("Overlay displayed successfully!")
+            print(
+                f"Overlay displayed successfully! NCC: {ncc_value:.4f}"
+                if ncc_value is not None
+                else "Overlay displayed successfully! NCC: Unable to calculate"
+            )
 
         except Exception as e:
             import traceback
 
             traceback.print_exc()
             print(f"Error creating overlay: {str(e)}")
+            self.ncc_label.setText("NCC: Error in calculation")
 
     def _ensure_same_size(self, img1, img2):
         """Ensure both images have the same dimensions by cropping to the smallest common size"""
