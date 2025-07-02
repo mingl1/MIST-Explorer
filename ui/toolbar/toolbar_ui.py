@@ -1,3 +1,4 @@
+from utils import resource_path
 from PyQt6.QtWidgets import (
     QToolBar,
     QWidget,
@@ -23,7 +24,7 @@ class ToolBarUI(QWidget):
     cmapChanged = pyqtSignal(str)
 
     def __init__(self, parent):
-        super().__init__()
+        super().__init__(parent=parent)
         self.toolbar = QToolBar()
 
         self._init_tab_buttons()
@@ -79,14 +80,27 @@ class ToolBarUI(QWidget):
     @pyqtSlot(int)
     def onTabButtonClicked(self, index):
         self.tabChanged.emit(index)
+        if index == 2:  # View tab
+            # hide all actions
+            self.actionReset.setVisible(False)
+            self.channelSelector.setDisabled(True)
+            self.cmapSelector.setDisabled(True)
+            self.auto_contrast_button.setDisabled(True)
+            self.contrastSlider.setDisabled(True)
+        else:
+            self.actionReset.setVisible(True)
+            self.channelSelector.setDisabled(False)
+            self.cmapSelector.setDisabled(False)
+            self.auto_contrast_button.setDisabled(False)
+            self.contrastSlider.setDisabled(False)
 
     def _init_actions(self, parent):
         self.actionRotate = Action(
-            parent, "actionRotate", "assets/icons/rotate-right.png"
+            parent, "actionRotate", resource_path("assets/icons/rotate-right.png")
         )
-        self.actionReset = Action(parent, "actionReset", "assets/icons/reset.png")
+        self.actionReset = Action(parent, "actionReset", resource_path("assets/icons/reset.png"))
         self.actionOpenBrightnessContrast = Action(
-            parent, "actionBC", "assets/icons/brightness.png"
+            parent, "actionBC", resource_path("assets/icons/brightness.png")
         )
 
     def _init_channel_selector(self, parent):

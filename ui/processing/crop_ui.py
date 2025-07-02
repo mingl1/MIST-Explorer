@@ -1,3 +1,4 @@
+from utils import resource_path
 from PyQt6.QtWidgets import  QHBoxLayout, QGroupBox, QToolButton, QWidget
 from PyQt6.QtCore import QSize, QCoreApplication
 from ui.toolbar.Action import Action
@@ -10,11 +11,11 @@ class CropUI(QWidget):
         self.crop_groupbox.setMinimumWidth(100)
         self.crop_groupbox.setMaximumHeight(80)
         self.crop_button = QToolButton(self.crop_groupbox)
-        cropAction = Action(self.crop_groupbox, "cropAction", "assets/icons/crop.png")
+        cropAction = Action(self.crop_groupbox, "cropAction", resource_path("assets/icons/crop.png"))
         self.crop_button.setDefaultAction(cropAction)
         self.crop_button.setIconSize(QSize(40,40))
         self.cancel_crop_button = QToolButton(self.crop_groupbox)
-        cancel_cropAction = Action(self.crop_groupbox, "cancelCropAction", "assets/icons/cross.png")
+        cancel_cropAction = Action(self.crop_groupbox, "cancelCropAction", resource_path("assets/icons/cross.png"))
         self.cancel_crop_button.setDefaultAction(cancel_cropAction)
 
         self.cancel_crop_button.setIconSize(QSize(40,40))

@@ -1,9 +1,10 @@
 from PyQt6.QtCore import QThread, pyqtSignal
 
+
 class Worker(QThread):
-    signal = pyqtSignal(object)  
-    error = pyqtSignal(str)      
-    
+    signal = pyqtSignal(object)
+    error = pyqtSignal(str)
+
     def __init__(self, func, *args, **kwargs):
         super().__init__()
         self.func = func

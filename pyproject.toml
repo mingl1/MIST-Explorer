@@ -6,9 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "astroalign>=2.6.1",
-    "cupy-cuda12x>=13.4.1",
     "diplib>=3.5.2",
-    "ipykernel>=6.29.5",
     "itk-elastix>=0.23.0",
     "matplotlib>=3.10.3",
     "numpy==1.26.4",
@@ -26,6 +24,7 @@ dependencies = [
     "simpleitk>=2.5.2",
     "siphash24>=1.7",
     "stardist>=0.9.1",
-    "tensorflow[and-cuda]>=2.18.1",
+    "tensorflow>=2.18.1",
+    "tensorflow-io-gcs-filesystem==0.31.0",
     "umap>=0.1.1",
 ]

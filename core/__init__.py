@@ -26,7 +26,6 @@ from .cell_layer_alignment import (
 from .register import Register, TileMap
 from .Worker import Worker
 from .stardist import StarDist
-from .tmp_register import Register as TmpRegister, TileMap as TmpTileMap
 
 __all__ = [
     "MemoryEfficientImageCache",
@@ -50,6 +49,4 @@ __all__ = [
     "TileMap",
     "Worker",
     "StarDist",
-    "TmpRegister",
-    "TmpTileMap",
 ]

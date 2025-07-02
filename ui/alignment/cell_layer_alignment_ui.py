@@ -1,4 +1,5 @@
 from re import L
+from uuid import UUID
 from PyQt6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
@@ -178,7 +179,7 @@ class CellLayerAlignmentUI(QWidget):
         self.image_1_channel_selector.setCurrentIndex(channel)
         self._check_can_register()
 
-    def set_unaligned_image(self, uuid, is_leaf, channel):
+    def set_unaligned_image(self, uuid: UUID, is_leaf: bool, channel: int):
         """Set the unaligned image that will be registered to the target"""
         self.unaligned_uuid = uuid
         item = self.storage.get_data(uuid)

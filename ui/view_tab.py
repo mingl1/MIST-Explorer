@@ -4,6 +4,12 @@ import os
 import threading
 import tifffile as tiff
 
+from controller import Controller
+from core.canvas import ImageWrapper
+from numpy.typing import NDArray
+from PyQt6.QtCore import QTimer
+from utils import create_lut
+
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 from PIL import Image
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
@@ -15,6 +21,7 @@ from core import Worker
 Image.MAX_IMAGE_PIXELS = None
 
 color_dict = {
+    "None": [255, 255, 255],
     "red": [255, 0, 0],
     "blue": [0, 0, 255],
     "green": [0, 255, 0],
@@ -62,7 +69,6 @@ class ControlsBox:
         # actual components that we just want to keep track of
         self.tint_label = None
         self.opacity_slider = None
-        self.contrast_slider = None
 
         # entire component layout
         self.layout = None
@@ -287,7 +293,7 @@ from PyQt6.QtWidgets import (
 
 
 class ImageOverlay(QWidget):
-    changePix = pyqtSignal(QGraphicsPixmapItem)
+    change_pix = pyqtSignal(QPixmap, bool)
     progress = pyqtSignal(int, str)
 
     def __init__(self, pixmap_label, enc):
@@ -300,14 +306,28 @@ class ImageOverlay(QWidget):
         # self.df_path =  "/Users/clark/Downloads/cell_data_8_8_Full_Dataset_Biopsy.xlsx"
         # self.im_path = "/Users/clark/Downloads/new_sd.png"
 
-        self.df_path = "assets/sample_data/demo/df1.csv"
-        self.im_path = "assets/sample_data/demo/sd1.png"
-        self.overlay_path = "assets/sample_data/demo/sd1.png"
+        self.df_path = None
+        self.im_path = None
+        self.overlay_path = None
 
         self.controls = []
 
         self.loaded_df = None
 
+        self.controller = None
+        self.model_canvas = None
+
+        o_timer = QTimer()
+        o_timer.setInterval(200)
+        o_timer.setSingleShot(True)
+        self.opacity_timer = o_timer
+        c_timer = QTimer()
+        c_timer.setInterval(200)
+        c_timer.setSingleShot(True)
+        self.contrast_timer = c_timer
+        self.contrast_sliders = []
+        # Connect timer to the actual work
+        self.grayscale = True
         self.initUI()
 
     def load_stardist_image(self):
@@ -334,8 +354,10 @@ class ImageOverlay(QWidget):
 
     def load_df(self):
         if self.df_path == None:
-            raise ValueError("df_path is None")
-
+            if self.req_df() == "":
+                raise ValueError("Need to load protein data first.")
+            else:
+                assert self.df_path is not None
         if self.loaded_df is not None:
             return self.loaded_df
         df = None
@@ -386,7 +408,9 @@ class ImageOverlay(QWidget):
         return result
 
     def build_all(self):
-
+        if not self.controller:
+            self.controller = Controller.get()
+            self.model_canvas = self.controller.model_canvas
         import time
 
         if not hasattr(self, "im_path"):
@@ -442,7 +466,6 @@ class ImageOverlay(QWidget):
         self.layers = [
             {"name": layer_names[i], "image": ims[i]} for i in range(len(ims))
         ]
-
         self.progress.emit(100, "Done")
 
         self.scroll_area.setVisible(True)
@@ -462,6 +485,8 @@ class ImageOverlay(QWidget):
         self.apply_button.setVisible(False)
         self.cancel_reset.setVisible(True)
         self.export_tif_button.setVisible(True)
+        self.export_png_button.setVisible(True)
+
 
         return (ims, layer_names)
 
@@ -490,7 +515,7 @@ class ImageOverlay(QWidget):
 
         self.enc.analysis_tab.view_index = 0
 
-        while self.enc.analysis_tab.delete_view():
+        while self.enc.analysis_tab.deleteLater():
             pass
 
         # for i in range(len(self. )):
@@ -512,6 +537,8 @@ class ImageOverlay(QWidget):
             self.cancel_reset.setVisible(False)
             self.add_other_image_button.setVisible(False)
             self.export_tif_button.setVisible(False)
+            self.export_png_button.setVisible(False)
+
 
     def initUI(self):
         main_layout = QVBoxLayout()
@@ -557,7 +584,7 @@ class ImageOverlay(QWidget):
         self.cancel_reset.setVisible(False)
 
         self.open_image = QPushButton("Open Image")
-        self.open_image.clicked.connect(self.load_example)
+        self.open_image.clicked.connect(self.load_image)
         main_layout.addWidget(self.open_image)
 
         self.open_image_label = QLabel("Path: ")
@@ -565,7 +592,7 @@ class ImageOverlay(QWidget):
         main_layout.addWidget(self.open_image_label)
 
         self.open_df = QPushButton("Open Cell Data")
-        self.open_df.clicked.connect(self.get_df_path)
+        self.open_df.clicked.connect(self.load_df)
         main_layout.addWidget(self.open_df)
 
         self.open_df_label = QLabel("Path: ")
@@ -595,12 +622,17 @@ class ImageOverlay(QWidget):
         self.export_tif_button.setVisible(False)
         main_layout.addWidget(self.export_tif_button)
 
+        self.export_png_button = QPushButton("Export to PNG")
+        self.export_png_button.clicked.connect(self.export_to_png)
+        self.export_png_button.setVisible(False)
+        main_layout.addWidget(self.export_png_button)
+
         # Add a spacer to ensure content can scroll all the way down
         main_layout.addStretch(1)  # Add stretch at the end to push content up
 
         self.setLayout(main_layout)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.update_image()
+        self.process_images()
 
     def open_other_image(self):
 
@@ -653,7 +685,7 @@ class ImageOverlay(QWidget):
 
         return string
 
-    def load_example(self):
+    def load_image(self):
         # print("Yo")
 
         file_name, _ = QFileDialog.getOpenFileName(
@@ -671,20 +703,20 @@ class ImageOverlay(QWidget):
             self.open_image_label.setVisible(True)
             self.im_path = file_name
 
-    def get_df_path(self):
-
+    def req_df(self):
         file_name, _ = QFileDialog.getOpenFileName(
             None, "Open Image File", "", "Spreadsheets (*.csv *.xlsx);;All Files (*)"
         )
 
         if file_name:
-
             # print()
             self.open_df_label.setText(
                 f"File: {self.less_than_15_chars(os.path.basename(file_name))}"
             )
             self.open_df_label.setVisible(True)
             self.df_path = file_name
+            return file_name
+        return ""
 
     def show_layer_dialog(self):
         if not hasattr(self, "layers"):
@@ -700,7 +732,10 @@ class ImageOverlay(QWidget):
 
         dialog = LayerDialog(self.layers, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            selected_index = dialog.get_selected_layer_index()
+            try:
+                selected_index = dialog.get_selected_layer_index()
+            except IndexError:
+                selected_index = 0
             print("selected indexxxx is ", selected_index)
             if selected_index is not None:
                 c = ControlsBox()
@@ -717,34 +752,39 @@ class ImageOverlay(QWidget):
 
                 c.image = self.layers[selected_index]["image"]
                 c.name = self.layers[selected_index]["name"]
+
                 self.add_layer(c)
 
     def show_color_dialog(self, idx):
-        print(idx)
         dialog = ColorDialog(self.color_dict, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             selected_color_name = dialog.get_selected_color_name()
             if selected_color_name:
                 selected_color = self.color_dict[selected_color_name]
-                print(f"Selected color: {selected_color_name} - {selected_color}")
                 self.controls[idx].current_tint = QColor(*selected_color)
                 self.controls[idx].tint_label.setText(selected_color_name)
-                self.update_image()
+                self.process_images()
 
     def add_layer(self, c):
         self.controls.append(c)
         self.add_layer_controls(c)
-        self.update_image()
+        self.process_images()
+
+    def update_current_image(self, image):
+        last_index = len(self.controls) - 1
+        self.controls[last_index].image = image
+        self.process_images()
 
     def delete_layer(self, index):
         c = self.controls.pop(index)
+        self.contrast_sliders.pop(index)
 
         layer = c.layout
         self.scroll_layout.removeWidget(layer)
         layer.deleteLater()
         layer = None
 
-        self.update_image()
+        self.process_images()
 
         if len(self.controls) == 0:
             combined_image = np.zeros((10, 10, 10))
@@ -755,8 +795,9 @@ class ImageOverlay(QWidget):
             q_image = QImage(
                 combined_image.tobytes(), width, height, QImage.Format.Format_RGB888
             )  # interesting image.tobytes() works well, maybe you don't need to do
+            q_pixmap = QPixmap(q_image)
 
-            self.changePix.emit(QGraphicsPixmapItem(QPixmap.fromImage(q_image)))
+            self.change_pix.emit(q_pixmap, True)
 
     def add_layer_controls(self, c):
         idx = len(self.controls) - 1
@@ -768,30 +809,31 @@ class ImageOverlay(QWidget):
 
         group_layout = QFormLayout()
         group_layout.setSpacing(8)  # Add spacing between form rows
-
+        auto_contrast_button = QPushButton("Auto Contrast")
+        auto_contrast_button.clicked.connect(lambda: self.auto_contrast(idx))
         opacity_slider = QSlider(Qt.Orientation.Horizontal)
         opacity_slider.setMinimum(0)
         opacity_slider.setMaximum(100)
         opacity_slider.setValue(100)
-        opacity_slider.valueChanged.connect(
-            lambda value: self.update_opacity(value, idx)
+        opacity_slider.valueChanged.connect(lambda _: self.opacity_timer.start())
+        self.opacity_timer.timeout.connect(
+            lambda: self.update_opacity(opacity_slider.value(), idx)
         )
-
         group_layout.addRow("Opacity:", opacity_slider)
 
         contrast_slider = qtrangeslider.QLabeledDoubleRangeSlider(
             Qt.Orientation.Horizontal
         )
-        contrast_slider.valueChanged.connect(
-            lambda value: self.update_contrast(value, idx)
-        )
+        contrast_slider.valueChanged.connect(lambda _: self.contrast_timer.start())
         contrast_slider.setMaximum(255)
         contrast_slider.setValue((0, 255))
         contrast_slider.setDecimals(0)
-
-        # self.contrast_sliders.append(contrast_slider)
+        self.contrast_sliders.append(contrast_slider)
+        self.contrast_timer.timeout.connect(
+            lambda: self.update_contrast(contrast_slider.value(), idx)
+        )
         group_layout.addRow("Contrast:", contrast_slider)
-
+        group_layout.addRow(auto_contrast_button)
         visibility_button = QPushButton("Toggle Visibility")
         visibility_button.setCheckable(True)
         visibility_button.setChecked(True)
@@ -829,21 +871,37 @@ class ImageOverlay(QWidget):
 
         # self.current_opacities[idx] = value / 100.0
 
-        self.update_image()
+        self.process_images()
 
     def update_contrast(self, value, idx):
         value = [int(value[0]), int(value[1])]
         self.controls[idx].current_contrast = value
-        self.update_image()
+        self.process_images()
+
+    def auto_contrast(self, idx, lower=0.1, upper=0.9):
+        img = self.controls[idx].image
+        assert isinstance(img, np.ndarray)
+        print(img.dtype)
+        flat_img = img.flatten()
+        hist, _ = np.histogram(flat_img, bins=256, range=(0, 255))
+        total_pixels = flat_img.size
+        cumulative_hist = np.cumsum(hist) / total_pixels
+        new_min = np.argmax(cumulative_hist > lower)
+        new_max = np.argmax(cumulative_hist > upper)
+        self.contrast_sliders[idx].setValue((int(new_min), int(new_max)))
+        self.update_contrast([new_min, new_max], idx)
 
     def update_visibility(self, checked, idx):
 
         self.controls[idx].current_visibility = checked
-        self.update_image()
+        self.process_images()
 
     def apply_tint(self, img, color):
-
+        if color is None:
+            return img
         tint_img = np.zeros_like(img)
+        if len(img.shape) == 2:
+            img = np.stack((img,) * 3, axis=-1)
         for c in range(3):
             tint_img[:, :, c] = img[:, :, c] * (color.getRgb()[c] / 255.0)
         return tint_img
@@ -856,46 +914,54 @@ class ImageOverlay(QWidget):
         img = ((img - minval) / (maxval - minval)) * 255
         return img.astype(np.uint8)
 
-    def update_image(self):
+    def contrasted_image(self, img, contrast):
+        new_lut = create_lut(contrast[0], contrast[1])
+        adjusted_img = cv2.LUT(img, new_lut)
+        return adjusted_img
+
+    def process_images(self, display=True):
         if len(self.controls) == 0:
             return
-
         combined_image = np.zeros_like(self.controls[0].image, dtype=np.float32)
-
         for c in self.controls:
             visible = c.current_visibility
             if visible:
                 img = c.image
-
                 opacity = c.current_opacity
                 contrast = c.current_contrast
                 tint = c.current_tint
-
-                adjusted_img = img * 1.0
+                adjusted_img = img.copy()
                 # adjusted_img = winsorize_array(adjusted_img, 0, 255)
+                if isinstance(contrast, list):
+                    adjusted_img = self.contrasted_image(adjusted_img, contrast)
                 if c.tint_yn:
-                    if type(contrast) == type([]):
-                        adjusted_img = np.clip(adjusted_img, contrast[0], contrast[1])
-                        adjusted_img = scale_image_to_255(adjusted_img)
-                        adjusted_img = self.apply_tint(adjusted_img, tint)
-                        adjusted_img = np.clip(
-                            adjusted_img, 0, 255
-                        )  # Clip values to stay in the valid range
-
-                if not c.tint_yn:
-                    adjusted_img = scale_image_to_255(adjusted_img)
-
+                    adjusted_img = self.apply_tint(adjusted_img, tint)
                 combined_image += adjusted_img * opacity
-
         combined_image = np.clip(combined_image, 0, 255).astype(np.uint8)
 
-        height, width, _ = combined_image.shape
-        bytes_per_line = 3
+        # height, width, _ = combined_image.shape
+        # bytes_per_line = 3
 
         q_image = numpy_to_qimage(combined_image)
+        q_pixmap = QPixmap(q_image)
 
         # commented out
-        self.changePix.emit(QGraphicsPixmapItem(QPixmap.fromImage(q_image)))
+        if display:
+            self.change_pix.emit(q_pixmap, True)
+        return combined_image
+    
+    def export_to_png(self):
+        combined_image = self.process_images(False)
+        if combined_image is None:
+            return
+        file_name, _ = QFileDialog.getSaveFileName(
+            None, "Save PNG File", "protein_layers.png", "*.png;;All Files (*)"
+        )
+        if not file_name:
+            return
+        img = Image.fromarray(combined_image)
+        img.save(file_name)
+
 
     def export_to_tif(self):
         if len(self.controls) == 0:
@@ -914,27 +980,35 @@ class ImageOverlay(QWidget):
         layer_names = []
 
         for i, c in enumerate(self.controls):
-            if True:
+            if c.current_visibility:  # Only export visible layers
                 img = c.image.copy()
 
                 # Get original protein data in grayscale
                 # If the image has 3 channels (RGB), convert to grayscale
                 if len(img.shape) == 3 and img.shape[2] == 3:
-                    img_gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+                    img_gray = cv2.cvtColor(img.astype(np.uint8), cv2.COLOR_RGB2GRAY)
                 else:
                     img_gray = img
-
+                assert isinstance(img_gray, np.ndarray)
                 # Apply contrast adjustment if needed
-                if type(c.current_contrast) == type([]):
-                    img_gray = np.clip(
-                        img_gray, c.current_contrast[0], c.current_contrast[1]
-                    )
+                if (
+                    isinstance(c.current_contrast, list)
+                    and len(c.current_contrast) == 2
+                ):
+                    # Apply contrast stretching
+                    img_gray = self.contrasted_image(img_gray, c.current_contrast)
 
-                # Scale to 0-255 range
-                img_gray = scale_image_to_255(img_gray)
+                final_img = img_gray.astype(np.float64) * c.current_opacity
+
+                # Ensure we have valid data range
+                final_img = np.clip(final_img, 0, 255)
+                # if c.tint_yn:
+                #     final_img = self.apply_tint(final_img, c.current_tint)
+                # Convert to uint8
+                final_img = final_img.astype(np.uint8)
 
                 # Add to our stack
-                layers_data.append(img_gray)
+                layers_data.append(final_img)
                 layer_names.append(c.name)
 
         if not layers_data:

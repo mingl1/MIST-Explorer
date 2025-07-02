@@ -355,7 +355,6 @@ class Ui_MainWindow(QMainWindow):
     def _connect_signals(self):
         """Connect remaining signals"""
         # Connect toolbar tab change signal
-        self.toolBarUI.tabChanged.connect(self.stackedWidget.setCurrentIndex)
         # Start with Images tab
         self.stackedWidget.setCurrentIndex(0)
 
