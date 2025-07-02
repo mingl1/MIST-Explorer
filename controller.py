@@ -219,7 +219,12 @@ class Controller:
         if index == 2:
             self.view.view_tab.process_images()
         elif index == 0 or index == 1:
-            self.model_canvas.swap_channel(self.model_canvas.current_channel)
+            if self.model_canvas.uuid:
+                print("swappign channel")
+                self.model_canvas.swap_channel(self.model_canvas.current_channel)
+            else:
+                print("clearing canvas")
+                self.model_canvas.clear_canvas()
 
 
 class SignalConnectionManager:
@@ -297,7 +302,7 @@ class SignalConnectionManager:
         )
         self.c.reference_view.update_reference.connect(self.c.view.small_view.display)
         self.c.model_canvas.new_image_added.connect(self.c.view.canvas.add_new_image)
-        self.c.view.view_tab.change_pix.connect(self.c.model_canvas.add_to_canvas)
+        self.c.view.view_tab.change_pix.connect(self.c.view.canvas.update_canvas)
         self.c.model_canvas.canvas_updated.connect(self.c.view.canvas.update_canvas)
         self.c.model_canvas.update_manager.connect(self.c.handle_new_image)
         self.c.reference_view.update_manager.connect(self.c.handle_new_reference_image)

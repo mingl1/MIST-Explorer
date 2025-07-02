@@ -6,9 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "astroalign>=2.6.1",
-    "cupy-cuda12x>=13.4.1",
     "diplib>=3.5.2",
-    "ipykernel>=6.29.5",
     "itk-elastix>=0.23.0",
     "matplotlib>=3.10.3",
     "numpy==1.26.4",
