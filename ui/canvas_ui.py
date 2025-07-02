@@ -50,6 +50,10 @@ import utils
 from ui.lassos.CircleLasso import CircleLasso
 from ui.lassos.RectLasso import RectLasso
 from ui.lassos.PolyLasso import PolyLasso
+import typing
+
+if typing.TYPE_CHECKING:
+    from ui.app import Ui_MainWindow
 
 
 class ArrowItem(QGraphicsPixmapItem):
@@ -63,6 +67,7 @@ class ArrowItem(QGraphicsPixmapItem):
         self.bg_rect.setZValue(1)  # Make sure it goes behind the arrows
         self.base_opacity = 0.4
         self.hover_opacity = 1  # Darker when hovered
+
         self.setPos(position)
         self.applyHoverEffect()
 
@@ -99,34 +104,10 @@ class ReferenceGraphicsViewUI(QGraphicsView):
 
     image_dropped = pyqtSignal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent):
         super().__init__(parent)
         self.parent = parent
         self.zoom = 1
-        self.left_arrow = None
-        self.right_arrow = None
-        self.pixmap_item = None
-        self.current_index = 1
-        self.np_channels = {}
-        self.pixmap = None
-
-        self.init_ui()
-
-    def init_ui(self):
-        self.setMinimumSize(QSize(300, 300))
-        self.setScene(QGraphicsScene(self))
-        self.setStyleSheet("QGraphicsView { border: 1px solid black; }")
-        self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
-
-    def is_empty(self) -> bool:
-        return self.pixmap_item is None
-
-    def load_channels(self, np_channels):
-        self.np_channels = np_channels
-
-    def slideshow(self):
-
-        # Create navigation arrows
         self.right_arrow = ArrowItem(
             QPixmap("assets/icons/right-arrow.png").scaled(
                 25,
@@ -136,7 +117,6 @@ class ReferenceGraphicsViewUI(QGraphicsView):
             ),
             QPointF(250, 275),
         )
-
         self.left_arrow = ArrowItem(
             QPixmap("assets/icons/left-arrow.png").scaled(
                 25,
@@ -146,21 +126,54 @@ class ReferenceGraphicsViewUI(QGraphicsView):
             ),
             QPointF(10, 275),
         )
+        self.pixmap_item = QGraphicsPixmapItem()
+        self.current_index = 1
+        self.np_channels = {}
+        self.pixmap = None
 
-        self.scene().addItem(self.right_arrow)
-        self.scene().addItem(self.left_arrow)
+        self.init_ui()
+
+    def init_ui(self):
+        self.setMinimumSize(QSize(300, 300))
+        self.setScene(QGraphicsScene())
+        self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+        self.setRenderHint(self.renderHints() | self.renderHints().Antialiasing)
+        self.setStyleSheet("QGraphicsView { border: 1px solid black; }")
+        self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
+    def is_empty(self) -> bool:
+        return self.pixmap_item is None
+
+    def load_channels(self, np_channels):
+        self.np_channels = np_channels
+
+    def slideshow(self, zoom=0):
+        scene = self.scene()
+        assert scene is not None, "Scene should be initialized"
+        if zoom > 0:
+            scene.removeItem(self.right_arrow)
+            scene.removeItem(self.left_arrow)
+        scene.addItem(self.right_arrow)
+        scene.addItem(self.left_arrow)
 
         self.left_arrow.setAcceptedMouseButtons(Qt.MouseButton.LeftButton)
         self.right_arrow.setAcceptedMouseButtons(Qt.MouseButton.LeftButton)
 
-        self.fitInView(self.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+        self.left_arrow.setScale(zoom)
+        self.right_arrow.setScale(zoom)
+
+        self.fitInView(scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
 
     def mouseDoubleClickEvent(self, event):
         if not self.is_empty():
             self.fitInView(self.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
 
     def wheelEvent(self, event):
-        if self.pixmap_item is not None:
+        if event is None:
+            return
+        elif self.pixmap_item is not None:
             zooming_out = event.angleDelta().y() > 0
 
             # Prevent excessive zooming in either direction
@@ -173,6 +186,7 @@ class ReferenceGraphicsViewUI(QGraphicsView):
             zoom_factor = 1.1 if zooming_out else 0.9
             self.zoom *= zoom_factor
             self.scale(zoom_factor, zoom_factor)
+            # self.slideshow(self.zoom)
         else:
             super().wheelEvent(event)
 
@@ -231,12 +245,16 @@ class ReferenceGraphicsViewUI(QGraphicsView):
 
     def update_slide(self):
         """Update displayed image"""
+        scene = self.scene()
+        assert scene is not None, "Scene should be initialized"
+        scene.clear()  # Clear existing items
         self.pixmap = QPixmap(
             utils.numpy_to_qimage(
                 self.np_channels[f"Channel {self.current_index}"].data
             )
         )
         self.pixmap_item.setPixmap(self.pixmap)
+        assert isinstance(self.pixmap_item, QGraphicsPixmapItem)
         item_rect = self.pixmap_item.boundingRect()
         self.setSceneRect(item_rect)
         self.fitInView(self.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
@@ -262,7 +280,9 @@ class ReferenceGraphicsViewUI(QGraphicsView):
     #     super().mouseMoveEvent(event)
 
     def display(self, pixmap: QPixmap, is_layer: bool):
-        # self.scene().clear()
+        scene = self.scene()
+        assert scene is not None, "Scene should be initialized"
+        scene.clear()
         # reset
         self.current_index = 1
 
@@ -272,7 +292,7 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         self.pixmap = pixmap
         if not hasattr(self, "pixmapItem") or self.pixmap_item is None:
             self.pixmap_item = QGraphicsPixmapItem(self.pixmap)
-            self.scene().addItem(self.pixmap_item)
+            scene.addItem(self.pixmap_item)
 
         else:
             print("setting pixmap")
@@ -283,9 +303,9 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         # if is_layer:
 
         print("has np channels")
-        # Scale arrows appropriately
-        rw = int(self.scene().width() / 10.6)
-        rh = int(self.scene().height() / 10.6)
+        # Scale arrows appropriately;  !TODO, this should be done dynamically and repositioned dynamically
+        rw = int(scene.width() / 10.6)
+        rh = int(scene.height() / 10.6)
 
         self.right_arrow.bg_rect.setRect(0, 0, rw, rh)
         self.left_arrow.bg_rect.setRect(0, 0, rw, rh)
@@ -295,8 +315,8 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         )
         self.left_arrow.setPixmap(QPixmap("assets/icons/left-arrow.png").scaled(rw, rh))
 
-        scene_height = self.scene().height()
-        scene_width = self.scene().width()
+        scene_height = self.get_scene().height()
+        scene_width = self.get_scene().width()
         self.right_arrow.setToolTip("Next")
         self.left_arrow.setToolTip("Previous")
 
@@ -326,7 +346,7 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         """Highlight the pixel at the given coordinates"""
         # Remove existing pixel highlight if any
         if hasattr(self, "pixel_highlight") and self.pixel_highlight:
-            self.scene().removeItem(self.pixel_highlight)
+            self.get_scene().removeItem(self.pixel_highlight)
 
         if self.pixmap_item is None:
             return
@@ -350,13 +370,18 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         self.pixel_highlight.setBrush(brush)
 
         # Add to scene
-        self.scene().addItem(self.pixel_highlight)
+        self.get_scene().addItem(self.pixel_highlight)
 
     def hide_pixel_highlight(self):
         """Hide the pixel highlight"""
         if hasattr(self, "pixel_highlight") and self.pixel_highlight:
-            self.scene().removeItem(self.pixel_highlight)
+            self.get_scene().removeItem(self.pixel_highlight)
             self.pixel_highlight = None
+
+    def get_scene(self):
+        s = self.scene()
+        assert s is not None, "Scene should be initialized"
+        return s
 
 
 class ImageGraphicsViewUI(QGraphicsView):
@@ -367,14 +392,13 @@ class ImageGraphicsViewUI(QGraphicsView):
     horizontal_flip = pyqtSignal()  # Signal to request horizontal flip
     vertical_flip = pyqtSignal()  # Signal to request vertical flip
 
-    def __init__(self, parent=None, enc=None, show_buttons=True):
+    def __init__(self, parent, enc: "Ui_MainWindow", show_buttons=True):
         super().__init__(parent)
         self.enc = enc
         self.show_buttons = show_buttons
         self.setupUI()
 
-        # Initialize variables
-        self.pixmap_item = None
+        self.pixmap_item: QGraphicsPixmapItem = QGraphicsPixmapItem()
         self.rubberBand = None
         self.rubberBands = []
         self.rubberBandColors = []
@@ -398,6 +422,12 @@ class ImageGraphicsViewUI(QGraphicsView):
         # Setup interaction
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMouseTracking(True)
+        self.get_scene().addItem(self.pixmap_item)
+
+    def get_scene(self):
+        s = self.scene()
+        assert s is not None, "Scene should be initialized"
+        return s
 
     def flip_horizontal(self):
         """Flip the image horizontally"""
@@ -406,7 +436,7 @@ class ImageGraphicsViewUI(QGraphicsView):
             flipped_img = img.mirrored(horizontal=True, vertical=False)
             flipped_pixmap = QPixmap.fromImage(flipped_img)
             self.pixmap_item.setPixmap(flipped_pixmap)
-            self.scene().update()
+            self.get_scene().update()
             # Emit signal to update the underlying data model
             self.horizontal_flip.emit()
 
@@ -417,7 +447,7 @@ class ImageGraphicsViewUI(QGraphicsView):
             flipped_img = img.mirrored(horizontal=False, vertical=True)
             flipped_pixmap = QPixmap.fromImage(flipped_img)
             self.pixmap_item.setPixmap(flipped_pixmap)
-            self.scene().update()
+            self.get_scene().update()
             # Emit signal to update the underlying data model
             self.vertical_flip.emit()
 
@@ -425,7 +455,11 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.setMinimumSize(QSize(600, 600))
         self.setObjectName("canvas")
         self.setAcceptDrops(True)
-        self.setScene(QGraphicsScene(self))
+        self.setScene(QGraphicsScene())
+        self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+        self.setRenderHint(self.renderHints() | self.renderHints().Antialiasing)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.setSceneRect(0, 0, 800, 600)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
 
@@ -534,7 +568,7 @@ class ImageGraphicsViewUI(QGraphicsView):
 
         # Clear any existing crop rectangle
         if self.active_crop_rect:
-            self.scene().removeItem(self.active_crop_rect)
+            self.get_scene().removeItem(self.active_crop_rect)
             self.active_crop_rect = None
 
         self.setCursor(Qt.CursorShape.CrossCursor)
@@ -546,7 +580,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.crop_start_pos = None
 
         if self.active_crop_rect:
-            self.scene().removeItem(self.active_crop_rect)
+            self.get_scene().removeItem(self.active_crop_rect)
             self.active_crop_rect = None
 
         self.unsetCursor()
@@ -562,19 +596,11 @@ class ImageGraphicsViewUI(QGraphicsView):
         """Updates canvas when current image is operated on"""
         if self.pixmap_item:
             self.pixmap_item.setPixmap(pixmap)
-            self.pixmap_item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
 
     def add_new_image(self, pixmapItem: QGraphicsPixmapItem):
         """Update the pixmap of the existing image or add a new one"""
-        if not hasattr(self, "pixmapItem") or self.pixmap_item is None:
-            # If no pixmapItem exists, add it to the scene
-            self.pixmap_item = pixmapItem
-            self.pixmap_item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
-            self.scene().addItem(self.pixmap_item)
-            self.__centerImage()
-        else:
-            # Update the pixmap of the existing item
-            self.pixmap_item.setPixmap(pixmapItem.pixmap())
+        self.pixmap_item.setPixmap(pixmapItem.pixmap())
+        self.__centerImage()
 
     def __centerImage(self):
         item_rect = self.pixmap_item.boundingRect()
@@ -584,22 +610,30 @@ class ImageGraphicsViewUI(QGraphicsView):
         # if self.reference_view:
         #     self.reference_view.__centerImage()
 
-    def dragEnterEvent(self, event: QDragEnterEvent):
-        if event.mimeData().hasUrls():
+    def dragEnterEvent(self, event: QDragEnterEvent):  # type: ignore
+        mime = event.mimeData()
+        if mime and mime.hasUrls():
             event.acceptProposedAction()
 
-    def dragMoveEvent(self, event: QDragMoveEvent):
+    def dragMoveEvent(self, event: QDragMoveEvent):  # type: ignore
         event.acceptProposedAction()
 
-    def dropEvent(self, event: QDropEvent):
-        if event.mimeData().hasUrls():
-            for url in event.mimeData().urls():
+    def dropEvent(self, event):
+        if event is None:
+            return
+        mime = event.mimeData()
+        if mime and mime.hasUrls():
+            for url in mime.urls():
                 file_path = url.toLocalFile()
                 if file_path is not None:
                     self.image_dropped.emit(file_path)
             event.acceptProposedAction()
 
     def wheelEvent(self, event):
+        if event is None:
+            return
+        elif self.pixmap_item is None:
+            return
         zooming_out = event.angleDelta().y() > 0
 
         # Prevent excessive zooming in either direction
@@ -639,7 +673,9 @@ class ImageGraphicsViewUI(QGraphicsView):
             rubber_band.setGeometry(new_rect)
 
         # Force redraw to update polygon positions
-        self.viewport().update()
+        vp = self.viewport()
+        assert vp is not None, "Viewport should be initialized"
+        vp.update()
 
     def create_rubber_band(self, rubber_band_class, shape, x, y, parent, origin):
         """Create a rubber band of the specified class"""
@@ -655,8 +691,8 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.starting_x = int(self.image_pos.x())
         self.starting_y = int(self.image_pos.y())
 
-    def mousePressEvent(self, event: QMouseEvent):
-        if self.isEmpty():
+    def mousePressEvent(self, event: QMouseEvent | None):
+        if self.isEmpty() or event is None:
             return
         if event.button() == Qt.MouseButton.LeftButton:
             # Handle crop mode
@@ -666,7 +702,7 @@ class ImageGraphicsViewUI(QGraphicsView):
 
                 # Create a new crop rectangle starting from this position
                 if self.active_crop_rect:
-                    self.scene().removeItem(self.active_crop_rect)
+                    self.get_scene().removeItem(self.active_crop_rect)
 
                 # Create a resizable crop rectangle
 
@@ -678,7 +714,7 @@ class ImageGraphicsViewUI(QGraphicsView):
                 self.active_crop_rect.setPen(pen)
                 self.active_crop_rect.setBrush(QBrush(QColor(255, 255, 255, 30)))
 
-                self.scene().addItem(self.active_crop_rect)
+                self.get_scene().addItem(self.active_crop_rect)
                 self.is_resizing = True
 
             # Handle regular selection modes
@@ -707,7 +743,7 @@ class ImageGraphicsViewUI(QGraphicsView):
                         self.current_polygon = PolyLasso(
                             self.pixmap_item
                         )  # Set pixmapItem as parent
-                        self.scene().addItem(self.current_polygon)
+                        self.get_scene().addItem(self.current_polygon)
                         # Enable mouse tracking for live preview
                         self.setMouseTracking(True)
 
@@ -946,8 +982,11 @@ class ImageGraphicsViewUI(QGraphicsView):
                             int(image_pos.y()),
                         ),
                     )
-                    self.enc.analysis_tab.analyze_region(rubberband, image_rect)
-
+                    if not self.enc.analysis_tab.analyze_region(rubberband, image_rect):
+                        self.rubberBands.remove(self.rubberBand)
+                        self.rubberBandColors.pop()
+                        if rubberband:
+                            rubberband.deleteLater()
                     self.select = False
                     return
 

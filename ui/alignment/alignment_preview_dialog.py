@@ -2,15 +2,7 @@ from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLab
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap, QImage
 import numpy as np
-import sys
-import os
 import cv2
-
-
-# Add path to import microfilm
-sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "lib"))
-)
 
 
 from PyQt6.QtWidgets import (
@@ -22,6 +14,7 @@ from PyQt6.QtWidgets import (
     QGraphicsView,
     QGraphicsScene,
     QGraphicsPixmapItem,
+    QWidget,
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap, QImage, QWheelEvent
@@ -54,11 +47,12 @@ class ZoomableImageView(QGraphicsView):
 
     def set_image(self, pixmap):
         """Set the image to display"""
-        assert self.scene() is not None, "Scene should be initialized"
-        self.scene().clear()
+        scene = self.scene()
+        assert scene is not None, "Scene should be initialized"
+        scene.clear()
         self.pixmap_item = QGraphicsPixmapItem(pixmap)
-        self.scene().addItem(self.pixmap_item)
-        self.scene().setSceneRect(
+        scene.addItem(self.pixmap_item)
+        scene.setSceneRect(
             pixmap.rect().x(), pixmap.rect().y(), pixmap.width(), pixmap.height()
         )
 
@@ -66,8 +60,10 @@ class ZoomableImageView(QGraphicsView):
         self.fitInView(self.pixmap_item, Qt.AspectRatioMode.KeepAspectRatio)
         self.current_zoom = 1.0
 
-    def wheelEvent(self, event: QWheelEvent):
+    def wheelEvent(self, event: QWheelEvent | None):
         """Handle mouse wheel for zooming"""
+        if event is None:
+            return
         # Get the position of the mouse cursor
         cursor_pos = event.position()
         scene_pos = self.mapToScene(cursor_pos.toPoint())
@@ -90,12 +86,14 @@ class ZoomableImageView(QGraphicsView):
         # Keep the cursor position centered during zoom
         new_cursor_pos = self.mapFromScene(scene_pos)
         delta = cursor_pos.toPoint() - new_cursor_pos
-        self.horizontalScrollBar().setValue(
-            self.horizontalScrollBar().value() - int(delta.x())
-        )
-        self.verticalScrollBar().setValue(
-            self.verticalScrollBar().value() - int(delta.y())
-        )
+
+        h_scrollbar = self.horizontalScrollBar()
+        if h_scrollbar:
+            h_scrollbar.setValue(h_scrollbar.value() - int(delta.x()))
+
+        v_scrollbar = self.verticalScrollBar()
+        if v_scrollbar:
+            v_scrollbar.setValue(v_scrollbar.value() - int(delta.y()))
 
     def reset_zoom(self):
         """Reset zoom to fit the image in view"""
@@ -147,24 +145,6 @@ class AlignmentPreviewDialog(QDialog):
         # Create control buttons
         self.control_layout = QHBoxLayout()
 
-        self.reset_zoom_button = QPushButton("Reset Zoom")
-        self.reset_zoom_button.clicked.connect(self.reset_zoom)
-        self.reset_zoom_button.setStyleSheet(
-            """
-            QPushButton {
-                background-color: #2196F3;
-                color: white;
-                font-weight: bold;
-                min-width: 80px;
-                min-height: 25px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #1976D2;
-            }
-        """
-        )
-
         # Create main action buttons
         self.button_layout = QHBoxLayout()
 
@@ -206,7 +186,6 @@ class AlignmentPreviewDialog(QDialog):
 
         # Arrange control buttons
         self.control_layout.addStretch()
-        self.control_layout.addWidget(self.reset_zoom_button)
         self.control_layout.addStretch()
 
         # Arrange main buttons
@@ -214,12 +193,17 @@ class AlignmentPreviewDialog(QDialog):
         self.button_layout.addWidget(self.cancel_button)
 
         # Add widgets to layout
-        assert self.layout() is not None, "Layout should be initialized"
-        self.layout().addWidget(self.preview_label)
-        self.layout().addWidget(self.ncc_label)
-        self.layout().addWidget(self.image_view)
-        self.layout().addLayout(self.control_layout)
-        self.layout().addLayout(self.button_layout)
+        layout = self.layout()
+        assert layout is not None, "Layout should be initialized"
+        layout.addWidget(self.preview_label)
+        layout.addWidget(self.ncc_label)
+        layout.addWidget(self.image_view)
+        control_widget = QWidget()
+        control_widget.setLayout(self.control_layout)
+        layout.addWidget(control_widget)
+        buttons_widget = QWidget()
+        buttons_widget.setLayout(self.button_layout)
+        layout.addWidget(buttons_widget)
 
         # Create the overlay image and calculate NCC
         self.create_direct_overlay()

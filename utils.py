@@ -167,8 +167,28 @@ def scale_adjust(arr: np.ndarray) -> NDArray[np.uint8]:
     elif arr.dtype == np.uint32:
         array_uint8 = ((arr / arr.max()) * 255).astype(np.uint8)
         return array_uint8
+    elif arr.dtype == np.float32 or arr.dtype == np.float64:
+        if arr.max() > 1.0:
+            arr = arr / arr.max()
+        array_uint8 = np.clip(arr * 255, 0, 255).astype(np.uint8)
+        return array_uint8
     else:
         raise ValueError("unsupported array type: ", arr.dtype)
+
+
+def create_lut(new_min, new_max):
+    lut = np.zeros(256, dtype=np.uint8)  # uint8 for display
+    lut[new_min : new_max + 1] = np.linspace(
+        start=0,
+        stop=255,
+        num=(new_max - new_min + 1),
+        endpoint=True,
+        dtype=np.uint8,
+    )
+    lut[:new_min] = 0  # clip between 0 and 255
+    lut[new_max + 1 :] = 255
+
+    return lut
 
 
 # def to_float64(arr: np.ndarray):

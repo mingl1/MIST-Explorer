@@ -2,7 +2,6 @@
 
 import numpy as np
 from ui.alignment.alignment_preview_dialog import AlignmentPreviewDialog
-from ui.app import Ui_MainWindow
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtCore import pyqtSignal, QObject
@@ -16,6 +15,10 @@ from core import (
     ImageGraphicsView,
     ImageWrapper,
 )
+import typing
+
+if typing.TYPE_CHECKING:
+    from ui.app import Ui_MainWindow
 
 
 class Controller:
@@ -69,10 +72,10 @@ class Controller:
             raise RuntimeError("Controller not initialized")
         return cls._instance
 
-    def __init__(self, app: Ui_MainWindow):
+    def __init__(self, app: "Ui_MainWindow"):
         self._initialized = True
         self.image_count = 0
-        self.model_canvas = ImageGraphicsView()
+        self.model_canvas = ImageGraphicsView(self)
         self.model_stardist = StarDist()
         self.model_register = Register()
         self.model_cell_intensity = CellIntensity()
@@ -161,6 +164,7 @@ class Controller:
         storage_item["name"] = file_name.split("/")[-1]
         self.image_count += 1
         storage_item["data"] = data
+        print(data)
         my_uuid = str(uuid.uuid4())
         self.view.images_tab.add_to_storage(my_uuid, storage_item)
         self.model_canvas.set_uuid(my_uuid)
@@ -283,7 +287,7 @@ class SignalConnectionManager:
         )
         self.c.reference_view.update_reference.connect(self.c.view.small_view.display)
         self.c.model_canvas.new_image_added.connect(self.c.view.canvas.add_new_image)
-        self.c.view.view_tab.changePix.connect(self.c.view.canvas.add_new_image)
+        self.c.view.view_tab.change_pix.connect(self.c.model_canvas.add_to_canvas)
         self.c.model_canvas.canvas_updated.connect(self.c.view.canvas.update_canvas)
         self.c.model_canvas.update_manager.connect(self.c.handle_new_image)
         self.c.reference_view.update_manager.connect(self.c.handle_new_reference_image)

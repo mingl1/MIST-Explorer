@@ -1,5 +1,6 @@
 import os
 from pyexpat import model
+import uuid
 import numpy as np
 from core import ImageStorage, StarDist
 from PyQt6.QtCore import pyqtSignal, QSize, QModelIndex, Qt
@@ -14,6 +15,7 @@ from PyQt6.QtWidgets import (
     QFileDialog,
 )
 from PyQt6.QtGui import QAction, QActionGroup
+from uuid import UUID
 
 
 class Manager(QWidget):
@@ -66,10 +68,10 @@ class Manager(QWidget):
 
 
 class ImageTreeWidget(QTreeView):
-    tissue_target_selected = pyqtSignal(str, bool, int)
-    tissue_unaligned_selected = pyqtSignal(str, bool, int)
+    tissue_target_selected = pyqtSignal(UUID, bool, int)
+    tissue_unaligned_selected = pyqtSignal(UUID, bool, int)
     item_deleted = pyqtSignal(
-        str
+        UUID
     )  # !TODO: implement this to make all other components reset to default if the deleted item is currently being used
 
     def __init__(self, parent):
@@ -77,7 +79,7 @@ class ImageTreeWidget(QTreeView):
         self.storage = ImageStorage()
         self._model_canvas = None
         self._model_stardist = None
-        self.doubleClicked.connect(self.on_item_selected)
+        self.doubleClicked.connect(self.display_image)
 
     @property
     def model_canvas(self):
@@ -95,20 +97,18 @@ class ImageTreeWidget(QTreeView):
     def model_stardist(self, value: StarDist):
         self._model_stardist = value
 
-    def on_item_selected(self, item):
+    def display_image(self, item):
         assert self.model_canvas is not None, "model_canvas is not set"
         model_canvas = self.model_canvas
-        channel, uuid = self._name_and_uuid_from_item(item, tooltip=True)
-        is_new_image = model_canvas.uuid != uuid
-        if not is_new_image:
-            item = self.storage.get_data(uuid)
-            assert item is not None, f"No data found for UUID: {uuid}"
-            data = item["data"]
-            assert data is not None, f"No data found for UUID: {uuid}"
-            image_wrapper = data[channel]
-            model_canvas.add_to_canvas(image_wrapper, as_new_image=False)
+        channel, my_uuid = self._name_and_uuid_from_item(item, tooltip=True)
+        different = str(my_uuid) != str(model_canvas.uuid)
+        if not different:
+            channel = self._get_channel_from_item(item)
+            model_canvas.swap_channel(channel)
         else:
-            model_canvas.add_to_canvas(uuid, as_new_image=False, target_channel=channel)
+            model_canvas.add_to_canvas(
+                my_uuid, as_new_image=False, target_channel=channel
+            )
 
     def contextMenuEvent(self, event):  # type: ignore
         menu = QMenu(self)
@@ -213,17 +213,17 @@ class ImageTreeWidget(QTreeView):
         self.item_deleted.emit(uuid)
         model.removeRow(row)
 
-    def _name_and_uuid_from_item(self, item, tooltip=False) -> tuple[str, str]:
+    def _name_and_uuid_from_item(self, item, tooltip=False) -> tuple[str, uuid.UUID]:
         item = self.model().itemFromIndex(item)  # type: ignore
         if tooltip is False:
             name = item.text()
         else:
             name = item.data(Qt.ItemDataRole.ToolTipRole)
-        uuid = item.data(Qt.ItemDataRole.UserRole)
-        if not uuid:
+        item_uuid = uuid.UUID(item.data(Qt.ItemDataRole.UserRole))
+        if not item_uuid:
             raise ValueError("Item does not have a valid UUID.")
 
-        return name, uuid
+        return name, item_uuid
 
     def _get_channel_from_item(self, item):
         model = self.model()
@@ -267,11 +267,11 @@ class ImageTreeWidget(QTreeView):
                     file_path, stacked, photometric="minisblack", imagej=True
                 )
 
-    def set_as_tissue_target(self, item: str, is_leaf: bool, channel: int):
+    def set_as_tissue_target(self, i_uuid: UUID, is_leaf: bool, channel: int):
         """Set the selected image as the tissue target image for alignment"""
 
-        self.tissue_target_selected.emit(item, is_leaf, channel)
+        self.tissue_target_selected.emit(i_uuid, is_leaf, channel)
 
-    def set_as_tissue_unaligned(self, item: str, is_leaf: bool, channel: int):
+    def set_as_tissue_unaligned(self, i_uuid: UUID, is_leaf: bool, channel: int):
         """Set the selected image as the tissue unaligned image for alignment"""
-        self.tissue_unaligned_selected.emit(item, is_leaf, channel)
+        self.tissue_unaligned_selected.emit(i_uuid, is_leaf, channel)
