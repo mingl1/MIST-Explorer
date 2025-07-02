@@ -46,6 +46,7 @@ import os
 import copy
 import threading
 import gc
+import uuid
 import xml.etree.ElementTree as ET
 from typing import Dict, OrderedDict, Union, Optional
 
@@ -89,6 +90,7 @@ from utils import (
     to_uint8,
     qimage_to_numpy,
     adjustContrast,
+    create_lut,
 )
 
 
@@ -98,15 +100,15 @@ class MemoryEfficientImageCache:
     def __init__(self, max_cache_size_mb=500, max_entries_per_channel=5):
         self.max_cache_size_bytes = max_cache_size_mb * 1024 * 1024
         self.max_entries_per_channel = max_entries_per_channel
-        self.cache = {}  # {channel: OrderedDict of {cache_key: image_data}}
+        self.cache = {}  # {uuid: {channel: OrderedDict of {cache_key: image_data}}}
         self.current_size_bytes = 0
 
-    def get(self, channel, cache_key):
+    def get(self, uuid, channel, cache_key):
         """Get cached image if available."""
-        if channel not in self.cache:
+        if uuid not in self.cache or channel not in self.cache[uuid]:
             return None
 
-        channel_cache = self.cache[channel]
+        channel_cache = self.cache[uuid][channel]
         if cache_key in channel_cache:
             # Move to end (most recently used)
             image_data = channel_cache[cache_key]
@@ -115,12 +117,14 @@ class MemoryEfficientImageCache:
             return image_data
         return None
 
-    def put(self, channel, cache_key, image_data):
+    def put(self, uuid, channel, cache_key, image_data):
         """Cache image data with memory management."""
-        if channel not in self.cache:
-            self.cache[channel] = OrderedDict()
+        if uuid not in self.cache:
+            self.cache[uuid] = {}
+        if channel not in self.cache[uuid]:
+            self.cache[uuid][channel] = OrderedDict()
 
-        channel_cache = self.cache[channel]
+        channel_cache = self.cache[uuid][channel]
         image_size_bytes = image_data.nbytes
 
         # Remove if already exists to update size tracking
@@ -135,12 +139,37 @@ class MemoryEfficientImageCache:
             or len(channel_cache) >= self.max_entries_per_channel
         ):
             if not channel_cache:
-                break
+                # Try to find another channel in this uuid or other uuids to evict from
+                evicted = False
+                for other_channel_cache in self.cache[uuid].values():
+                    if other_channel_cache:
+                        _, old_data = other_channel_cache.popitem(last=False)
+                        self.current_size_bytes -= old_data.nbytes
+                        del old_data
+                        evicted = True
+                        break
 
-            # Remove least recently used item
-            _, old_data = channel_cache.popitem(last=False)
-            self.current_size_bytes -= old_data.nbytes
-            del old_data  # Explicit deletion
+                if not evicted:
+                    # Try other uuids
+                    for other_uuid_cache in self.cache.values():
+                        for other_channel_cache in other_uuid_cache.values():
+                            if other_channel_cache:
+                                _, old_data = other_channel_cache.popitem(last=False)
+                                self.current_size_bytes -= old_data.nbytes
+                                del old_data
+                                evicted = True
+                                break
+                        if evicted:
+                            break
+
+                if not evicted:
+                    break
+
+            else:
+                # Remove least recently used item from current channel
+                _, old_data = channel_cache.popitem(last=False)
+                self.current_size_bytes -= old_data.nbytes
+                del old_data
 
         # Add new data
         channel_cache[cache_key] = image_data
@@ -150,30 +179,49 @@ class MemoryEfficientImageCache:
         if self.current_size_bytes > self.max_cache_size_bytes * 0.8:
             gc.collect()
 
-    def clear_channel(self, channel):
-        """Clear cache for specific channel."""
-        if channel in self.cache:
-            channel_cache = self.cache[channel]
+    def clear_channel(self, uuid, channel):
+        """Clear cache for specific channel of specific uuid."""
+        if uuid in self.cache and channel in self.cache[uuid]:
+            channel_cache = self.cache[uuid][channel]
             for image_data in channel_cache.values():
                 self.current_size_bytes -= image_data.nbytes
             channel_cache.clear()
             gc.collect()
 
+    def clear_uuid(self, uuid):
+        """Clear all cache for specific uuid."""
+        if uuid in self.cache:
+            for channel_cache in self.cache[uuid].values():
+                for image_data in channel_cache.values():
+                    self.current_size_bytes -= image_data.nbytes
+                channel_cache.clear()
+            del self.cache[uuid]
+            gc.collect()
+
     def clear_all(self):
         """Clear entire cache."""
-        for channel_cache in self.cache.values():
-            channel_cache.clear()
+        for uuid_cache in self.cache.values():
+            for channel_cache in uuid_cache.values():
+                channel_cache.clear()
         self.cache.clear()
         self.current_size_bytes = 0
         gc.collect()
 
     def get_memory_info(self):
         """Get current memory usage info."""
+        total_entries = 0
+        total_channels = 0
+        for uuid_cache in self.cache.values():
+            total_channels += len(uuid_cache)
+            for channel_cache in uuid_cache.values():
+                total_entries += len(channel_cache)
+
         return {
             "current_size_mb": self.current_size_bytes / (1024 * 1024),
             "max_size_mb": self.max_cache_size_bytes / (1024 * 1024),
-            "channels": len(self.cache),
-            "total_entries": sum(len(ch_cache) for ch_cache in self.cache.values()),
+            "uuids": len(self.cache),
+            "channels": total_channels,
+            "total_entries": total_entries,
         }
 
 
@@ -220,31 +268,30 @@ class ImageStorage:
             return len(self.image_list)
 
     def __getitem__(self, image_id):
-        return self.get_data(image_id)
+        return self.get_data(str(image_id))
 
     def __setitem__(self, image_id, data):
-        self.add_data(image_id, data)
+        self.add_data(str(image_id), data)
 
     def add_data(self, image_id, data):
         with self._data_lock:
-            self.image_list[image_id] = data
-            gc.collect()
+            self.image_list[str(image_id)] = data
 
     def get_data(self, image_id):
         with self._data_lock:
-            data = self.image_list.get(image_id)
+            data = self.image_list.get(str(image_id))
             return copy.deepcopy(data) if data is not None else None
 
     def remove_data(self, image_id):
         with self._data_lock:
-            if image_id in self.image_list:
-                del self.image_list[image_id]
+            if str(image_id) in self.image_list:
+                del self.image_list[str(image_id)]
                 gc.collect()
 
     def update_data(self, image_id, channel="Channel 1", new_img=None):
         with self._data_lock:
             if image_id in self.image_list:
-                self.image_list[image_id][channel] = new_img
+                self.image_list[str(image_id)][channel] = new_img
 
     def clear_data(self):
         with self._data_lock:
@@ -406,7 +453,7 @@ class BaseGraphicsView(QWidget):
         step_w = max(1, w // new_w)
         return image[::step_h, ::step_w]
 
-    def _filename_to_image(
+    def _add_to_canvas(
         self,
         file_name: str,
         adjust_contrast=False,
@@ -464,7 +511,6 @@ class BaseGraphicsView(QWidget):
                 channel_name, image_adjusted, display_image, subsample_for_emit
             )
             self._update_progress(channel_num, self.num_channels)
-            gc.collect()
 
         self._emit_multichannel_data(emit_data, subsample_for_emit)
         self._add_to_manager(file_name)
@@ -549,36 +595,116 @@ class BaseGraphicsView(QWidget):
         subsample_for_emit: bool = False,
         max_display_size: int = 1024,
     ) -> np.ndarray:
-        """Replace canvas with multichannel image data."""
+        """Replace canvas with multichannel image data - target channel first, others in background."""
         self._prepare_channels_for_new_image()
-        emit_data = {}
-        display_channel_data = None
-        for channel_name, image_data in channels_data.items():
-            # Store full resolution version
-            self._store_channel_data(channel_name, image_data)
 
-            # Prepare display version
-            display_image = self._prepare_display_image(
-                image_data, subsample_for_emit, max_display_size
-            )
-            emit_data[channel_name] = display_image
-            print(
-                f"Processing {channel_name}, shape: {image_data.shape}, dtype: {image_data.dtype}"
-            )
-            if channel_name == target_channel:
-                display_channel_data = display_image
-            print(f"Replaced {channel_name}, shape: {image_data.shape}")
+        # Initialize thread lock for background processing
 
-        self._emit_multichannel_data(emit_data, subsample_for_emit)
-        self._clear_caches()
-
-        # Update manager without filename
-        self.image_count += 1
-        print("Canvas replaced with multichannel data")
-        if display_channel_data is None:
+        if hasattr(self, "_background_worker") and self._background_worker.isRunning():
+            print("Warning: Previous channel processing still ongoing. Canceling it.")
+            self._background_worker.terminate()
+        # Process target channel first for immediate display
+        if target_channel not in channels_data:
             raise ValueError(f"{target_channel} was not found in the data")
+
+        target_image_data = channels_data[target_channel]
+
+        # Process target channel immediately
+        self._store_channel_data(target_channel, target_image_data)
+        display_channel_data = self._prepare_display_image(
+            target_image_data, subsample_for_emit, max_display_size
+        )
+
+        print(
+            f"Processing {target_channel} (primary), shape: {target_image_data.shape}, dtype: {target_image_data.dtype}"
+        )
+
+        # Emit target channel immediately for display
+        emit_data = {target_channel: display_channel_data}
+        self._emit_multichannel_data(emit_data, subsample_for_emit)
         self.current_channel = int(target_channel[-1]) - 1
+
+        # Process remaining channels in background if there are any
+        remaining_channels = {
+            k: v for k, v in channels_data.items() if k != target_channel
+        }
+
+        if remaining_channels:
+            background_worker = Worker(
+                self._process_remaining_channels,
+                remaining_channels,
+                subsample_for_emit,
+                max_display_size,
+            )
+            self._background_worker = background_worker
+            background_worker.signal.connect(self._on_background_channels_completed)
+            background_worker.finished.connect(background_worker.quit)
+            background_worker.finished.connect(background_worker.deleteLater)
+            background_worker.start()
+
+        self._clear_caches()
+        self.image_count += 1
+        print(
+            f"Canvas replaced - {target_channel} ready, {len(remaining_channels)} channels processing in background"
+        )
+
         return display_channel_data
+
+    def _process_remaining_channels(
+        self,
+        remaining_channels: Dict[str, np.ndarray],
+        subsample_for_emit: bool,
+        max_display_size: int,
+    ) -> Dict[str, np.ndarray]:
+        """Process remaining channels in background thread."""
+        processed_channels = {}
+
+        for channel_name, image_data in remaining_channels.items():
+            try:
+                # Store full resolution version
+                self._store_channel_data(channel_name, image_data)
+
+                # Prepare display version
+                display_image = self._prepare_display_image(
+                    image_data, subsample_for_emit, max_display_size
+                )
+                processed_channels[channel_name] = display_image
+
+                print(
+                    f"Background processing {channel_name}, shape: {image_data.shape}, dtype: {image_data.dtype}"
+                )
+
+            except Exception as e:
+                print(f"Error processing {channel_name} in background: {e}")
+                continue
+
+        return processed_channels
+
+    @pyqtSlot(object)
+    def _on_background_channels_completed(
+        self, processed_channels: Dict[str, np.ndarray]
+    ):
+        """Handle completion of background channel processing."""
+        if processed_channels:
+            # Update the full multichannel data
+            all_emit_data = {
+                **{
+                    f"Channel {self.current_channel + 1}": self.np_channels[
+                        f"Channel {self.current_channel + 1}"
+                    ].data
+                },
+                **processed_channels,
+            }
+
+            # Create display wrappers for all channels
+            display_wrappers = {
+                name: ImageWrapper(data, name) for name, data in all_emit_data.items()
+            }
+            # self.image_signal.emit(display_wrappers, True)
+
+            print(
+                f"Background processing completed - {len(processed_channels)} additional channels ready"
+            )
 
     def _prepare_channels_for_new_image(self):
         self.np_channels = {}
@@ -728,9 +854,9 @@ class ReferenceGraphicsView(BaseGraphicsView):
                     self.add_to_canvas(file_path)
 
     def add_to_canvas(self, file_path: str):
-        self.reference_worker = Worker(self._filename_to_image, file_path, False)
+        self.reference_worker = Worker(self._add_to_canvas, file_path, False)
         self.reference_worker.start()
-        self.reference_worker.signal.connect(self.filename_to_image_complete)
+        self.reference_worker.signal.connect(self.display_result)
         self.reference_worker.finished.connect(self.reference_worker.quit)
         self.reference_worker.finished.connect(self.reference_worker.deleteLater)
 
@@ -739,12 +865,16 @@ class ReferenceGraphicsView(BaseGraphicsView):
         self.uuid = uuid
         self.storage.add_data("reference_uuid", {"value": uuid})
 
-    def filename_to_image_complete(self, image):
-
+    def display_result(self, image):
         qimage = numpy_to_qimage(image)
         self.pixmap = QPixmap(qimage)
-
         self.update_reference.emit(self.pixmap, self.is_layered)
+
+
+import typing
+
+if typing.TYPE_CHECKING:
+    from controller import Controller
 
 
 ##########################################################
@@ -757,15 +887,17 @@ class ImageGraphicsView(BaseGraphicsView):
     update_cmap = pyqtSignal(str)
     crop_signal = pyqtSignal(bool)
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
+    def __init__(self, controller: "Controller"):
+        super().__init__()
+        self.controller = controller
         self.begin_crop = False
         self.crop_cursor = QCursor(Qt.CursorShape.CrossCursor)
         self.stardist_image_count = 0
         self.memory_cache = MemoryEfficientImageCache(max_cache_size_mb=300)
 
     def set_uuid(self, uuid):
-        """Set UUID for the reference image."""
+        """Set UUID for the current image (Image Tab)."""
+        print("Setting image UUID:", uuid)
         self.uuid = uuid
         self.storage.add_data("canvas_uuid", {"value": uuid})
 
@@ -781,23 +913,31 @@ class ImageGraphicsView(BaseGraphicsView):
         self.canvas_updated.emit(self.pixmap)
 
     def swap_channel(self, index):
+        """Modified swap_channel to wait for background processing if needed."""
         if self.is_layered:
+            # Wait for background processing to complete if switching to unprocessed channel
+            if hasattr(self, "_background_worker"):
+                if self._background_worker.isRunning():
+                    print("Waiting for background channel processing to complete...")
+                    self._background_worker.wait()
+                else:
+                    print("Background processing already completed.")
             self.current_channel = index
             channel_num = f"Channel {index+1}"
             if hasattr(self, "memory_cache"):
-                self.memory_cache.clear_channel(f"Channel {self.current_channel + 1}")
+                self.memory_cache.clear_channel(
+                    self.uuid, f"Channel {self.current_channel + 1}"
+                )
 
             self.image_wrapper = self.np_channels.get(
                 channel_num, ImageWrapper(np.array([]), "")
-            )  # self.image always needs to be updated. this is the current image that is being operated on
+            )
 
             if (
                 self.image_wrapper is not None
                 and channel_num in self.np_channels.keys()
             ):
-                self.update_image(
-                    cmap_text=self.image_wrapper.cmap
-                )  # this also updates the contrast
+                self.update_image(cmap_text=self.image_wrapper.cmap)
 
     def update_contrast_memory_efficient(self, values):
         """Memory-efficient version of update_contrast method."""
@@ -823,7 +963,7 @@ class ImageGraphicsView(BaseGraphicsView):
             self.image_wrapper = self.np_channels[channel_num]
 
             # Check cache first
-            cached_image = self.memory_cache.get(channel_num, cache_key)
+            cached_image = self.memory_cache.get(self.uuid, channel_num, cache_key)
             if cached_image is not None:
                 print(f"Using cached image for {channel_num}")
                 contrast_pixmap = QPixmap(numpy_to_qimage(cached_image))
@@ -835,7 +975,7 @@ class ImageGraphicsView(BaseGraphicsView):
                 )
         else:
             # Single layer processing
-            cached_image = self.memory_cache.get("single", cache_key)
+            cached_image = self.memory_cache.get(self.uuid, "single", cache_key)
             if cached_image is not None:
                 contrast_pixmap = QPixmap(numpy_to_qimage(cached_image))
                 self.canvas_updated.emit(contrast_pixmap)
@@ -858,7 +998,9 @@ class ImageGraphicsView(BaseGraphicsView):
             image_to_display = self.apply_contrast(contrast_min, contrast_max)
 
             # Cache the result
-            self.memory_cache.put(channel_key, cache_key, image_to_display.copy())
+            self.memory_cache.put(
+                self.uuid, channel_key, cache_key, image_to_display.copy()
+            )
 
             # Display
             contrast_pixmap = QPixmap(numpy_to_qimage(image_to_display))
@@ -973,7 +1115,7 @@ class ImageGraphicsView(BaseGraphicsView):
 
     def add_to_canvas(
         self,
-        i: str | ImageWrapper | Dict[str, ImageWrapper],
+        i: str | ImageWrapper | uuid.UUID | dict[str, ImageWrapper],
         as_new_image=True,
         new_image_name=None,
         target_channel="Channel 1",
@@ -985,34 +1127,35 @@ class ImageGraphicsView(BaseGraphicsView):
             self.memory_cache.clear_all()
         self.scene.resetTransform()
 
-        # self.image_worker should return np.ndarray, the first channel being displayed
+        # str is filepath
         if isinstance(i, str):
-            item = self.storage.get_data(i)
-            if item:
-                # If the image is already in storage, retrieve it
-                stored_image = item["data"]
-                self.image_worker = Worker(
-                    self._replace_canvas,
-                    stored_image,
-                    as_new_image,
-                    new_image_name,
-                    target_channel,
+            assert self.storage.get_data(i) is None, "Convert str to UUID instance"
+            if not as_new_image:
+                raise ValueError(
+                    "Cannot replace canvas with a filename, UUID replace not supported yet."
                 )
-                self.set_uuid(i)
-            else:
-                if not as_new_image:
-                    raise ValueError(
-                        "Cannot replace canvas with a filename, UUID replace not supported yet."
-                    )
-                self.image_worker = Worker(self._filename_to_image, i)
+            self.image_worker = Worker(self._add_to_canvas, i)
         elif isinstance(i, ImageWrapper):
             self.image_worker = Worker(
                 self.array_to_image, i, as_new_image, new_image_name
             )
-        else:
+        elif isinstance(i, uuid.UUID):
             # !TODO: If memory allows, we should save current canvas by using a stackwidget,
             # such that new canvas just goes ontop of old, and if switch back, just need to go back in stack,
             # which is essentially like cached performance
+            self.set_uuid(i)
+            item = self.storage.get_data(str(i))
+            assert item is not None, "UUID not found in storage"
+            image_data = item.get("data", None)
+            assert image_data is not None, "UUID not found in storage"
+            self.image_worker = Worker(
+                self._replace_canvas,
+                image_data,
+                as_new_image,
+                new_image_name,
+                target_channel,
+            )
+        elif isinstance(i, dict):
             self.image_worker = Worker(
                 self._replace_canvas,
                 i,
@@ -1173,26 +1316,10 @@ class ImageGraphicsView(BaseGraphicsView):
         self.update_contrast((new_min, new_max))
 
     def apply_contrast(self, new_min, new_max):
-
         qimage = self.pixmap.toImage()  # get current image
         image = qimage_to_numpy(qimage)  # returns uint8
-        lut = self.create_lut(new_min, new_max)
+        lut = create_lut(new_min, new_max)
         return cv2.LUT(image, lut)
-
-    def create_lut(self, new_min, new_max):
-
-        lut = np.zeros(256, dtype=np.uint8)  # uint8 for display
-        lut[new_min : new_max + 1] = np.linspace(
-            start=0,
-            stop=255,
-            num=(new_max - new_min + 1),
-            endpoint=True,
-            dtype=np.uint8,
-        )
-        lut[:new_min] = 0  # clip between 0 and 255
-        lut[new_max + 1 :] = 255
-
-        return lut
 
     def blur_layer(self, blur_percentage: float, confirm=False):
         """start gaussian blur in a separate thread"""
@@ -1280,7 +1407,6 @@ class ImageGraphicsView(BaseGraphicsView):
                 )
                 channels[channel_name] = wrapper_copy
             self.crop_worker = Worker(self.add_to_canvas, channels, True, name)
-            # self.crop_worker.signal.connect(self.onCropCompleted)
             self.crop_worker.finished.connect(self.crop_worker.quit)
             self.crop_worker.finished.connect(self.crop_worker.deleteLater)
             self.crop_worker.start()
