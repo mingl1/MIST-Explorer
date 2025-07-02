@@ -79,6 +79,19 @@ class ToolBarUI(QWidget):
     @pyqtSlot(int)
     def onTabButtonClicked(self, index):
         self.tabChanged.emit(index)
+        if index == 2:  # View tab
+            # hide all actions
+            self.actionReset.setVisible(False)
+            self.channelSelector.setDisabled(True)
+            self.cmapSelector.setDisabled(True)
+            self.auto_contrast_button.setDisabled(True)
+            self.contrastSlider.setDisabled(True)
+        else:
+            self.actionReset.setVisible(True)
+            self.channelSelector.setDisabled(False)
+            self.cmapSelector.setDisabled(False)
+            self.auto_contrast_button.setDisabled(False)
+            self.contrastSlider.setDisabled(False)
 
     def _init_actions(self, parent):
         self.actionRotate = Action(
