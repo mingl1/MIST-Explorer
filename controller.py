@@ -215,6 +215,12 @@ class Controller:
         result = preview_dialog.exec()
         return result == 1 and preview_dialog.result_accepted
 
+    def handle_tab_change(self, index):
+        if index == 2:
+            self.view.view_tab.process_images()
+        elif index == 0 or index == 1:
+            self.model_canvas.swap_channel(self.model_canvas.current_channel)
+
 
 class SignalConnectionManager:
     """Manages signal connections"""
@@ -278,6 +284,10 @@ class SignalConnectionManager:
         self.c.view.toolBarUI.auto_contrast_button.clicked.connect(
             self.c.model_canvas.auto_contrast
         )
+        self.c.view.toolBarUI.tabChanged.connect(
+            self.c.view.stackedWidget.setCurrentIndex
+        )
+        self.c.view.toolBarUI.tabChanged.connect(self.c.handle_tab_change)
 
     def _setup_image_handling_connections(self):
         """Image loading and display connections"""

@@ -913,30 +913,26 @@ class ImageGraphicsView(BaseGraphicsView):
 
     def swap_channel(self, index):
         """Modified swap_channel to wait for background processing if needed."""
-        if self.is_layered:
-            # Wait for background processing to complete if switching to unprocessed channel
-            if hasattr(self, "_background_worker"):
-                if self._background_worker.isRunning():
-                    print("Waiting for background channel processing to complete...")
-                    self._background_worker.wait()
-                else:
-                    print("Background processing already completed.")
-            self.current_channel = index
-            channel_num = f"Channel {index+1}"
-            if hasattr(self, "memory_cache"):
-                self.memory_cache.clear_channel(
-                    self.uuid, f"Channel {self.current_channel + 1}"
-                )
-
-            self.image_wrapper = self.np_channels.get(
-                channel_num, ImageWrapper(np.array([]), "")
+        # Wait for background processing to complete if switching to unprocessed channel
+        if hasattr(self, "_background_worker"):
+            if self._background_worker.isRunning():
+                print("Waiting for background channel processing to complete...")
+                self._background_worker.wait()
+            else:
+                print("Background processing already completed.")
+        self.current_channel = index
+        channel_num = f"Channel {index+1}"
+        if hasattr(self, "memory_cache"):
+            self.memory_cache.clear_channel(
+                self.uuid, f"Channel {self.current_channel + 1}"
             )
 
-            if (
-                self.image_wrapper is not None
-                and channel_num in self.np_channels.keys()
-            ):
-                self.update_image(cmap_text=self.image_wrapper.cmap)
+        self.image_wrapper = self.np_channels.get(
+            channel_num, ImageWrapper(np.array([]), "")
+        )
+
+        if self.image_wrapper is not None and channel_num in self.np_channels.keys():
+            self.update_image(cmap_text=self.image_wrapper.cmap)
 
     def update_contrast_memory_efficient(self, values):
         """Memory-efficient version of update_contrast method."""

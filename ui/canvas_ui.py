@@ -867,7 +867,10 @@ class ImageGraphicsViewUI(QGraphicsView):
                 QToolTip.showText(global_pos, f"", self)
 
                 # Get layer values if available
-                layers = self.enc.view_tab.get_layer_values_at(x, y)
+                if self.enc and self.enc.toolBarUI.tabButtonGroup.checkedId() == 2:
+                    layers = self.enc.view_tab.get_layer_values_at(x, y)
+                else:
+                    layers = None
 
                 combined_layers = None  # added this so we don't get reference error
 
