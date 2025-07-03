@@ -494,7 +494,7 @@ class AnalysisTab(QWidget):
         self.add_graph_to_current_view(box_plot)
 
         graph_generators = [
-            lambda: ZScoreHeatmapWindow(data[self.columns]),
+            lambda: ZScoreHeatmapWindow(self.get_z_heatmap_data(data)),
             lambda: HeatmapWindow(data[self.columns]),
             lambda: PieChartCanvas(data[self.columns]),
             lambda: DistributionViewer(data[self.columns]),
@@ -503,7 +503,11 @@ class AnalysisTab(QWidget):
 
         for generator in graph_generators:
             self.add_graph_to_current_view(generator)
-
+    def get_z_heatmap_data(self,data):
+        t = list(self.columns)
+        t = ["Global X","Global Y"] + t
+        t = pd.Series(t)
+        return data[t]
     def create_box_plot(self, data):
         """Create a box plot widget"""
         result_widget = QWidget()

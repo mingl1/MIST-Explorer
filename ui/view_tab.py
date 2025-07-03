@@ -293,7 +293,7 @@ from PyQt6.QtWidgets import (
 
 
 class ImageOverlay(QWidget):
-    change_pix = pyqtSignal(ImageWrapper, bool)
+    change_pix = pyqtSignal(QPixmap, bool)
     progress = pyqtSignal(int, str)
 
     def __init__(self, pixmap_label, enc):
@@ -485,6 +485,7 @@ class ImageOverlay(QWidget):
         self.apply_button.setVisible(False)
         self.cancel_reset.setVisible(True)
         self.export_tif_button.setVisible(True)
+        self.export_png_button.setVisible(True)
 
         return (ims, layer_names)
 
@@ -535,6 +536,16 @@ class ImageOverlay(QWidget):
             self.cancel_reset.setVisible(False)
             self.add_other_image_button.setVisible(False)
             self.export_tif_button.setVisible(False)
+            self.export_png_button.setVisible(False)
+
+            self.df_path = None
+            self.im_path = None
+            self.overlay_path = None
+
+            self.controls = []
+
+            self.loaded_df = None
+            self.contrast_sliders = []
 
     def initUI(self):
         main_layout = QVBoxLayout()
@@ -617,6 +628,11 @@ class ImageOverlay(QWidget):
         self.export_tif_button.clicked.connect(self.export_to_tif)
         self.export_tif_button.setVisible(False)
         main_layout.addWidget(self.export_tif_button)
+
+        self.export_png_button = QPushButton("Export to PNG")
+        self.export_png_button.clicked.connect(self.export_to_png)
+        self.export_png_button.setVisible(False)
+        main_layout.addWidget(self.export_png_button)
 
         # Add a spacer to ensure content can scroll all the way down
         main_layout.addStretch(1)  # Add stretch at the end to push content up
@@ -786,9 +802,9 @@ class ImageOverlay(QWidget):
             q_image = QImage(
                 combined_image.tobytes(), width, height, QImage.Format.Format_RGB888
             )  # interesting image.tobytes() works well, maybe you don't need to do
-            wrapper = ImageWrapper(combined_image, "Channel 1")
+            q_pixmap = QPixmap(q_image)
 
-            self.change_pix.emit(wrapper, False)
+            self.change_pix.emit(q_pixmap, True)
 
     def add_layer_controls(self, c):
         idx = len(self.controls) - 1
@@ -933,13 +949,25 @@ class ImageOverlay(QWidget):
         # height, width, _ = combined_image.shape
         # bytes_per_line = 3
 
-        # q_image = numpy_to_qimage(combined_image)
+        q_image = numpy_to_qimage(combined_image)
+        q_pixmap = QPixmap(q_image)
 
         # commented out
-        wrapper = ImageWrapper(combined_image, "single")
         if display:
-            self.change_pix.emit(wrapper, False)
+            self.change_pix.emit(q_pixmap, True)
         return combined_image
+
+    def export_to_png(self):
+        combined_image = self.process_images(False)
+        if combined_image is None:
+            return
+        file_name, _ = QFileDialog.getSaveFileName(
+            None, "Save PNG File", "protein_layers.png", "*.png;;All Files (*)"
+        )
+        if not file_name:
+            return
+        img = Image.fromarray(combined_image)
+        img.save(file_name)
 
     def export_to_tif(self):
         if len(self.controls) == 0:

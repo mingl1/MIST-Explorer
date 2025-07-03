@@ -4,7 +4,8 @@ from PyQt6.QtGui import QImage, QPixmap
 from PyQt6.QtCore import QTimer
 import tifffile as tiff, numpy as np
 import cv2
-import time
+import sys
+import os
 from skimage import transform
 from numpy.typing import NDArray
 
@@ -445,3 +446,7 @@ def match_histograms(src_image, ref_histogram, bins=256):
     image_after_matching = cv2.convertScaleAbs(src_after_transform)
 
     return image_after_matching
+def resource_path(relative_path):
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)

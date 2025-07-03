@@ -386,23 +386,8 @@ class BaseGraphicsView(QWidget):
     def dragMoveEvent(self, event: QDragMoveEvent | None):  # type: ignore
         self._accept_if_valid(event)
 
-    def clear_canvas(self):
-        scene = self.scene.scene()
-        if scene:
-            scene.clear()
-        self.pixmap = None
-        self.pixmap_item = None
-        self.reset_pixmap = None
-        self.reset_pixmap_item = None
-        self.np_channels = {}
-        self.reset_np_channels = {}
-        self.current_channel = 0
-        self.image_cache = {}
-        self.lut_cache = {}
-        self.image_wrapper = ImageWrapper(np.array([]), "")
-        self.uuid = None
-        self.num_channels = 0
-        gc.collect()
+    
+
 
     def _accept_if_valid(
         self, event: QDragEnterEvent | QDragMoveEvent | QDropEvent | None
@@ -893,6 +878,7 @@ class ImageGraphicsView(BaseGraphicsView):
         self.begin_crop = False
         self.crop_cursor = QCursor(Qt.CursorShape.CrossCursor)
         self.memory_cache = MemoryEfficientImageCache(max_cache_size_mb=300)
+        self.uuid = None
 
     def set_uuid(self, uuid):
         """Set UUID for the current image (Image Tab)."""
@@ -910,29 +896,48 @@ class ImageGraphicsView(BaseGraphicsView):
         elif isinstance(data, np.ndarray):
             self.pixmap = QPixmap(numpy_to_qimage(data))
         self.canvas_updated.emit(self.pixmap)
+    def clear_canvas(self):
+        scene = self.scene.scene()
+        if scene:
+            scene.clear()
+        self.pixmap = QPixmap()
+        self.pixmap_item = QGraphicsPixmapItem()
+        self.reset_pixmap = None
+        self.reset_pixmap_item = None
+        self.np_channels = {}
+        self.reset_np_channels = {}
+        self.current_channel = 0
+        self.image_cache = {}
+        self.lut_cache = {}
+        self.image_wrapper = ImageWrapper(np.array([]), "")
+        self.uuid = None
+        self.num_channels = 0
+        self.canvas_updated.emit(self.pixmap)
 
     def swap_channel(self, index):
         """Modified swap_channel to wait for background processing if needed."""
-        # Wait for background processing to complete if switching to unprocessed channel
-        if hasattr(self, "_background_worker"):
-            if self._background_worker.isRunning():
-                print("Waiting for background channel processing to complete...")
-                self._background_worker.wait()
-            else:
-                print("Background processing already completed.")
+        # not 100% so need the len check later
+        if getattr(self, "_background_worker", None) and self._background_worker.isRunning():
+            print("Waiting for background channel processing to complete...")
+            self._background_worker.finished.connect(lambda: self.swap_channel(index))
+            return
+        else:
+            print("no background worker or already finished")
         self.current_channel = index
         channel_num = f"Channel {index+1}"
-        if hasattr(self, "memory_cache"):
-            self.memory_cache.clear_channel(
-                self.uuid, f"Channel {self.current_channel + 1}"
-            )
 
         self.image_wrapper = self.np_channels.get(
             channel_num, ImageWrapper(np.array([]), "")
         )
+        if len(self.image_wrapper.data) == 0:
+            print("no data, background worker still workin")
+            self._background_worker.finished.connect(lambda: self.swap_channel(index))
+            return
+        # self.image_wrapper.contrast_max
+        display= self._prepare_display_image(self.image_wrapper.data.copy())
+        q_pixmap = QPixmap(numpy_to_qimage(display))
 
-        if self.image_wrapper is not None and channel_num in self.np_channels.keys():
-            self.update_image(cmap_text=self.image_wrapper.cmap)
+        self.canvas_updated.emit(q_pixmap)
 
     def update_contrast_memory_efficient(self, values):
         """Memory-efficient version of update_contrast method."""
@@ -1044,6 +1049,7 @@ class ImageGraphicsView(BaseGraphicsView):
     def update_image(self, cmap_text="default"):
         """Updates the current image using the current colormap and contrast settings.
         This only changes the display and does not change the underlying data."""
+        print("updating image")
 
         # update the color map
         image_to_display = self.change_cmap(cmap_text)
