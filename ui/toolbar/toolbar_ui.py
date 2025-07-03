@@ -17,7 +17,7 @@ import numpy as np
 from qtrangeslider import QRangeSlider
 
 
-class ToolBarUI(QWidget):
+class ToolBarUI(QToolBar):
     # Public signals
     tabChanged = pyqtSignal(int)
     channelChanged = pyqtSignal(int)
@@ -25,7 +25,6 @@ class ToolBarUI(QWidget):
 
     def __init__(self, parent):
         super().__init__(parent=parent)
-        self.toolbar = QToolBar()
 
         self._init_tab_buttons()
         self._init_actions(parent)
@@ -37,9 +36,6 @@ class ToolBarUI(QWidget):
         self._populate_toolbar()
 
         self._retranslateUI()
-
-    def get_toolbar(self):
-        return self.toolbar
 
     def _init_tab_buttons(self):
         self.tab_buttons = []
@@ -185,21 +181,21 @@ class ToolBarUI(QWidget):
     def _populate_toolbar(self):
         # Tabs first
         for button in self.tab_buttons:
-            self.toolbar.addWidget(button)
+            self.addWidget(button)
 
-        self.toolbar.addSeparator()
+        self.addSeparator()
 
         # Actions & widgets
-        self.toolbar.addAction(self.actionReset)
-        self.toolbar.addWidget(self.channelSelector)
-        self.toolbar.addWidget(self.cmapSelector)
-        self.toolbar.addWidget(self.statusLine)
-        self.toolbar.addWidget(self.auto_contrast_button)
-        self.toolbar.addWidget(self.contrastSlider)
+        self.addAction(self.actionReset)
+        self.addWidget(self.channelSelector)
+        self.addWidget(self.cmapSelector)
+        self.addWidget(self.statusLine)
+        self.addWidget(self.auto_contrast_button)
+        self.addWidget(self.contrastSlider)
 
     def _retranslateUI(self):
         _translate = QCoreApplication.translate
-        self.toolbar.setWindowTitle(_translate("MainWindow", "toolBar"))
+        self.setWindowTitle(_translate("MainWindow", "toolBar"))
         self.actionReset.setText(_translate("MainWindow", "Reset"))
         self.actionReset.setToolTip(_translate("MainWindow", "Reset Image"))
         self.channelSelector.setToolTip(_translate("MainWindow", "Select a channel"))

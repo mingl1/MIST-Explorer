@@ -218,6 +218,8 @@ class Controller:
     def handle_tab_change(self, index):
         if index == 2:
             self.view.view_tab.process_images()
+            self.view.canvas.pixmap_item.hide()
+            self.view.canvas.view_pixmap_item.show()
         elif index == 0 or index == 1:
             if self.model_canvas.uuid:
                 print("swappign channel")
@@ -225,6 +227,8 @@ class Controller:
             else:
                 print("clearing canvas")
                 self.model_canvas.clear_canvas()
+            self.view.canvas.pixmap_item.show()
+            self.view.canvas.view_pixmap_item.hide()
 
 
 class SignalConnectionManager:
@@ -268,13 +272,12 @@ class SignalConnectionManager:
 
     def _setup_menubar_connections(self):
         """Menu bar signal connections"""
-        self.c.view.menuBarUI.actionOpenReference.triggered.connect(
+        self.c.view.menuBarUI.open_reference.triggered.connect(
             self.c.on_action_reference_triggered
         )
-        self.c.view.menuBarUI.actionOpen.triggered.connect(
+        self.c.view.menuBarUI.open_image.triggered.connect(
             self.c.on_action_open_triggered
         )
-        self.c.view.menuBarUI.actionSaveAs.triggered.connect(self.c.view.save)
 
     def _setup_toolbar_connections(self):
         """Toolbar signal connections"""
