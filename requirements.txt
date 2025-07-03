@@ -23,7 +23,7 @@ setuptools
 simpleitk
 siphash24
 stardist
-tensorflow==2.10.0
+tensorflow==2.17.1
 umap
 umap-learn
 tensorflow-io-gcs-filesystem==0.31.0; platform_system == "Windows"
