@@ -1,23 +1,26 @@
-from PyQt6.QtGui import *
-from PyQt6.QtCore import *
-from PyQt6.QtWidgets import *
-import os
+import sys
 import argparse
+import os
+
+import numpy as np
+from PyQt6.QtCore import *
+from PyQt6.QtGui import *
+from PyQt6.QtWidgets import *
+
+from core import MetaData
+from ui.alignment.cell_intensity_ui import CellIntensityUI
+from ui.alignment.cell_layer_alignment_ui import CellLayerAlignmentUI
+from ui.alignment.register_ui import RegisterUI
+from ui.analysis.AnalysisTab import AnalysisTab
+from ui.canvas_ui import ImageGraphicsViewUI, ReferenceGraphicsViewUI
+from ui.ImageManager import Manager
+from ui.processing.crop_ui import CropUI
+from ui.processing.gaussian_blur import GaussianBlur
+from ui.processing.rotation_ui import RotateUI
+from ui.stardist.stardist_ui import StarDistUI
 from ui.toolbar.menubar_ui import MenuBarUI
 from ui.toolbar.toolbar_ui import ToolBarUI
-from ui.stardist.stardist_ui import StarDistUI
-from ui.alignment.cell_intensity_ui import CellIntensityUI
-from ui.processing.crop_ui import CropUI
-from ui.processing.rotation_ui import RotateUI
-from ui.canvas_ui import ImageGraphicsViewUI, ReferenceGraphicsViewUI
-from ui.alignment.register_ui import RegisterUI
 from ui.view_tab import ImageOverlay
-from ui.analysis.AnalysisTab import AnalysisTab
-from ui.processing.gaussian_blur import GaussianBlur
-from core import MetaData
-from ui.ImageManager import Manager
-from ui.alignment.cell_layer_alignment_ui import CellLayerAlignmentUI
-import numpy as np
 
 
 class Ui_MainWindow(QMainWindow):
@@ -28,10 +31,15 @@ class Ui_MainWindow(QMainWindow):
         QImageReader.setAllocationLimit(0)
         super().__init__()
 
+        if sys.platform == 'win32':
+            self.dragPos = QPoint()
+
         self.args = (
             self._parse_arguments()
         )  # Enables passing in image & reference as cli arguments
+        
         self._setup_main_window()
+        # self._setup_status_bar()
         self._add_shortcuts()
 
         self._setup_central_widget()
@@ -66,8 +74,32 @@ class Ui_MainWindow(QMainWindow):
 
     def _setup_main_window(self):
         """Setup main window properties"""
+        if sys.platform == 'win32':
+            self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.resize(1280, 800)
         self.setMinimumSize(1200, 800)
+
+    def toggle_maximize(self):
+        if self.isMaximized():
+            self.showNormal()
+        else:
+            self.showMaximized()
+
+    def eventFilter(self, obj, event):
+        if sys.platform == 'win32':
+            if obj == self.menuBarUI:
+                if event.type() == QEvent.Type.MouseButtonPress:
+                    self.dragPos = event.globalPosition().toPoint()
+                    return False  # Allow the event to propagate for clicks
+                elif event.type() == QEvent.Type.MouseMove:
+                    if event.buttons() == Qt.MouseButton.LeftButton and hasattr(self, 'dragPos') and self.dragPos is not None:
+                        self.move(self.pos() + event.globalPosition().toPoint() - self.dragPos)
+                        self.dragPos = event.globalPosition().toPoint()
+                        return True  # Consume the event if dragging
+                elif event.type() == QEvent.Type.MouseButtonRelease:
+                    self.dragPos = QPoint()  # Reset dragPos
+                    return False  # Allow the event to propagate
+        return super().eventFilter(obj, event)
 
     def _add_shortcuts(self):
         """Add keyboard shortcuts"""
@@ -92,10 +124,12 @@ class Ui_MainWindow(QMainWindow):
 
     def _setup_menubar_and_toolbar(self):
         self.menuBarUI = MenuBarUI(self)
-        self.setMenuBar(self.menuBarUI.get_menubar())
 
         self.toolBarUI = ToolBarUI(self)
-        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.toolBarUI.get_toolbar())
+        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.toolBarUI)
+        self.setMenuBar(self.menuBarUI)
+        if sys.platform == 'win32':
+            self.menuBarUI.installEventFilter(self)
 
     def _setup_side_panel(self):
         """Setup the collapsible side panel"""
@@ -403,9 +437,9 @@ class Ui_MainWindow(QMainWindow):
 
     def save(self):
         """Save current canvas to file"""
+        import numpy as np
         from PIL import Image
         from PyQt6.QtWidgets import QFileDialog
-        import numpy as np
 
         file_name, _ = QFileDialog.getSaveFileName(
             None, "Save File", "image.png", "*.png;;*.jpg;;*.tif;; All Files(*)"

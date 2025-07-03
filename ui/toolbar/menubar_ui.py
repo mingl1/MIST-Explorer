@@ -1,43 +1,51 @@
-from PyQt6.QtWidgets import QMenuBar, QWidget, QMenu,QMainWindow
-from PyQt6.QtCore import QRect, QCoreApplication
-from ui.toolbar.Action import Action
+import sys
+from PyQt6.QtGui import QAction
+from PyQt6.QtWidgets import QMainWindow, QMenuBar, QPushButton, QWidget, QHBoxLayout
 
-class MenuBarUI(QWidget):
+
+class MenuBarUI(QMenuBar):
     def __init__(self, parent: QMainWindow):
+        super().__init__(parent)
 
-        super().__init__()
-        self.menubar = QMenuBar()
-        self.menubar.setGeometry(QRect(0, 0, 1061, 22))
-        self.menuFile = QMenu(self.menubar)
-        self.menuOpen =QMenu(self.menuFile)
-        self.__createActions(parent)
-        self.__addActions()
-        self.__retranslateUI()
-    
-    def get_menubar(self):
-        return self.menubar
+        menufile = self.addMenu("&File")
+        assert menufile is not None, "Menu 'File' could not be created"
+        self.menuFile = menufile
+        menu_open = self.menuFile.addMenu("&Open")
+        assert menu_open is not None, "Menu 'Open' could not be created"
+        self.menuOpen = menu_open
 
-    def __createActions(self, parent):
-        self.actionOpen = Action(parent, "actionOpen", "icons/folder.png")
-        self.actionSaveAs = Action(parent, "actionSaveAs", "icons/save-as.png")
-        self.actionOpenReference = Action(parent, "action_reference")
-        # self.actionOpenFiles = Action(parent, "action_openFiles")
+        open_image = QAction("&Open Image", self.menuOpen)
+        assert open_image is not None, "Action 'Open Image' could not be created"
+        self.open_image = open_image
+        self.menuOpen.addAction(open_image)
+        open_reference = QAction("&Open Reference", self.menuOpen)
+        assert (
+            open_reference is not None
+        ), "Action 'Open Reference' could not be created"
+        self.open_reference = open_reference
+        self.menuOpen.addAction(open_reference)
 
-    def __addActions(self):
-        self.menubar.addAction(self.menuFile.menuAction())
-        self.menuFile.addAction(self.menuOpen.menuAction())
-        self.menuFile.addAction(self.actionSaveAs)
-        self.menuOpen.addActions([self.actionOpenReference, self.actionOpen])
+        if sys.platform == 'win32':
+            # Window controls
+            self.controls_widget = QWidget()
+            self.controls_layout = QHBoxLayout(self.controls_widget)
+            self.controls_layout.setContentsMargins(0, 0, 0, 0)
+            self.controls_layout.setSpacing(0)
 
-    def __retranslateUI(self):
-        _translate = QCoreApplication.translate
-        self.menuFile.setTitle(_translate("MainWindow", "File"))
-        
-        self.actionOpenReference.setText(_translate("MainWindow", "Open Reference"))
-        self.menuOpen.setTitle(_translate("MainWindow", "Open"))
-        self.actionOpen.setText(_translate("MainWindow", "Open Image"))
-        # self.actionOpenFiles.setText(_translate("MainWindow", "Open Files"))
-        self.actionSaveAs.setText(_translate("MainWindow", "Save As..."))
+            self.minimize_button = QPushButton("—")
+            self.maximize_button = QPushButton("[]")
+            self.close_button = QPushButton("X")
 
+            self.minimize_button.setFixedSize(30, 30)
+            self.maximize_button.setFixedSize(30, 30)
+            self.close_button.setFixedSize(30, 30)
 
+            self.minimize_button.clicked.connect(parent.showMinimized)
+            self.maximize_button.clicked.connect(parent.toggle_maximize)
+            self.close_button.clicked.connect(parent.close)
 
+            self.controls_layout.addWidget(self.minimize_button)
+            self.controls_layout.addWidget(self.maximize_button)
+            self.controls_layout.addWidget(self.close_button)
+
+            self.setCornerWidget(self.controls_widget)
