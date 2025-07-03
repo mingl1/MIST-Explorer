@@ -27,6 +27,7 @@ jobs:
           pip install -r requirements.txt pyinstaller
       
       - name: Set Swap Space
+        if: runner.os == 'Windows'
         uses: pierotofy/set-swap-space@master
         with:
           swap-size-gb: 10
