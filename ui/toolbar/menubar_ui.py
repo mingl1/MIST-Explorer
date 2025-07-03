@@ -1,3 +1,4 @@
+import sys
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QMainWindow, QMenuBar, QPushButton, QWidget, QHBoxLayout
 
@@ -24,26 +25,27 @@ class MenuBarUI(QMenuBar):
         self.open_reference = open_reference
         self.menuOpen.addAction(open_reference)
 
-        # Window controls
-        self.controls_widget = QWidget()
-        self.controls_layout = QHBoxLayout(self.controls_widget)
-        self.controls_layout.setContentsMargins(0, 0, 0, 0)
-        self.controls_layout.setSpacing(0)
+        if sys.platform == 'win32':
+            # Window controls
+            self.controls_widget = QWidget()
+            self.controls_layout = QHBoxLayout(self.controls_widget)
+            self.controls_layout.setContentsMargins(0, 0, 0, 0)
+            self.controls_layout.setSpacing(0)
 
-        self.minimize_button = QPushButton("—")
-        self.maximize_button = QPushButton("[]")
-        self.close_button = QPushButton("X")
+            self.minimize_button = QPushButton("—")
+            self.maximize_button = QPushButton("[]")
+            self.close_button = QPushButton("X")
 
-        self.minimize_button.setFixedSize(30, 30)
-        self.maximize_button.setFixedSize(30, 30)
-        self.close_button.setFixedSize(30, 30)
+            self.minimize_button.setFixedSize(30, 30)
+            self.maximize_button.setFixedSize(30, 30)
+            self.close_button.setFixedSize(30, 30)
 
-        self.minimize_button.clicked.connect(parent.showMinimized)
-        self.maximize_button.clicked.connect(parent.toggle_maximize)
-        self.close_button.clicked.connect(parent.close)
+            self.minimize_button.clicked.connect(parent.showMinimized)
+            self.maximize_button.clicked.connect(parent.toggle_maximize)
+            self.close_button.clicked.connect(parent.close)
 
-        self.controls_layout.addWidget(self.minimize_button)
-        self.controls_layout.addWidget(self.maximize_button)
-        self.controls_layout.addWidget(self.close_button)
+            self.controls_layout.addWidget(self.minimize_button)
+            self.controls_layout.addWidget(self.maximize_button)
+            self.controls_layout.addWidget(self.close_button)
 
-        self.setCornerWidget(self.controls_widget)
+            self.setCornerWidget(self.controls_widget)

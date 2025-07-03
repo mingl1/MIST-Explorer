@@ -487,6 +487,7 @@ class ImageOverlay(QWidget):
         self.export_tif_button.setVisible(True)
         self.export_png_button.setVisible(True)
 
+
         return (ims, layer_names)
 
     def get_layer_values_at(self, x, y):
@@ -538,14 +539,6 @@ class ImageOverlay(QWidget):
             self.export_tif_button.setVisible(False)
             self.export_png_button.setVisible(False)
 
-            self.df_path = None
-            self.im_path = None
-            self.overlay_path = None
-
-            self.controls = []
-
-            self.loaded_df = None
-            self.contrast_sliders = []
 
     def initUI(self):
         main_layout = QVBoxLayout()
@@ -956,7 +949,7 @@ class ImageOverlay(QWidget):
         if display:
             self.change_pix.emit(q_pixmap, True)
         return combined_image
-
+    
     def export_to_png(self):
         combined_image = self.process_images(False)
         if combined_image is None:
@@ -968,6 +961,7 @@ class ImageOverlay(QWidget):
             return
         img = Image.fromarray(combined_image)
         img.save(file_name)
+
 
     def export_to_tif(self):
         if len(self.controls) == 0:

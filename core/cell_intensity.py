@@ -25,7 +25,6 @@ import itertools
 from core import ImageWrapper
 
 
-
 class CellIntensity(QThread):
     error_signal = pyqtSignal(str)
     progress = pyqtSignal(int, str)

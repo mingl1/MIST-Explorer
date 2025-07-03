@@ -1,3 +1,4 @@
+import sys
 import argparse
 import os
 
@@ -30,7 +31,8 @@ class Ui_MainWindow(QMainWindow):
         QImageReader.setAllocationLimit(0)
         super().__init__()
 
-        self.dragPos = QPoint()
+        if sys.platform == 'win32':
+            self.dragPos = QPoint()
 
         self.args = (
             self._parse_arguments()
@@ -72,7 +74,8 @@ class Ui_MainWindow(QMainWindow):
 
     def _setup_main_window(self):
         """Setup main window properties"""
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        if sys.platform == 'win32':
+            self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.resize(1280, 800)
         self.setMinimumSize(1200, 800)
 
@@ -83,18 +86,19 @@ class Ui_MainWindow(QMainWindow):
             self.showMaximized()
 
     def eventFilter(self, obj, event):
-        if obj == self.menuBarUI:
-            if event.type() == QEvent.Type.MouseButtonPress:
-                self.dragPos = event.globalPosition().toPoint()
-                return False  # Allow the event to propagate for clicks
-            elif event.type() == QEvent.Type.MouseMove:
-                if event.buttons() == Qt.MouseButton.LeftButton and hasattr(self, 'dragPos') and self.dragPos is not None:
-                    self.move(self.pos() + event.globalPosition().toPoint() - self.dragPos)
+        if sys.platform == 'win32':
+            if obj == self.menuBarUI:
+                if event.type() == QEvent.Type.MouseButtonPress:
                     self.dragPos = event.globalPosition().toPoint()
-                    return True  # Consume the event if dragging
-            elif event.type() == QEvent.Type.MouseButtonRelease:
-                self.dragPos = QPoint()  # Reset dragPos
-                return False  # Allow the event to propagate
+                    return False  # Allow the event to propagate for clicks
+                elif event.type() == QEvent.Type.MouseMove:
+                    if event.buttons() == Qt.MouseButton.LeftButton and hasattr(self, 'dragPos') and self.dragPos is not None:
+                        self.move(self.pos() + event.globalPosition().toPoint() - self.dragPos)
+                        self.dragPos = event.globalPosition().toPoint()
+                        return True  # Consume the event if dragging
+                elif event.type() == QEvent.Type.MouseButtonRelease:
+                    self.dragPos = QPoint()  # Reset dragPos
+                    return False  # Allow the event to propagate
         return super().eventFilter(obj, event)
 
     def _add_shortcuts(self):
@@ -124,7 +128,8 @@ class Ui_MainWindow(QMainWindow):
         self.toolBarUI = ToolBarUI(self)
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.toolBarUI)
         self.setMenuBar(self.menuBarUI)
-        self.menuBarUI.installEventFilter(self)
+        if sys.platform == 'win32':
+            self.menuBarUI.installEventFilter(self)
 
     def _setup_side_panel(self):
         """Setup the collapsible side panel"""
