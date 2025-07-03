@@ -20,10 +20,16 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-      - name: Install Visual C++ 2010 Redistributable (for MSVCR100.dll)
-        if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
-
+      - name: Install Visual C++ Redistributable
+        if: runner.os=='Windows'
+        run: choco install vcredist2010 vcredist2013 vcredist140 -y
+    
+      - name: Setup Java (if needed)
+        if: runner.os=='Windows'
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'microsoft'
+          java-version: '11'
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
