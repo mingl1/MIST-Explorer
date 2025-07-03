@@ -26,12 +26,10 @@ class ZScoreHeatmapWindow(QMainWindow):
         # x_min, y_min, x_max, y_max = region
         filtered_data = data
         
-        print(filtered_data)
-
         # Extract proteins and calculate centroids
-        protein_columns = filtered_data.columns[3:]  # Assuming proteins start at the 4th column
+        protein_columns = filtered_data.columns[2:]  # Assuming proteins start at the 4th column
         proteins = protein_columns
-
+        print(proteins)
 
         def calculate_weighted_centroids(data, proteins, signal_threshold=100):
             centroids = {}
