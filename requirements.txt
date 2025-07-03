@@ -3,7 +3,7 @@ astroalign
 diplib
 itk-elastix
 matplotlib
-numpy<1.24
+numpy==1.26.4
 opencv-contrib-python
 opencv-python
 pandas
