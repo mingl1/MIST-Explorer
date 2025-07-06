@@ -1,19 +1,22 @@
-import numpy as np
-import cv2
+import heapq
 import math
-import astroalign as aa
-from pystackreg import StackReg
-from PIL import Image
-import time
-import pystackreg.util
-from PyQt6.QtCore import pyqtSignal, QThread
-import pickle
 import os
-import tensorflow as tf
+import pickle
 import re
+import time
+from functools import wraps
+
+import astroalign as aa
+import cv2
 import diplib as dip
+import numpy as np
+import pystackreg.util
+import SimpleITK as sitk
+from PIL import Image
+from PyQt6.QtCore import QThread, pyqtSignal
 
 from core import ImageStorage
+from utils import calculate_ncc, to_uint8
 
 
 class Register(QThread):
@@ -24,12 +27,12 @@ class Register(QThread):
     error = pyqtSignal(str)
     alignment_complete = pyqtSignal(dict, np.ndarray, np.ndarray)
 
-    def __init__(self):
+    def __init__(self, template_size=None, max_points=5000):
         super().__init__()
         Image.MAX_IMAGE_PIXELS = 99999999999
 
         # initialize variables
-
+        self._is_running = False
         self.protein_channels = None
         self.reference_channels = None
         self.protein_signal_array = None
@@ -51,23 +54,44 @@ class Register(QThread):
                 "image_dict": self.protein_channels,
             },
         )
+        self.min_circularity = 0.5
+        self.template_size = template_size
+        self.max_points = max_points
+
+    def _fatal_error_message(self, msg):
+        self.error.emit(msg)
+        self.progress.emit(100, "Retry Maybe")
+
+    def _handle_cancel(self):
+        if self._is_running == False:
+            self._fatal_error_message("Cancelled registration")
+            return True
+        else:
+            return False
 
     def run_registration(self):
 
-        # run on gpu if possible
+        # don't think we need to check for GPU here, since we are not using tensorflow
 
-        gpu = len(tf.config.list_physical_devices("GPU")) > 0
-        if gpu:
-            device_name = tf.test.gpu_device_name()
-            print("gpu name: ", device_name)
-        else:
-            device_name = "/CPU:0"
+        # gpu = len(tf.config.list_physical_devices("GPU")) > 0
+        # if gpu:
+        #     device_name = tf.test.gpu_device_name()
+        #     print("gpu name: ", device_name)
+        # else:
+        #     device_name = "/CPU:0"
 
-        with tf.device(device_name):
-            self.start()
-
-            self.finished.connect(self.quit)
-            self.finished.connect(self.deleteLater)
+        # with tf.device(device_name):
+        self._is_running = True
+        print("Running registration on device:", "CPU")  # or device_name
+        if self.isRunning() and self._is_running:
+            self.error.emit("Registration is already running")
+            return
+        elif self.isRunning():
+            self.error.emit("Registration is cancelling")
+            return
+        self.start()
+        self.finished.connect(lambda: setattr(self, "_is_running", False))
+        # self.finished.connect(self.deleteLater)
         # self.run()
 
     def run(self):
@@ -81,7 +105,6 @@ class Register(QThread):
         self.progress.emit(0, "preparing alignment")  # update progress bar
         channel_wrappers = reference_image_file["image_dict"]
         reference_tif_index = self.params["alignment_layer"]
-        print(f"Channel {reference_tif_index  + 1}")
         alignment_layer = channel_wrappers[f"Channel {reference_tif_index  + 1}"].data
 
         if alignment_layer.dtype != np.uint16:
@@ -91,10 +114,12 @@ class Register(QThread):
         alignment_layer = alignment_layer[0:m, 0:m]  # resize to maximum allowed size
 
         fixed_map = TileMap("fixed", alignment_layer, self.overlap, self.num_tiles)
-
+        moving_map = None
         # generate tiles
         for tif_n, tif in enumerate(self.tifs):
             # skip reference
+            if self._handle_cancel():
+                return
             if tif_n == reference_tif_index:
                 self.tifs[tif_n]["outputs"] = None
                 continue
@@ -127,47 +152,30 @@ class Register(QThread):
 
             # Select the inputs number
             outputs = []
-            if os.path.exists(f"registration_results_tif{tif_n}_150_decoding.pkl"):
-                print(f"loading previous results for tif {tif_n}")
-                with open(
-                    f"registration_results_tif{tif_n}_150_decoding.pkl", "rb"
-                ) as f:
-                    outputs = pickle.load(f)
-            else:
-                for tile_n, tile_set in enumerate(inputs):
-                    try:
 
-                        # update progress bar
-                        print(f"aligned a tile...{tile_n}")
-                        progress_update = int(((tile_n + 1) / len(inputs)) * 100)
-                        self.progress.emit(
-                            progress_update,
-                            str(f"aligning tile {tile_n+1}/{len(inputs)}"),
-                        )
+            for tile_n, tile_set in enumerate(inputs):
+                # update progress bar
+                if self._handle_cancel():
+                    return
+                progress_update = int(((tile_n + 1) / len(inputs)) * 100)
+                self.progress.emit(
+                    progress_update,
+                    str(f"aligning tile {tile_n+1}/{len(inputs)}"),
+                )
 
-                        if tif_n == 0:
-                            outputs.append(self.on_skip(tile_set))
-                            continue
+                if tif_n == 0:
+                    outputs.append(self.on_skip(tile_set))
+                    continue
 
-                        t = time.time()
-                        result = self.align_two_img(tile_set)  # align
+                result = self.align_two_img_robust(*tile_set)  # align
 
-                        print(time.time() - t)
-
-                        if result is None:
-                            continue
-                        outputs.append(result)
-                    except Exception as e:
-                        raise e
+                if result is None:
+                    continue
+                outputs.append(result)
 
             print("done aligning")
 
             self.tifs[tif_n]["outputs"] = outputs
-            if self.has_blue:
-                with open(
-                    f"registration_results_tif{tif_n}_150_decoding.pkl", "wb"
-                ) as f:
-                    pickle.dump(outputs, f)
 
         #########################################################
         # move the other layers
@@ -175,8 +183,10 @@ class Register(QThread):
         total_sr_none = 0
         total_aa_none = 0
         total = 0
+        assert isinstance(moving_map, TileMap), "moving_map is not a TileMap instance"
         for i, tif in enumerate(self.tifs):
-
+            if self._handle_cancel():
+                return
             if i == 0:
                 continue
 
@@ -198,62 +208,56 @@ class Register(QThread):
                     f"Channel {layer_number + 1}"
                 ].data  # channels are index 1 # this is the basis
 
-                # if bf.shape[0] < m:
-                #     raise Exception("too small! only", bf.shape[0], m) # should be a QMessageBox error
-
                 bf = bf[0:m, 0:m]
 
                 dest = Image.fromarray(
                     np.zeros((m, m), dtype="float")
                 )  # need to determine the final bit size
-
+                prev_transf = None
+                prev_itk_transf = None
                 for result in tif["outputs"]:
-                    transforms, ymin, xmin, radius, x, y = result
-                    corresponding_tile = None
-                    total += 1
-                    if transforms is None:
-                        print("transforms is none")
-                        corresponding_tile = moving_map.get_tile_by_center(bf, x, y)[
-                            ymin : ymin + radius * 2, xmin : xmin + radius * 2
-                        ]
-
+                    transforms, ymin, xmin, radius, x, y, best_ncc = result
+                    if best_ncc < 0.3:  # use previous
+                        transforms[0] = prev_transf
+                        transforms[1] = prev_itk_transf
                     else:
-                        transforms, ymin, xmin, radius, x, y = result
+                        prev_transf = transforms[0]
+                        prev_itk_transf = transforms[1]
+                    source = moving_map.get_tile_by_center(bf, x, y)
+                    target = moving_map.get_tile_by_center(
+                        alignment_layer, x, y
+                    ).astype(float)
+                    total += 1
+                    transf = transforms[0]
+                    itk_transf = transforms[1]
 
-                        transf = transforms[0]
-
-                        source = moving_map.get_tile_by_center(bf, x, y).astype(float)
-                        target = moving_map.get_tile_by_center(
-                            reference_brightfield, x, y
-                        ).astype(float)
-                        if transf is not None:
-                            registered, _ = aa.apply_transform(transf, source, target)
+                    if transf is not None:
+                        if isinstance(transf, np.ndarray):
+                            registered = cv2.warpAffine(
+                                source, transf, (target.shape[1], target.shape[0])
+                            )
                         else:
-                            registered = source
-                            total_aa_none += 1
+                            registered, _ = aa.apply_transform(transf, source, target)
+                    else:
+                        registered = source
+                    # Apply additional ITK transformation if available
+                    if itk_transf is not None:
+                        registered = sitk.GetArrayFromImage(
+                            sitk.Resample(
+                                sitk.GetImageFromArray(registered),
+                                sitk.GetImageFromArray(target),
+                                itk_transf,
+                                sitk.sitkLinear,
+                                0.0,
+                                sitk.sitkUInt16,
+                            )
+                        )
 
-                        # if applicable, we can use pystackreg to register one more time
-                        if self.has_blue:
-                            print("has blue")
-                            try:
-                                sr = transforms[2]
-                                if sr is None:
-                                    registered = source
-                                    total_sr_none += 1
-                                else:
-                                    registered = sr.transform(registered)
+                    corresponding_tile = registered[
+                        ymin : ymin + radius * 2, xmin : xmin + radius * 2
+                    ]
 
-                            except IndexError as e:
-                                print(
-                                    e,
-                                    "pystackreg transform does not exist or there is no blue color",
-                                )
-
-                        corresponding_tile = registered[
-                            ymin : ymin + radius * 2, xmin : xmin + radius * 2
-                        ]
-
-                        # corresponding_tile = cv2.copyMakeBorder(corresponding_tile, 0,1,0,1, cv2.BORDER_REPLICATE)
+                    # corresponding_tile = cv2.copyMakeBorder(corresponding_tile, 0,1,0,1, cv2.BORDER_REPLICATE)
 
                     dest.paste(
                         Image.fromarray(pystackreg.util.to_uint16(corresponding_tile)),
@@ -281,9 +285,22 @@ class Register(QThread):
             0 : self.params["max_size"], 0 : self.params["max_size"]
         ]  # -> stardist
         # cell_image = aligned_protein_signal[self.params['cell_layer'], :, :] # --> cell-image
-        self.protein_signal_arr_signal.emit(
-            self.protein_signal_array
-        )  # ->cell intensity table
+        # aligned protein
+
+        manual_img = ImageStorage().get_data("protein_data_image")
+
+        if manual_img is not None:
+            print("✅ [Protein Image] Using manually selected image from right-click menu.")
+            uuid = manual_img["uuid"]
+            channel = manual_img["channel"]
+            data = ImageStorage().get_data(uuid)["data"]
+            if isinstance(data, dict):
+                data = data[channel]
+            self.protein_signal_arr_signal.emit(data)
+        else:
+            print("[Protein Image] Using auto-aligned layer (default).")
+            self.protein_signal_arr_signal.emit(self.protein_signal_array)
+
         self.cell_image_signal.emit(cell_image)  # -> stardist
         data = {}
         for i in range(len(aligned_protein_signal)):
@@ -294,12 +311,13 @@ class Register(QThread):
         result = {}
         result["data"] = data
         layers = list(data.keys())
-        layers.sort()
+        layers = sorted(layers)
         result["layer"] = layers
         moving_uuid = self.storage.get_data("canvas_uuid")
         assert moving_uuid is not None, "No canvas UUID found"
         moving_uuid = moving_uuid["value"]
         result["uuid"] = moving_uuid
+
         self.alignment_complete.emit(
             result,
             aligned_protein_signal[self.params["alignment_layer"]][
@@ -307,74 +325,322 @@ class Register(QThread):
             ],
             alignment_layer[: self.params["max_size"], : self.params["max_size"]],
         )
-        print("total aa none", total_aa_none)
-        print("total sr none", total_sr_none)
-        print("total", total)
+        if self._handle_cancel():
+            return
         self.progress.emit(100, "Alignment Done")
 
-    def align_two_img(self, param):
+    def find_points(self, image, min_circularity=0.5, top_k=500):
+        image = to_uint8(image.copy())
+        image = cv2.GaussianBlur(image, (3, 3), 0)  # Reduce noise
+        thresh = cv2.adaptiveThreshold(
+            image,
+            255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY,
+            blockSize=11,
+            C=2,
+        )
+        contours, _ = cv2.findContours(
+            thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+        # Use a min-heap to keep top_k largest area centers
+        heap = []
+        for cnt in contours:
+            area = cv2.contourArea(cnt)
+            perimeter = cv2.arcLength(cnt, True)
+            if perimeter == 0:
+                continue
+            circularity = 4 * np.pi * area / (perimeter**2)
+            if circularity >= min_circularity:
+                M = cv2.moments(cnt)
+                if M["m00"] != 0:
+                    cx = int(M["m10"] / M["m00"])
+                    cy = int(M["m01"] / M["m00"])
+                    # Push to heap as (area, (cx, cy))
+                    if len(heap) < top_k:
+                        heapq.heappush(heap, (area, (cx, cy)))
+                    else:
+                        heapq.heappushpop(heap, (area, (cx, cy)))
+        # Extract centers from heap, sorted by area descending
+        top_centers = [center for _, center in sorted(heap, reverse=True)]
+        return np.array(top_centers)
 
-        # def convert_to_rgb_image(array_2d):
-        #     normalized_array = (array_2d - np.min(array_2d)) / (np.max(array_2d) - np.min(array_2d))
-        #     scaled_array = (normalized_array * 255).astype(np.uint8)
-        #     rgb_image = np.stack((scaled_array, scaled_array, scaled_array), axis=-1)
-        #     return rgb_image
+    def find_points_robust(self, img, top_k=500):
+        """Try multiple feature detectors in order of preference"""
+        detectors = [
+            ("ORB", cv2.ORB_create(nfeatures=top_k or 500)),
+            (
+                "CUSTOM",
+                self.find_points(
+                    img, min_circularity=self.min_circularity, top_k=top_k
+                ),
+            ),
+        ]
+        result = {}
+        for name, detector in detectors:
+            if name == "CUSTOM":
+                points = detector
+                result[name] = points
+                continue
+            kp = detector.detect(img, None)
+            if len(kp) >= 10:  # Minimum threshold
+                points = np.array([p.pt for p in kp])
+                result[name] = points
+        return result
 
-        fixed_img, moving_img, ymin, xmin, radius, x, y = param
+    def align_two_img_robust(
+        self,
+        fixed_img,
+        moving_img,
+        ymin,
+        xmin,
+        radius,
+        x,
+        y,
+        tile_id=None,
+        try_astro_align=False,
+    ):
         source = moving_img.copy()
         target = fixed_img.copy()
-
-        source = (
-            np.clip(source, 128, 255) - 128
-        )  # to remove most gradient of background
-        target = (
-            np.clip(target, 128, 255) - 128
-        )  # to remove most gradient of background
-
-        print(target.shape, "target dimension")
-        print(target.dtype, "target dtype")
-        print(target.min(), target.max())
-
-        print(source.shape, "source dimension")
-        print(source.dtype, "source dtype")
-        print(source.min(), source.max())
-
-        transf_previous = None
+        source = self.adjust_contrast(source, 50, 99)
+        target = self.adjust_contrast(target, 50, 99)
+        start_time = time.time()
+        # Strategy 1: Optical flow with multiple scales
+        moving_points = self.find_points_robust(source, top_k=self.max_points)
+        fixed_points = self.find_points_robust(target, top_k=self.max_points)
+        # ncc before
+        ncc_before = calculate_ncc(source, target)
+        # Try optical flow first
+        best_ncc = 0
         transf = None
-        sr = None
-        print("finding alignment")
-        try:
-            transf, _ = aa.find_transform(
-                source, target, detection_sigma=3, min_area=10, max_control_points=150
+        name = ""
+        ncc_after = -1
+        best_registered = source
+        itk_transf = None
+        for key in moving_points:
+            if len(moving_points[key]) < 4 or len(fixed_points[key]) < 4:
+                continue
+            moving_points[key] = moving_points[key][: self.max_points]
+            fixed_points[key] = fixed_points[key][: self.max_points]
+            M, success = self.try_optical_flow_alignment(
+                source, target, moving_points[key], fixed_points[key]
             )
+            if success:
+                assert M is not None, "Optical flow transformation matrix is None"
+                registered = cv2.warpAffine(
+                    source, M, (target.shape[1], target.shape[0])
+                )
+                ncc_after = calculate_ncc(registered, target)
+                assert ncc_after is not None, "NCC after alignment is None"
+                if ncc_after > best_ncc:
+                    name = key
+                    best_registered = registered
+                    best_ncc = ncc_after
+                    transf = M
+                print(
+                    f"Optical flow alignment successful with {key} points, NCC before: {ncc_before}, after: {ncc_after}"
+                )
+        if try_astro_align:
+            try:
+                t, _ = aa.find_transform(
+                    moving_points["CUSTOM"],
+                    fixed_points["CUSTOM"],
+                    detection_sigma=3,
+                    min_area=5,
+                    max_control_points=50,
+                )
+                registered, _ = aa.apply_transform(t, source, target)
+                ncc_after = calculate_ncc(registered, target)
+                assert ncc_after is not None, "NCC after astro alignment is None"
 
-            if self.has_blue:
-                registered, _ = aa.apply_transform(transf, source, target)
-                sr = StackReg(StackReg.AFFINE)
-                sr.register(target, registered)
+                if ncc_after > best_ncc:
+                    best_ncc = ncc_after
+                    transf = t
+                    best_registered = registered
+                    name = "AstroAlign"
+            except Exception as e:
+                print(f"AstroAlign failed: {e}")
 
-        except Exception as e:
-            print("This tile is not aligned!", e)
-            if "transf_previous" in globals():
-                transf = transf_previous
-            else:
-                transf = None  # or some default transformation
-        finally:
-            print(" ")
+        if (
+            best_ncc < 0.5
+        ):  # Only try feature matching if optical flow didn't yield good results
+            M, success = self.try_feature_matching_alignment(source, target)
+            if M is not None and success:
+                registered = cv2.warpAffine(
+                    source, M, (target.shape[1], target.shape[0])
+                )
+                ncc_after = calculate_ncc(registered, target)
+                assert ncc_after is not None, "NCC after feature matching is None"
+                print(
+                    f"Feature matching alignment successful, NCC before: {ncc_before}, after: {ncc_after}"
+                )
+                if ncc_after > best_ncc:
+                    best_ncc = ncc_after
+                    transf = M
+                    name = "SIFT"
+                    best_registered = registered
+        if best_ncc < 0.6:  # If still not good, improve with ITK
+            itk_transf, s, t = self.try_itk_alignment(best_registered, target)
+            if itk_transf is not None:
+                registered = sitk.GetArrayFromImage(
+                    sitk.Resample(
+                        s, t, itk_transf, sitk.sitkLinear, 0.0, s.GetPixelID()
+                    )
+                )
+                ncc_after = calculate_ncc(registered, target)
+                assert ncc_after is not None, "NCC after ITK alignment is None"
+                print(
+                    f"ITK alignment successful, NCC before: {best_ncc}, after: {ncc_after}"
+                )
+                if ncc_after > best_ncc:
+                    best_ncc = ncc_after
+                else:
+                    itk_transf = None
+        return [transf, itk_transf], ymin, xmin, radius, x, y, best_ncc
 
-        transf_previous = transf
+    def try_optical_flow_alignment(self, source, target, moving_points, fixed_points):
+        """Try optical flow with multiple pyramid levels"""
+        if len(moving_points) < 4:
+            return None, False
 
-        if self.has_blue:
-            return [transf, [], sr], ymin, xmin, radius, x, y
+        # Parameters for different scales
+        lk_params = [
+            dict(
+                winSize=(15, 15),
+                maxLevel=2,
+                criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03),
+            ),
+            dict(
+                winSize=(21, 21),
+                maxLevel=3,
+                criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 20, 0.03),
+            ),
+            dict(
+                winSize=(31, 31),
+                maxLevel=4,
+                criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.03),
+            ),
+        ]
+        best_inliers = 0
+        best_M = None
+        moving_points_cv = moving_points.astype(np.float32).reshape(-1, 1, 2)
+        fixed_points_cv = fixed_points.astype(np.float32).reshape(-1, 1, 2)
+        if len(moving_points_cv) > len(fixed_points_cv):
+            moving_points_cv = moving_points_cv[: len(fixed_points_cv)]
         else:
-            return [transf, []], ymin, xmin, radius, x, y
+            fixed_points_cv = fixed_points_cv[: len(moving_points_cv)]
+        for params in lk_params:
+            try:
+                nextPts, status, err = cv2.calcOpticalFlowPyrLK(
+                    source, target, moving_points_cv, fixed_points_cv, **params
+                )
+            except cv2.error as e:
+                print(f"Could not compute optical flow for this level: {params}")
+                continue
+            good_indices = (status.flatten() == 1) & (
+                err.flatten() < 50
+            )  # Error threshold
 
-    def set_blue_clor(self, hasblue) -> bool:
-        if hasblue == "Yes":
-            self.has_blue = True
-        else:
-            self.has_blue = False
-        return self.has_blue
+            if np.sum(good_indices) >= 4:
+                good_moving = moving_points_cv[good_indices][:, 0, :]
+                good_next = nextPts[good_indices][:, 0, :]
+
+                M, inliers = cv2.estimateAffine2D(
+                    good_moving,
+                    good_next,
+                    method=cv2.RANSAC,
+                    ransacReprojThreshold=3.0,
+                    maxIters=100000,
+                    confidence=0.99,
+                )
+                if np.sum(inliers) > best_inliers:
+                    best_inliers = np.sum(inliers)
+                    best_M = M
+
+        return best_M, best_inliers > 0
+
+    def try_feature_matching_alignment(self, source, target):
+        """Use SIFT/ORB feature matching instead of optical flow"""
+        sift = cv2.SIFT_create()
+
+        # Find keypoints and descriptors
+        kp1, des1 = sift.detectAndCompute(source, None)
+        kp2, des2 = sift.detectAndCompute(target, None)
+
+        if des1 is None or des2 is None or len(kp1) < 4 or len(kp2) < 4:
+            return None, False
+
+        # Match features
+        matcher = cv2.FlannBasedMatcher({"algorithm": 1, "trees": 5}, {"checks": 50})
+        matches = matcher.knnMatch(des1, des2, k=2)
+
+        # Filter good matches using Lowe's ratio test
+        good_matches = []
+        for match_pair in matches:
+            if len(match_pair) == 2:
+                m, n = match_pair
+                if m.distance < 0.7 * n.distance:
+                    good_matches.append(m)
+
+        if len(good_matches) < 4:
+            return None, False
+
+        # Extract matched points
+        src_pts = np.float32([kp1[m.queryIdx].pt for m in good_matches]).reshape(
+            -1, 1, 2
+        )
+        dst_pts = np.float32([kp2[m.trainIdx].pt for m in good_matches]).reshape(
+            -1, 1, 2
+        )
+
+        # Estimate transformation with RANSAC
+        M, mask = cv2.estimateAffine2D(
+            src_pts,
+            dst_pts,
+            method=cv2.RANSAC,
+            ransacReprojThreshold=3.0,
+            maxIters=100000,
+            confidence=0.99,
+        )
+
+        return M, M is not None and np.sum(mask) >= 4
+
+    def try_itk_alignment(self, source, target):
+        """Use ITK for image registration"""
+
+        # Convert images to SimpleITK format
+        source_itk = sitk.GetImageFromArray(source)
+        target_itk = sitk.GetImageFromArray(target)
+
+        # Set pixel type to float
+        source_itk = sitk.Cast(source_itk, sitk.sitkFloat32)
+        target_itk = sitk.Cast(target_itk, sitk.sitkFloat32)
+
+        # Initialize registration method
+        registration_method = sitk.ImageRegistrationMethod()
+        registration_method.SetMetricAsCorrelation()
+        # Set initial transform
+        transform_domain_mesh_size = [
+            8,
+            8,
+        ]  # More control points = more flexible deformation
+        bspline_transform = sitk.BSplineTransformInitializer(
+            target_itk, transform_domain_mesh_size
+        )
+
+        registration_method.SetInitialTransform(bspline_transform, inPlace=False)
+        registration_method.SetOptimizerAsLBFGSB(
+            gradientConvergenceTolerance=1e-4,
+            numberOfIterations=30,
+            maximumNumberOfCorrections=5,
+            costFunctionConvergenceFactor=1e6,
+            maximumNumberOfFunctionEvaluations=200,
+        )
+        registration_method.SetInterpolator(sitk.sitkLinear)
+        # Perform registration
+        final_transform = registration_method.Execute(target_itk, source_itk)
+
+        return final_transform, source_itk, target_itk
 
     def set_alignment_layer(self, channel):
         match = re.search(r"\d+", channel)
@@ -466,7 +732,7 @@ class Register(QThread):
 
         # self.exit?
         # self.quit?
-        self.quit()
+        self._is_running = False
 
 
 ############################
