@@ -1,21 +1,24 @@
 import os
-from pyexpat import model
 import uuid
+from calendar import c
+from uuid import UUID
+
 import numpy as np
-from core import ImageStorage, StarDist
-from PyQt6.QtCore import pyqtSignal, QSize, QModelIndex, Qt
-from models.image_list_model import ImageTreeModel, ImageTreeItem
-from core import ImageGraphicsView
+from pyexpat import model
+from PyQt6.QtCore import QModelIndex, QSize, Qt, pyqtSignal
+from PyQt6.QtGui import QAction, QActionGroup
 from PyQt6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QTreeView,
+    QFileDialog,
     QMenu,
     QMessageBox,
-    QFileDialog,
+    QTreeView,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtGui import QAction, QActionGroup
-from uuid import UUID
+
+from core import ImageGraphicsView, ImageStorage, StarDist
+from core.canvas import ReferenceGraphicsView
+from models.image_list_model import ImageTreeItem, ImageTreeModel
 
 
 class Manager(QWidget):
@@ -44,6 +47,10 @@ class Manager(QWidget):
         self.model_stardist = model
         self.image_tree_view.model_stardist = model
 
+    def set_model_reference_canvas(self, model):
+        self.model_reference_canvas = model
+        self.image_tree_view.model_reference_canvas = model
+
     def add_item(self, uuid):
         print("adding item")
         assert self.root_node is not None, "Root node is not initialized"
@@ -52,11 +59,28 @@ class Manager(QWidget):
         assert item is not None, f"No data found for UUID: {uuid}"
         item_data = item["data"]
         channels = item_data.keys()
+        channels = sorted(channels, key=lambda x: int(x.replace("Channel ", "")))
         if len(channels) > 1:
             for channel in channels:
                 channel_item = ImageTreeItem(uuid, channel=channel, useItemName=False)
                 main_item.appendRow(channel_item)
         self.root_node.appendRow(main_item)
+
+    def set_channel_icon(self, uuid, channel):
+        """Set the icon for the channel item"""
+        assert self.root_node is not None, "Root node is not initialized"
+        main_item = self.root_node.child(uuid)
+        if main_item is None:
+            raise ValueError(f"No main item found for UUID: {uuid}")
+        channel_item = main_item.child(channel)
+        assert isinstance(
+            channel_item, ImageTreeItem
+        ), "Channel item is not an instance of ImageTreeItem"
+        if channel_item is None:
+            raise ValueError(
+                f"No channel item found for UUID: {uuid} and channel: {channel}"
+            )
+        channel_item.set_icon()
 
     def add_to_storage(self, uuid, obj):
         self.storage.add_data(uuid, obj)
@@ -79,7 +103,8 @@ class ImageTreeWidget(QTreeView):
         self.storage = ImageStorage()
         self._model_canvas = None
         self._model_stardist = None
-        self.doubleClicked.connect(self.display_image)
+        self._model_reference_canvas = None
+        self.doubleClicked.connect(self.show_on_canvas)
 
     @property
     def model_canvas(self):
@@ -90,6 +115,14 @@ class ImageTreeWidget(QTreeView):
         self._model_canvas = value
 
     @property
+    def model_reference_canvas(self):
+        return self._model_reference_canvas
+
+    @model_reference_canvas.setter
+    def model_reference_canvas(self, value: ReferenceGraphicsView):
+        self._model_reference_canvas = value
+
+    @property
     def model_stardist(self):
         return self._model_stardist
 
@@ -97,7 +130,7 @@ class ImageTreeWidget(QTreeView):
     def model_stardist(self, value: StarDist):
         self._model_stardist = value
 
-    def display_image(self, item):
+    def show_on_canvas(self, item):
         assert self.model_canvas is not None, "model_canvas is not set"
         model_canvas = self.model_canvas
         channel, my_uuid = self._name_and_uuid_from_item(item, tooltip=True)
@@ -110,6 +143,13 @@ class ImageTreeWidget(QTreeView):
                 my_uuid, as_new_image=False, target_channel=channel
             )
 
+    def show_on_reference_canvas(self, uuid: UUID, channel: int):
+        assert (
+            self.model_reference_canvas is not None
+        ), "model_reference_canvas is not set"
+        cname = f"Channel {channel + 1}"
+        self.model_reference_canvas.add_to_canvas(uuid, cname)
+
     def contextMenuEvent(self, event):  # type: ignore
         menu = QMenu(self)
         item = self.indexAt(event.pos())
@@ -119,6 +159,10 @@ class ImageTreeWidget(QTreeView):
             is_leaf = self._is_leaf(item)
             set_reference = QAction("Reference")
             set_cell_image = QAction("Cell Image")
+            set_protein_data_image = QAction("Set as Protein Data Image")
+            set_protein_data_image.triggered.connect(
+                lambda: self.set_as_protein_data_image(uuid, is_leaf, channel)
+            )
 
             set_tissue_target_image = QAction("Tissue Target Image")
             set_tissue_unaligned_image = QAction("Tissue Unaligned Image")
@@ -126,7 +170,7 @@ class ImageTreeWidget(QTreeView):
             save_as_tiff = QAction("Save as TIF")
 
             set_reference.triggered.connect(
-                lambda: self.show_message("reference selected")
+                lambda: self.show_on_reference_canvas(uuid, channel)
             )
             set_cell_image.triggered.connect(lambda: self.set_for_stardist(item))
             set_tissue_target_image.triggered.connect(
@@ -178,7 +222,6 @@ class ImageTreeWidget(QTreeView):
                     channel_group.addAction(action)
                     set_default_channel.addAction(action)
                 menu.addMenu(set_default_channel)
-                menu.addAction(save_as_tiff)
                 menu.addAction(delete)
             else:
                 set_reference.setText("Set as Reference")
@@ -187,10 +230,18 @@ class ImageTreeWidget(QTreeView):
                 set_tissue_unaligned_image.setText("Set as Tissue Unaligned Image")
                 menu.addAction(set_reference)
                 menu.addAction(set_cell_image)
+                menu.addAction(set_protein_data_image)
                 menu.addAction(set_tissue_target_image)
                 menu.addAction(set_tissue_unaligned_image)
 
+            menu.addAction(save_as_tiff)
             menu.exec(event.globalPos())
+
+    def set_as_protein_data_image(self, i_uuid: UUID, is_leaf: bool, channel: int):
+        self.storage.add_data(
+            "protein_data_image", {"uuid": i_uuid, "channel": channel}
+        )
+        self.show_message("Set as Protein Data Image")
 
     def set_for_stardist(self, item):
         assert isinstance(self.model_stardist, StarDist), "model_stardist is not set"

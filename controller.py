@@ -1,21 +1,24 @@
 """Class to handle signal connections"""
 
-import numpy as np
-from ui.alignment.alignment_preview_dialog import AlignmentPreviewDialog
-from PyQt6.QtWidgets import QFileDialog, QMessageBox
-from PyQt6.QtGui import QPixmap
-from PyQt6.QtCore import pyqtSignal, QObject
-from PIL import Image
+import os
+import typing
 import uuid
+
+import numpy as np
+from PIL import Image
+from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtGui import QPixmap
+from PyQt6.QtWidgets import QFileDialog, QMessageBox
+
 from core import (
-    StarDist,
-    Register,
     CellIntensity,
-    ReferenceGraphicsView,
     ImageGraphicsView,
     ImageWrapper,
+    ReferenceGraphicsView,
+    Register,
+    StarDist,
 )
-import typing
+from ui.alignment.alignment_preview_dialog import AlignmentPreviewDialog
 
 if typing.TYPE_CHECKING:
     from ui.app import Ui_MainWindow
@@ -75,6 +78,7 @@ class Controller:
     def __init__(self, app: "Ui_MainWindow"):
         self._initialized = True
         self.image_count = 0
+        self.prev_tab_index = 0
         self.model_canvas = ImageGraphicsView(self)
         self.model_stardist = StarDist()
         self.model_register = Register()
@@ -84,6 +88,7 @@ class Controller:
         self.open_files_dialog = None
         self.view.images_tab.set_model_canvas(self.model_canvas)
         self.view.images_tab.set_model_stardist(self.model_stardist)
+        self.view.images_tab.set_model_reference_canvas(self.reference_view)
         self.signal_manager = SignalConnectionManager(self)
         self.signal_manager.setup_all_connections()
         self.storage = self.view.images_tab.storage
@@ -100,6 +105,7 @@ class Controller:
             self._handle_aligned_image
         )
         self.model_register.alignment_complete.connect(self._handle_aligned_image)
+        self.model_register.error.connect(self.handle_error)
 
     def handle_error(self, error_message):
         QMessageBox.critical(self.view, "Error", error_message)
@@ -126,12 +132,9 @@ class Controller:
 
     def control_save(self):
 
-        pm = self.model_canvas.pixmap
-        print(pm)
+        im = self.model_canvas.image_wrapper.data
         # qimage = pm.toImage()
-        if pm is not None:
-            im = self.pixmap_to_image(pm)
-
+        if im is not None:
             file_name, _ = QFileDialog.getSaveFileName(
                 None, "Save File", "image.png", "*.png;;*.jpg;;*.tif;; All Files(*)"
             )
@@ -161,10 +164,10 @@ class Controller:
     # add new image to storage
     def handle_new_image(self, data, file_name):
         storage_item = {}
-        storage_item["name"] = file_name.split("/")[-1]
+        storage_item["name"] = os.path.basename(file_name)
         self.image_count += 1
+
         storage_item["data"] = data
-        print(data)
         my_uuid = str(uuid.uuid4())
         self.view.images_tab.add_to_storage(my_uuid, storage_item)
         self.model_canvas.set_uuid(my_uuid)
@@ -172,8 +175,9 @@ class Controller:
 
     def handle_new_reference_image(self, data, file_name):
         storage_item = {}
-        storage_item["name"] = file_name.split("/")[-1]
+        storage_item["name"] = os.path.basename(file_name)
         self.image_count += 1
+
         storage_item["data"] = data
         my_uuid = str(uuid.uuid4())
         self.view.images_tab.add_to_storage(my_uuid, storage_item)
@@ -215,20 +219,29 @@ class Controller:
         result = preview_dialog.exec()
         return result == 1 and preview_dialog.result_accepted
 
-    def handle_tab_change(self, index):
-        if index == 2:
-            self.view.view_tab.process_images()
-            self.view.canvas.pixmap_item.hide()
-            self.view.canvas.view_pixmap_item.show()
-        elif index == 0 or index == 1:
+    def need_canvas_change(self, new_index):
+        if self.prev_tab_index == 2 and new_index != 2:
+            if self.view.canvas.pixmap_item.isVisible():
+                return
+            self.view.canvas.pixmap_item.show()
+            self.view.canvas.view_pixmap_item.hide()
             if self.model_canvas.uuid:
-                print("swappign channel")
+                print("swapping channel")
                 self.model_canvas.swap_channel(self.model_canvas.current_channel)
             else:
                 print("clearing canvas")
                 self.model_canvas.clear_canvas()
-            self.view.canvas.pixmap_item.show()
-            self.view.canvas.view_pixmap_item.hide()
+        elif self.prev_tab_index != 2 and new_index == 2:
+            self.view.view_tab.process_images()
+            self.view.canvas.pixmap_item.hide()
+            self.view.canvas.view_pixmap_item.show()
+
+    def handle_tab_change(self, index):
+        self.need_canvas_change(index)
+        self.prev_tab_index = index
+
+    def handle_cancel_registration(self):
+        self.model_register.cancel()
 
 
 class SignalConnectionManager:
@@ -325,24 +338,24 @@ class SignalConnectionManager:
         self.c.model_canvas.fill_metadata.connect(self.c.view.get_metadata)
 
         # Crop visibility toggle
-        self.c.model_canvas.crop_signal.connect(
-            lambda x: self.c.view.small_view.setVisible(not x)
-        )
+        # self.c.model_canvas.crop_signal.connect(
+        #     lambda x: self.c.view.small_view.setVisible(not x)
+        # )
 
     def _setup_crop_connections(self):
         """Crop operation connections"""
         self.c.view.crop_groupbox.crop_button.triggered.connect(
             self.c.view.canvas.start_crop_mode
         )
-        self.c.view.crop_groupbox.crop_button.triggered.connect(
-            lambda: self.c.view.small_view.setVisible(False)
-        )
+        # self.c.view.crop_groupbox.crop_button.triggered.connect(
+        #     lambda: self.c.view.small_view.setVisible(False)
+        # )
         self.c.view.crop_groupbox.cancel_crop_button.triggered.connect(
             self.c.view.canvas.cancel_crop_mode
         )
-        self.c.view.crop_groupbox.cancel_crop_button.triggered.connect(
-            lambda: self.c.view.small_view.setVisible(True)
-        )
+        # self.c.view.crop_groupbox.cancel_crop_button.triggered.connect(
+        #     lambda: self.c.view.small_view.setVisible(True)
+        # )
 
     def _setup_transform_connections(self):
         """Image transformation connections"""
@@ -400,11 +413,12 @@ class SignalConnectionManager:
         self.c.view.stardist_groupbox.stardist_run_button.pressed.connect(
             self.c.model_stardist.run_stardist
         )
+        self.c.model_stardist.stardist_done.connect(self.c.model_canvas.add_to_canvas)
         self.c.model_stardist.stardist_done.connect(
-            self.c.model_canvas.load_stardist_labels
+            lambda x, y, z: self.c.model_canvas.load_stardist_labels(x)
         )
         self.c.model_stardist.stardist_done.connect(
-            self.c.model_cell_intensity.load_stardist_labels
+            lambda x, y, z: self.c.model_canvas.load_stardist_labels(x)
         )
         self.c.model_stardist.error_signal.connect(self.c.handle_error)
         self.c.model_stardist.progress.connect(self.c.view.update_progress_bar)
@@ -436,9 +450,6 @@ class SignalConnectionManager:
         self.c.view.register_groupbox.num_tiles.valueChanged.connect(
             self.c.model_register.set_num_tiles
         )
-        self.c.view.register_groupbox.has_blue_color.currentTextChanged.connect(
-            self.c.model_register.set_blue_clor
-        )
 
         # Execution
         self.c.view.register_groupbox.run_button.clicked.connect(
@@ -452,7 +463,7 @@ class SignalConnectionManager:
         )
         self.c.model_register.progress.connect(self.c.view.update_progress_bar)
         self.c.view.register_groupbox.cancel_button.clicked.connect(
-            self.c.model_register.cancel
+            self.c.handle_cancel_registration
         )
 
         # Results
