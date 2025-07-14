@@ -67,7 +67,7 @@ class StarDist(QThread):
             try:
                 self.run()
             except Exception as e:
-                self._critical_error(f"StarDist Error: {str(e)}")
+                self._fatal_error_message(f"StarDist Error: {str(e)}")
                 return
             self.finished.connect(self.quit)
             self.finished.connect(self.deleteLater)
@@ -75,28 +75,17 @@ class StarDist(QThread):
         print("here")
 
     def __get_cell_image(self):
-        if self.aligned:
-            return self.cell_image
-        elif self.protein_channels is None and self.np_image:
+        if self.protein_channels is None and self.np_image:
             return self.np_image
         elif self.protein_channels and self.np_image is None:
             return self.protein_channels[self.params["channel"]].data
 
-    def _critical_error(self, message):
-        self.error_signal.emit(message)
-        self.progress.emit(100, "Error")
-        self.terminate()
-
     def run(self):
         cell_image = self.__get_cell_image()
         if cell_image is None:
-            self._fatal_error_message("No image to process")
+            self._fatal_error_message("No cell image available for processing")
             return
         assert isinstance(cell_image, np.ndarray), "cell_image must be a numpy array"
-
-        if cell_image is None:
-            self._critical_error("No cell image available for processing")
-            return
 
         # adjusted = cv.convertScaleAbs(cell_image, alpha=(255.0/65535.0))
 

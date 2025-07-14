@@ -16,13 +16,17 @@ Typical usage involves setting the required data (stardist labels, bead data, co
 then calling generateCellIntensityTable() to compute and save the results.
 """
 
-from PyQt6.QtCore import pyqtSignal, QThread
-from PyQt6.QtWidgets import QFileDialog
-import numpy as np
-import cv2 as cv
-import pandas as pd
 import itertools
+
+import cv2 as cv
+import numpy as np
+import pandas as pd
+import stardist
+from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtWidgets import QFileDialog
+
 from core import ImageWrapper
+from core.canvas import ImageStorage
 
 
 class CellIntensity(QThread):
@@ -42,15 +46,45 @@ class CellIntensity(QThread):
         self.color_code = None
         self.stardist_labels = None
         self.df_cell_data = None
+        self.storage = ImageStorage()
+        self.protein_signal_array = None
+
+    def load_protein_signal_array_from_storage(self, uuid, channel):
+        c = "Channel " + str(channel + 1)
+        item = self.storage.get_data(uuid)
+        assert item is not None, "item not found in storage"
+        data = item.get("data", None)
+        assert data is not None, "data not found in storage item"
+        if (
+            self.protein_signal_array is not None
+            and (self.protein_signal_array == data[c].data).all()
+        ):
+            print("protein signal array is unchanged, skipping reload")
+            return
+        self.protein_signal_array = data[c].data
+        print("loaded protein signal array from storage")
 
     def load_protein_signal_array(self, arr):
+        print("loaded protein signal array")
+        if (
+            self.protein_signal_array is not None
+            and (self.protein_signal_array == arr).all()
+        ):
+            print("protein signal array is unchanged, skipping reload")
+            return
         self.protein_signal_array = arr
 
     def generate_cell_intensity_table(self):
-
+        self.progress.emit(0, "Starting Cell Intensity...")
+        if self.isRunning():
+            self.critical_error("Cell Intensity Calculation is already running")
+            return
         self.start()
-        self.finished.connect(self.quit)
-        self.finished.connect(self.deleteLater)
+
+    def critical_error(self, msg):
+        self.error_signal.emit(msg)
+        self.progress.emit(100, "Error encountered, see message")
+        return
 
     def run(self):
 
@@ -60,9 +94,16 @@ class CellIntensity(QThread):
             or self.bead_data is None
             or self.color_code is None
         ):
-            self.error_signal.emit("Please select all necessary parameters")
+            err_msg = "Missing: "
+            if self.stardist_labels is None:
+                err_msg += "stardist labels, "
+            if self.bead_data is None:
+                err_msg += "bead data, "
+            if self.color_code is None:
+                err_msg += "color code, "
+            err_msg = err_msg.rstrip(", ")  # remove trailing comma
+            self.critical_error(err_msg)
             return
-
         else:
 
             # calculate all possible combinations to id the protein, for 4 colors and 2 cycles, it would be 4^2 = 16 combinations
@@ -113,7 +154,19 @@ class CellIntensity(QThread):
             # radius_fg = self.params["radius_fg"]
             max_size = self.params["max_size"]
             # radius = radius_bg - radius_fg
-
+            # filter out beads that are not within bounds of stardist_labels
+            x_limit, y_limit = (
+                self.stardist_labels.shape[1],
+                self.stardist_labels.shape[0],
+            )
+            print("before filtering", data_modified.shape)
+            data_modified = [
+                bead
+                for bead in data_modified
+                if bead[0] < x_limit and bead[1] < y_limit
+            ]
+            data_modified = np.array(data_modified)
+            print("after filtering", data_modified.shape)
             for i, bead in enumerate(data_modified):
                 progress_update = int(((i + 1) / len(data_modified)) * 100)
                 self.progress.emit(
@@ -276,19 +329,22 @@ class CellIntensity(QThread):
                 save_this, columns=header
             )  # --> use this to visualize
             self.progress.emit(100, "Cell Data is Generated")
-            self.save_cell_data()
+            # self.save_cell_data()
+            return
 
+    # !TODO: need to implement checking if self.isInterruptionRequested() inside run()
     def cancel(self):
-        self.terminate()
+        self.requestInterruption()
 
     def save_cell_data(self):
+        print("saving cell data")
         file_name, _ = QFileDialog.getSaveFileName(
             None, "Save Cell Data File", "cell_data.csv", "*.csv;;*.xlsx;; All Files(*)"
         )
-        if not self.df_cell_data is None:
+        if self.df_cell_data is not None:
             self.df_cell_data.to_csv(file_name, index=False)
         else:
-            self.error_signal.emit("Cannot save. Cell data not available")
+            self.critical_error("Cannot save. No cell data available")
 
     def find_nearest_neighbor(self, query_point, data_points):
         """
