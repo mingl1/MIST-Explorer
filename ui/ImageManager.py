@@ -94,6 +94,7 @@ class Manager(QWidget):
 class ImageTreeWidget(QTreeView):
     tissue_target_selected = pyqtSignal(UUID, bool, int)
     tissue_unaligned_selected = pyqtSignal(UUID, bool, int)
+    protein_data = pyqtSignal(UUID, int)
     item_deleted = pyqtSignal(
         UUID
     )  # !TODO: implement this to make all other components reset to default if the deleted item is currently being used
@@ -241,7 +242,7 @@ class ImageTreeWidget(QTreeView):
         self.storage.add_data(
             "protein_data_image", {"uuid": i_uuid, "channel": channel}
         )
-        self.show_message("Set as Protein Data Image")
+        self.protein_data.emit(i_uuid, channel)
 
     def set_for_stardist(self, item):
         assert isinstance(self.model_stardist, StarDist), "model_stardist is not set"

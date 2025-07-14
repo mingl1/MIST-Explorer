@@ -267,12 +267,6 @@ class SignalConnectionManager:
 
     def _setup_alignment_connections(self):
         """Alignment section signal connections"""
-        # self.c.view.images_tab.tissue_target_selected.connect(
-        #     self.c.view.cell_layer_alignment.set_target_image
-        # )
-        # self.c.view.images_tab.tissue_unaligned_selected.connect(
-        #     self.c.view.cell_layer_alignment.set_unaligned_image
-        # )
         self.c.view.cell_layer_alignment.alignmentCompleteSignal.connect(
             self.c.handle_new_image
         )
@@ -418,7 +412,7 @@ class SignalConnectionManager:
             lambda x, y, z: self.c.model_canvas.load_stardist_labels(x)
         )
         self.c.model_stardist.stardist_done.connect(
-            lambda x, y, z: self.c.model_canvas.load_stardist_labels(x)
+            lambda x, y, z: self.c.model_cell_intensity.load_stardist_labels(x)
         )
         self.c.model_stardist.error_signal.connect(self.c.handle_error)
         self.c.model_stardist.progress.connect(self.c.view.update_progress_bar)
@@ -470,6 +464,11 @@ class SignalConnectionManager:
 
     def _setup_cell_intensity_connections(self):
         """Cell intensity-related connections"""
+
+        self.c.view.images_tab.image_tree_view.protein_data.connect(
+            self.c.model_cell_intensity.load_protein_signal_array_from_storage
+        )
+
         self.c.view.cellIntensity_groupbox.bead_data.clicked.connect(
             self.c.view.cellIntensity_groupbox.loadBeadData
         )
