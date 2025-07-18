@@ -83,12 +83,12 @@ class Controller:
         self.model_stardist = StarDist()
         self.model_register = Register()
         self.model_cell_intensity = CellIntensity()
-        self.reference_view = ReferenceGraphicsView()
+        self.model_reference_canvas = ReferenceGraphicsView()
         self.view = app
         self.open_files_dialog = None
         self.view.images_tab.set_model_canvas(self.model_canvas)
         self.view.images_tab.set_model_stardist(self.model_stardist)
-        self.view.images_tab.set_model_reference_canvas(self.reference_view)
+        self.view.images_tab.set_model_reference_canvas(self.model_reference_canvas)
         self.signal_manager = SignalConnectionManager(self)
         self.signal_manager.setup_all_connections()
         self.storage = self.view.images_tab.storage
@@ -98,7 +98,7 @@ class Controller:
         if initial_args["image"] is not None:
             self.model_canvas.add_to_canvas(initial_args["image"])
         if initial_args["reference"] is not None:
-            self.reference_view.add_to_canvas(initial_args["reference"])
+            self.model_reference_canvas.add_to_canvas(initial_args["reference"])
 
         # self.need_preview_alignment.connect(self._handle_aligned_image)
         self.view.cell_layer_alignment.aligner.aligned_image_signal.connect(
@@ -156,7 +156,7 @@ class Controller:
             viewer.add_to_canvas(file_name)
 
     def on_action_reference_triggered(self):
-        self.open_file_dialog(self.reference_view)
+        self.open_file_dialog(self.model_reference_canvas)
 
     def on_action_open_triggered(self):
         self.open_file_dialog(self.model_canvas)
@@ -181,20 +181,30 @@ class Controller:
         storage_item["data"] = data
         my_uuid = str(uuid.uuid4())
         self.view.images_tab.add_to_storage(my_uuid, storage_item)
-        self.reference_view.set_uuid(my_uuid)
+        self.model_reference_canvas.set_uuid(my_uuid)
         self.view.images_tab.add_item(my_uuid)
 
     def _handle_aligned_image(self, aligned_data, target_small, aligned_small):
         """Handle the aligned image result"""
         # Show the preview dialog
-        confirmed = self._show_preview_dialog(target_small, aligned_small)
-        if confirmed:
-            aligned_image = aligned_data["data"]
+        snapshot = {
+            "target_image": target_small,
+            "aligned_image": aligned_small,
+            "metadata": {
+                "preview_target_shape": target_small.shape,
+                "preview_aligned_shape": aligned_small.shape,
+            },
+        }
+        preview_dialog = AlignmentPreviewDialog(snapshot, can_edit=True)
+
+        def handle_accepted_image(moving_image):
+            """Handle the moving image change in the preview dialog"""
+            aligned_image = moving_image
             item_uuid = aligned_data["uuid"]
             layer = aligned_data["layer"]
             item = self.storage.get_data(item_uuid)
             assert item is not None, "Aligned image data not found in storage"
-            data = item["data"]
+            data = item["data"].copy()
             filename = item["name"]
             if isinstance(layer, list):
                 assert len(aligned_data["data"].keys()) == len(
@@ -209,13 +219,23 @@ class Controller:
                 wrapped_image = ImageWrapper(aligned_image, layer)
                 aligned_name = f"Aligned_{filename}"
                 data[layer] = wrapped_image
-            # self.alignmentCompleteSignal.emit(data, aligned_name)
             self.model_canvas.add_to_canvas(data, True, aligned_name)
+
+        preview_dialog.moving_image_changed.connect(handle_accepted_image)
+        result = preview_dialog.exec()
 
     def _show_preview_dialog(self, target_small, aligned_small):
         """Show the preview dialog with red/green overlay"""
         # Use the downscaled images for the preview dialog
-        preview_dialog = AlignmentPreviewDialog(target_small, aligned_small)
+        snapshot = {
+            "target_image": target_small,
+            "aligned_image": aligned_small,
+            "metadata": {
+                "preview_target_shape": target_small.shape,
+                "preview_aligned_shape": aligned_small.shape,
+            },
+        }
+        preview_dialog = AlignmentPreviewDialog(snapshot, can_edit=True)
         result = preview_dialog.exec()
         return result == 1 and preview_dialog.result_accepted
 
@@ -308,21 +328,24 @@ class SignalConnectionManager:
         """Image loading and display connections"""
         self.c.view.canvas.image_dropped.connect(self.c.model_canvas.add_to_canvas)
         self.c.view.small_view.image_dropped.connect(
-            self.c.reference_view.add_to_canvas
+            self.c.model_reference_canvas.add_to_canvas
         )
-        self.c.reference_view.update_reference.connect(self.c.view.small_view.display)
-        self.c.model_canvas.new_image_added.connect(self.c.view.canvas.add_new_image)
+        self.c.model_reference_canvas.update_reference.connect(
+            self.c.view.small_view.display
+        )
+        self.c.model_canvas.update_canvas.connect(self.c.view.canvas.update_canvas)
         self.c.view.view_tab.change_pix.connect(self.c.view.canvas.update_canvas)
-        self.c.model_canvas.canvas_updated.connect(self.c.view.canvas.update_canvas)
+        # self.c.model_canvas.canvas_updated.connect(self.c.view.canvas.update_canvas)
         self.c.model_canvas.update_manager.connect(self.c.handle_new_image)
-        self.c.reference_view.update_manager.connect(self.c.handle_new_reference_image)
+        self.c.model_reference_canvas.update_manager.connect(
+            self.c.handle_new_reference_image
+        )
 
     def _setup_canvas_connections(self):
         """Canvas-related signal connections"""
         self.c.model_canvas.update_progress.connect(self.c.view.update_progress_bar)
         self.c.model_canvas.error_signal.connect(self.c.handle_error)
         self.c.view.canvas.show_crop.connect(self.c.model_canvas.crop)
-        # self.c.model_canvas.cropSignal.connect(self.c.view.canvas.set_crop_status)
         self.c.model_canvas.update_cmap.connect(
             self.c.view.toolBarUI.update_cmap_selector
         )
@@ -331,25 +354,14 @@ class SignalConnectionManager:
         )
         self.c.model_canvas.fill_metadata.connect(self.c.view.get_metadata)
 
-        # Crop visibility toggle
-        # self.c.model_canvas.crop_signal.connect(
-        #     lambda x: self.c.view.small_view.setVisible(not x)
-        # )
-
     def _setup_crop_connections(self):
         """Crop operation connections"""
         self.c.view.crop_groupbox.crop_button.triggered.connect(
             self.c.view.canvas.start_crop_mode
         )
-        # self.c.view.crop_groupbox.crop_button.triggered.connect(
-        #     lambda: self.c.view.small_view.setVisible(False)
-        # )
         self.c.view.crop_groupbox.cancel_crop_button.triggered.connect(
             self.c.view.canvas.cancel_crop_mode
         )
-        # self.c.view.crop_groupbox.cancel_crop_button.triggered.connect(
-        #     lambda: self.c.view.small_view.setVisible(True)
-        # )
 
     def _setup_transform_connections(self):
         """Image transformation connections"""
@@ -408,9 +420,9 @@ class SignalConnectionManager:
             self.c.model_stardist.run_stardist
         )
         self.c.model_stardist.stardist_done.connect(self.c.model_canvas.add_to_canvas)
-        self.c.model_stardist.stardist_done.connect(
-            lambda x, y, z: self.c.model_canvas.load_stardist_labels(x)
-        )
+        # self.c.model_stardist.stardist_done.connect(
+        #     lambda x, y, z: self.c.model_canvas.load_stardist_labels(x)
+        # )
         self.c.model_stardist.stardist_done.connect(
             lambda x, y, z: self.c.model_cell_intensity.load_stardist_labels(x)
         )
@@ -468,6 +480,9 @@ class SignalConnectionManager:
         self.c.view.images_tab.image_tree_view.protein_data.connect(
             self.c.model_cell_intensity.load_protein_signal_array_from_storage
         )
+        self.c.view.images_tab.image_tree_view.stardist_label.connect(
+            self.c.model_cell_intensity.load_stardist_labels_from_storage
+        )
 
         self.c.view.cellIntensity_groupbox.bead_data.clicked.connect(
             self.c.view.cellIntensity_groupbox.loadBeadData
@@ -480,12 +495,6 @@ class SignalConnectionManager:
         )
         self.c.view.cellIntensity_groupbox.emitColorCode.connect(
             self.c.model_cell_intensity.get_color_code
-        )
-        self.c.view.cellIntensity_groupbox.num_cycles.valueChanged.connect(
-            self.c.model_cell_intensity.set_num_decoding_cycles
-        )
-        self.c.view.cellIntensity_groupbox.num_layers_each.valueChanged.connect(
-            self.c.model_cell_intensity.set_num_decoding_colors
         )
         self.c.view.cellIntensity_groupbox.radius_fg.valueChanged.connect(
             self.c.model_cell_intensity.set_radius_fg
@@ -517,9 +526,13 @@ class SignalConnectionManager:
         image_signal.connect(self.c.view.gaussian_blur.updateChannelSelector)
         image_signal.connect(self.c.model_register.update_moving_image)
 
-        ref_image = self.c.reference_view.image_signal
+        ref_image = self.c.model_reference_canvas.image_signal
         ref_image.connect(self.c.model_register.update_reference_channels)
         ref_image.connect(self.c.view.small_view.load_channels)
+
+        deleted_uuid_signal = self.c.view.images_tab.image_tree_view.item_deleted
+        deleted_uuid_signal.connect(self.c.model_canvas.remove_from_canvas)
+        deleted_uuid_signal.connect(self.c.model_reference_canvas.remove_from_canvas)
 
     def _setup_misc_connections(self):
         """Miscellaneous connections"""

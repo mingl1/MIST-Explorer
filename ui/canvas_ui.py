@@ -161,8 +161,6 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.add_arrows()
-        self.position_arrows()
 
     def is_empty(self) -> bool:
         return self.pixmap_item is None
@@ -293,12 +291,8 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         # self.slideshow()  # Initialize arrows
 
         self.pixmap = pixmap
-        if not hasattr(self, "pixmapItem") or self.pixmap_item is None:
-            self.pixmap_item = QGraphicsPixmapItem(self.pixmap)
-            scene.addItem(self.pixmap_item)
-        else:
-            print("setting pixmap")
-            self.pixmap_item.setPixmap(self.pixmap)
+        self.pixmap_item = QGraphicsPixmapItem(self.pixmap)
+        scene.addItem(self.pixmap_item)
 
         print("has np channels")
         # Scale arrows appropriately;  !TODO, this should be done dynamically and repositioned dynamically
@@ -307,8 +301,9 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         item_rect = self.pixmap_item.boundingRect()
         self.setSceneRect(item_rect)
         self.fitInView(self.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
-        self.add_arrows()
-        self.position_arrows()
+        if self.pixmap.width() > 0:
+            self.add_arrows()
+            self.position_arrows()
 
     def add_arrows(self):
         """Add navigation arrows to the scene"""
@@ -608,11 +603,6 @@ class ImageGraphicsViewUI(QGraphicsView):
                 self.pixmap_item.setPixmap(pixmap)
             self.__centerImage()
 
-    def add_new_image(self, pixmapItem: QGraphicsPixmapItem):
-        """Update the pixmap of the existing image or add a new one"""
-        self.pixmap_item.setPixmap(pixmapItem.pixmap())
-        self.__centerImage()
-
     def __centerImage(self):
         pixmap_item = (
             self.pixmap_item if self.pixmap_item.isVisible() else self.view_pixmap_item
@@ -651,11 +641,11 @@ class ImageGraphicsViewUI(QGraphicsView):
         zooming_out = event.angleDelta().y() > 0
 
         # Prevent excessive zooming in either direction
-        if self.zoom > 1.1**90 and zooming_out:  # Max zoom out
-            return
+        # if self.zoom > 1.1**2 and zooming_out:  # Max zoom out
+        #     return
 
-        if self.zoom < 1 / (1.1**2) and not zooming_out:  # Max zoom in
-            return
+        # if self.zoom < 1 / (1.1**20) and not zooming_out:
+        #     return
         # if self.reference_view:
         #     self.reference_view.wheelEvent(event)
         zoom_factor = 1.1 if zooming_out else 0.9
@@ -877,7 +867,10 @@ class ImageGraphicsViewUI(QGraphicsView):
 
             x = int(image_pos.x())
             y = int(image_pos.y())
-            img = self.pixmap_item.pixmap().toImage()
+            if self.view_pixmap_item.isVisible():
+                img = self.view_pixmap_item.pixmap().toImage()
+            else:
+                img = self.pixmap_item.pixmap().toImage()
 
             # Show pixel info in tooltip
             if 0 <= x < img.width() and 0 <= y < img.height():

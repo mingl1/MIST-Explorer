@@ -57,11 +57,11 @@ class StarDist(QThread):
         print("system: ", system)
         print("tensorflow version: ", tf.__version__)
         gpu = len(tf.config.list_physical_devices("GPU")) > 0
-        if gpu:
-            device_name = tf.test.gpu_device_name()
-            print("gpu name: ", device_name)
-        else:
-            device_name = "/CPU:0"
+        # if gpu:
+        #     device_name = tf.test.gpu_device_name()
+        #     print("gpu name: ", device_name)
+        # else:
+        device_name = "/CPU:0"
 
         with tf.device(device_name):
             try:

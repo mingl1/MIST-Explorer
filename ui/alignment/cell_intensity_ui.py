@@ -54,24 +54,6 @@ class CellIntensityUI(QWidget):
         self.color_code_layout.addWidget(self.color_code_label)
         self.cellintensity_components_vlayout.addLayout(self.color_code_layout)
 
-        # num cycles
-        self.num_cycles_layout = QHBoxLayout()
-        self.num_cycles_label = QLabel(self.cell_intensity_groupbox)
-        self.num_cycles_layout.addWidget(self.num_cycles_label)
-        self.num_cycles = QSpinBox(self.cell_intensity_groupbox)
-        self.num_cycles.setProperty("value", 3)
-        self.num_cycles_layout.addWidget(self.num_cycles)
-        self.cellintensity_components_vlayout.addLayout(self.num_cycles_layout)
-
-        # num layers each
-        self.num_layers_each_layout = QHBoxLayout()
-        self.num_layers_each_label = QLabel(self.cell_intensity_groupbox)
-        self.num_layers_each_layout.addWidget(self.num_layers_each_label)
-        self.num_layers_each = QSpinBox(self.cell_intensity_groupbox)
-        self.num_layers_each.setProperty("value", 3)
-        self.num_layers_each_layout.addWidget(self.num_layers_each)
-        self.cellintensity_components_vlayout.addLayout(self.num_layers_each_layout)
-
         # radius fg
         self.radius_fg_layout = QHBoxLayout()
         self.radius_fg_label = QLabel(self.cell_intensity_groupbox)
@@ -152,12 +134,6 @@ class CellIntensityUI(QWidget):
         self.bead_data.setText(_translate("MainWindow", "Open Bead Data"))
         self.radius_fg_label.setText(_translate("MainWindow", "Radius fg"))
         self.radius_bg_label.setText(_translate("MainWindow", "Radius bg"))
-        self.num_cycles_label.setText(
-            _translate("MainWindow", "Number of decoding cycles")
-        )
-        self.num_layers_each_label.setText(
-            _translate("MainWindow", "Number of decoding colors")
-        )
         self.run_button.setText(_translate("MainWindow", "Run"))
         self.save_button.setText(_translate("MainWindow", "Save"))
         self.cancel_button.setText(_translate("MainWindow", "Cancel"))

@@ -21,9 +21,10 @@ import itertools
 import cv2 as cv
 import numpy as np
 import pandas as pd
-import stardist
 from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtWidgets import QFileDialog
+from scipy.spatial import KDTree
+from skimage.measure import regionprops
 
 from core import ImageWrapper
 from core.canvas import ImageStorage
@@ -44,9 +45,10 @@ class CellIntensity(QThread):
         }
 
         self.color_code = None
-        self.stardist_labels = None
+        self.stardist_labels = np.array([], dtype=np.uint8)
         self.df_cell_data = None
         self.storage = ImageStorage()
+        self.bead_data = None
         self.protein_signal_array = None
 
     def load_protein_signal_array_from_storage(self, uuid, channel):
@@ -55,24 +57,30 @@ class CellIntensity(QThread):
         assert item is not None, "item not found in storage"
         data = item.get("data", None)
         assert data is not None, "data not found in storage item"
-        if (
-            self.protein_signal_array is not None
-            and (self.protein_signal_array == data[c].data).all()
-        ):
-            print("protein signal array is unchanged, skipping reload")
-            return
-        self.protein_signal_array = data[c].data
+
+        self.load_protein_signal_array(data[c].data)
         print("loaded protein signal array from storage")
+
+    def load_stardist_labels_from_storage(self, uuid, channel):
+        item = self.storage.get_data(uuid)
+        assert item is not None, "item not found in storage"
+        data = item.get("data", None)
+        assert data is not None, "data not found in storage item"
+        c = "Channel " + str(channel + 1)
+        stardist_labels = data[c]
+        self.load_stardist_labels(stardist_labels)
+        print("loaded stardist labels from storage")
 
     def load_protein_signal_array(self, arr):
         print("loaded protein signal array")
-        if (
-            self.protein_signal_array is not None
-            and (self.protein_signal_array == arr).all()
-        ):
-            print("protein signal array is unchanged, skipping reload")
-            return
+        # if (
+        #     self.protein_signal_array is not None
+        #     and (self.protein_signal_array == arr).all()
+        # ):
+        #     print("protein signal array is unchanged, skipping reload")
+        #     return
         self.protein_signal_array = arr
+        self.blur_and_set_protein_layer()
 
     def generate_cell_intensity_table(self):
         self.progress.emit(0, "Starting Cell Intensity...")
@@ -86,6 +94,36 @@ class CellIntensity(QThread):
         self.progress.emit(100, "Error encountered, see message")
         return
 
+    def compute_all_centroids(self):
+        """
+        Compute centroids for all unique labels in the mask (excluding 0).
+        Returns a dict: {label: (cx, cy)}
+        """
+        centroids = {}
+        m = np.max(self.stardist_labels)
+        for region in regionprops(self.stardist_labels):
+            progress = int((region.label / m) * 100)
+            self.progress.emit(
+                progress,
+                f"Finding centroid for cell {region.label}/{m}",
+            )
+            cy, cx = region.centroid
+            centroids[region.label] = (int(cx), int(cy))
+        return centroids
+
+    def infer_params(self):
+        # Infer the number of decoding colors and cycles from the bead data and color code if not explicitly set
+        assert isinstance(self.color_code, pd.DataFrame)
+        self.params["num_decoding_cycles"] = (
+            self.color_code.columns.size - 1
+        )  # minus 1 for protein name column
+
+        color_code_np = self.color_code.iloc[:, 1:].to_numpy()
+        max_color_value = np.max(color_code_np)
+        self.params["num_decoding_colors"] = (
+            max_color_value + 1
+        )  # assuming colors are 0-indexed
+
     def run(self):
 
         # need the aligned and segmented cell image, bead_data, and color_code
@@ -93,6 +131,7 @@ class CellIntensity(QThread):
             self.stardist_labels is None
             or self.bead_data is None
             or self.color_code is None
+            or self.protein_signal_array is None
         ):
             err_msg = "Missing: "
             if self.stardist_labels is None:
@@ -101,30 +140,25 @@ class CellIntensity(QThread):
                 err_msg += "bead data, "
             if self.color_code is None:
                 err_msg += "color code, "
+            if self.protein_signal_array is None:
+                err_msg += "protein signal array, "
             err_msg = err_msg.rstrip(", ")  # remove trailing comma
             self.critical_error(err_msg)
             return
         else:
-
             # calculate all possible combinations to id the protein, for 4 colors and 2 cycles, it would be 4^2 = 16 combinations
             # then, for each combination, convert it to index. So for example, 16 combinations would be indexed 0 to 15.
-            possible_value_of_layers = list(
-                range(0, self.params["num_decoding_colors"])
-            )
-            all_protein_permutations = [
-                "".join([str(x) for x in p])
+            self.infer_params()
+            print("Inferred params:", self.params)
+            possible_values = list(range(self.params["num_decoding_colors"]))
+            all_perms = [
+                "".join(map(str, p))
                 for p in itertools.product(
-                    possible_value_of_layers, repeat=self.params["num_decoding_cycles"]
+                    possible_values, repeat=self.params["num_decoding_cycles"]
                 )
             ]
-            color_code_to_index = {
-                int(k): i for i, k in enumerate(all_protein_permutations)
-            }  # convert to int for faster access in numpy
-
-            # and the inverse to go from array index -> protein
-            index_to_color_code = {
-                value: int(key) for key, value in color_code_to_index.items()
-            }
+            color_code_to_index = {int(k): i for i, k in enumerate(all_perms)}
+            index_to_color_code = {v: k for k, v in color_code_to_index.items()}
 
             # This is the structure created. For example, cell image with three unique labels + 5 proteins would look like this:
             # {
@@ -132,28 +166,21 @@ class CellIntensity(QThread):
             # 2: [[], [], [], [], []],
             # 3: [[], [], [], [], []]
             #     }
-            cell_data_dict = {}
             num_proteins = len(color_code_to_index)
-            for cell_id in range(1, np.max(self.stardist_labels) + 1):
-                cell_data_dict[cell_id] = []
-                for i in range(num_proteins):
-                    cell_data_dict[cell_id].append([])
-
+            max_cell_id = np.max(self.stardist_labels)
+            cell_data_dict = {
+                cell_id: [[] for _ in range(num_proteins)]
+                for cell_id in range(1, max_cell_id + 1)
+            }
+            cycle_cols = self.bead_data[:, 2 : 2 + self.params["num_decoding_cycles"]]
             data_modified = np.zeros((len(self.bead_data), 3))
             data_modified[:, 0:2] = self.bead_data[:, 0:2].astype("uint16")
             data_modified[:, 2] = np.array(
-                [
-                    "".join(
-                        str(x) for x in bead[2 : 2 + self.params["num_decoding_cycles"]]
-                    )
-                    for bead in self.bead_data
-                ]
-            )  # join all columns into a list of strings and convert to an nparray
+                [int("".join(map(str, map(int, bead)))) for bead in cycle_cols]
+            )
 
             radius_bg = self.params["radius_bg"]
-            # radius_fg = self.params["radius_fg"]
             max_size = self.params["max_size"]
-            # radius = radius_bg - radius_fg
             # filter out beads that are not within bounds of stardist_labels
             x_limit, y_limit = (
                 self.stardist_labels.shape[1],
@@ -167,110 +194,122 @@ class CellIntensity(QThread):
             ]
             data_modified = np.array(data_modified)
             print("after filtering", data_modified.shape)
-            for i, bead in enumerate(data_modified):
-                progress_update = int(((i + 1) / len(data_modified)) * 100)
-                self.progress.emit(
-                    progress_update,
-                    f"Adjusting bead intensity {i+1}/{len(data_modified)}",
+            # --- Replace your entire 'for' loop with this block ---
+
+            self.progress.emit(25, "Finding beads within cells...")
+
+            # --- 1. Vectorized Lookup and Filtering ---
+
+            # Get all bead coordinates (assuming x is column 0, y is column 1)
+            # Ensure they are integers for indexing
+            bead_xs = data_modified[:, 0].astype(int)
+            bead_ys = data_modified[:, 1].astype(int)
+
+            # Get the cell ID for every bead in a single, fast operation
+            # This is the core of the vectorization!
+            cell_ids_for_beads = self.stardist_labels[bead_ys, bead_xs]
+
+            # --- 2. Create Boolean Masks for All Conditions ---
+
+            # Mask 1: Beads that are inside any cell (ID > 0)
+            in_cell_mask = cell_ids_for_beads > 0
+
+            # Mask 2: Beads that are within the processing boundaries
+            # (This prevents errors in get_adjusted_median_intensity)
+            in_bounds_mask = (
+                (bead_xs > radius_bg)
+                & (bead_ys > radius_bg)
+                & (bead_xs < (max_size - radius_bg))
+                & (bead_ys < (max_size - radius_bg))
+            )
+
+            # --- 3. Combine Masks ---
+            # The final mask identifies beads that satisfy ALL conditions
+            valid_bead_mask = in_cell_mask & in_bounds_mask
+
+            # --- 4. Filter the Data ---
+            # Create a much smaller array containing only the beads we need to process
+            valid_beads = data_modified[valid_bead_mask]
+            valid_cell_ids = cell_ids_for_beads[valid_bead_mask]
+
+            # --- 5. Loop Over the SMALLER Filtered Dataset ---
+            self.progress.emit(50, f"Processing {len(valid_beads)} valid beads...")
+
+            # This loop is much faster because it runs only on the subset of relevant beads
+            for i, bead in enumerate(valid_beads):
+                # Only update progress occasionally
+                if i % 1000 == 0:
+                    self.progress.emit(
+                        50
+                        + int((i / len(valid_beads)) * 25),  # Progress from 50% to 75%
+                        f"Adjusting bead intensity {i+1}/{len(valid_beads)}",
+                    )
+
+                bead_x, bead_y, color_code = int(bead[0]), int(bead[1]), bead[2]
+
+                # We already know this bead is in a cell, so we get its ID
+                cell_associated_id = valid_cell_ids[i]
+
+                # The expensive calculation is only called for valid beads
+                adjusted_median_intensity = self.get_adjusted_median_intensity(
+                    bead_x, bead_y
                 )
-                bead_x, bead_y = bead[0:2]
-                bead_x, bead_y = int(bead_x), int(bead_y)
-                cell_associated_id = self.stardist_labels[bead_y, bead_x]
 
-                # 0 is the background :)
-                if cell_associated_id != 0:
-                    color_code = bead[2]
-                    # bounds checking
-                    if (
-                        bead_x > radius_bg
-                        and bead_y > radius_bg
-                        and bead_x < (max_size - radius_bg)
-                        and bead_y < (max_size - radius_bg)
-                    ):
-                        # if True:
-                        # see function above
-                        adjusted_median_intensity = self.get_adjusted_median_intensity(
-                            bead_x, bead_y
-                        )
+                protein_idx = color_code_to_index.get(color_code)
+                if protein_idx is not None and adjusted_median_intensity is not None:
+                    cell_data_dict[cell_associated_id][protein_idx].append(
+                        adjusted_median_intensity
+                    )
 
-                        # get the specific cell and protein of interest and append the adjusted median intensity
-                        cell_data_dict[cell_associated_id][
-                            color_code_to_index[color_code]
-                        ].append(adjusted_median_intensity)
-
-            # group every bead location (x,y) by the color code index (protein)
-            beads_split_by_protein = {}
-            for i, key in enumerate(color_code_to_index):
-                beads_split_by_protein[i] = data_modified[data_modified[:, 2] == key][
-                    :, 0:2
-                ]
-
+            # group every bead location (x,y) by the color code index (protein), store in KDTree for efficient nearest neighbor search
+            protein_kdtree_map = {}
+            for i in range(num_proteins):
+                protein_code = index_to_color_code.get(i)
+                if protein_code is not None:
+                    protein_beads = data_modified[data_modified[:, 2] == protein_code][
+                        :, 0:2
+                    ].astype(int)
+                    if len(protein_beads) > 0:
+                        protein_kdtree_map[i] = KDTree(protein_beads)
             # find centerpoint of every cell
-            cell_centroids = {}
-            for i, cell_id in enumerate(cell_data_dict):
-                progress_update = int(((i + 1) / len(cell_data_dict)) * 100)
-                self.progress.emit(
-                    progress_update,
-                    f"Finding center point of cell {i+1}/{len(cell_data_dict)}",
-                )
-                cell_centroids[cell_id] = self.find_centerpoint_of_cell(cell_id)
 
+            cell_centroids = self.compute_all_centroids()
+
+            # find how many are different
             print("Finding values for cells with incomplete protein profiles")
-            for i, cell_id in enumerate(cell_data_dict):
+            for i, cell_id in enumerate(cell_data_dict.keys()):
+                cell_center = cell_centroids[cell_id]
                 progress_update = int(((i + 1) / len(cell_data_dict)) * 100)
                 self.progress.emit(
                     progress_update,
                     f"Finding values for cells with incomplete protein profiles {i+1}/{len(cell_data_dict)}",
                 )
-
-                # we can find the number of beads for any given protein for any cell by counting the beads that have a median intensity
-                num_beads_each_protein_each_cell = [
-                    len(x) for x in cell_data_dict[cell_id]
-                ]
-
-                if 0 in num_beads_each_protein_each_cell:
-                    # if theres a 0 in that array, it means some protein DOES NOT have a bead for that protein
-                    # in that case, we take this conditional and we need to find the nearest bead with that protein
-                    proteins_index = [
-                        i if val == 0 else -1
-                        for i, val in enumerate(num_beads_each_protein_each_cell)
-                    ]
-
-                    # keep the indices where the value != -1, this means it is missing protein
-                    missing_proteins = list(filter(lambda x: x != -1, proteins_index))
-
-                    # get cell centroid for step below
-                    cell_center_x, cell_center_y = cell_centroids[cell_id]
-                    # then we search for the nearest neighbor, in the pre-filtered array (see above)
-                    # this pre-filtered array contains only beads of the same protein as is missing.
-                    # we of course repeat this for every protein that is missing.
-                    for missing_protein_index in missing_proteins:
-                        # find the nearest neighbor to centroid (within the filtered list)
-                        # beads_split_by_protein[missing_protein_index] returns the list of bead locations with the specific protein
-                        cell_protein_nn_x, cell_protein_nn_y = (
-                            self.find_nearest_neighbor(
-                                [cell_center_x, cell_center_y],
-                                beads_split_by_protein[missing_protein_index],
-                            )
-                        )
-                        # cell_protein_nn_x, cell_protein_nn_y = int(cell_protein_nn_x), int(cell_protein_nn_y)
-                        # store in cell dict, as normal
-                        if (
-                            cell_protein_nn_x > radius_bg
-                            and cell_protein_nn_y > radius_bg
-                            and cell_protein_nn_x < (max_size - radius_bg)
-                            and cell_protein_nn_y < (max_size - radius_bg)
-                        ):
-                            adjusted_median_intensity = (
-                                self.get_adjusted_median_intensity(
-                                    cell_protein_nn_x, cell_protein_nn_y
+                for protein_idx, intensities in enumerate(cell_data_dict[cell_id]):
+                    if (
+                        not intensities
+                    ):  # If no beads were found for this protein of cell_id
+                        kdtree = protein_kdtree_map.get(protein_idx)
+                        if kdtree:  # Check if a tree was successfully built
+                            _, index = kdtree.query(cell_center)
+                            nn_x, nn_y = kdtree.data[index]
+                            if (
+                                nn_x > radius_bg
+                                and nn_y > radius_bg
+                                and nn_x < (max_size - radius_bg)
+                                and nn_y < (max_size - radius_bg)
+                            ):
+                                adjusted_intensity = self.get_adjusted_median_intensity(
+                                    int(nn_x), int(nn_y)
                                 )
-                            )
-                            cell_data_dict[cell_id][missing_protein_index].append(
-                                adjusted_median_intensity
-                            )
-
-            # use the median value for intensity for each protein in each cell.
+                                if adjusted_intensity is not None:
+                                    cell_data_dict[cell_id][protein_idx].append(
+                                        adjusted_intensity
+                                    )
+                # use the median value for intensity for each protein in each cell.
+            self.progress.emit(
+                0,
+                f"Finishing Up",
+            )
             median_values_for_cell_data_dict = {}
 
             # set up as before for `cell_data_dict`
@@ -287,17 +326,29 @@ class CellIntensity(QThread):
                 ]
 
                 median_values_for_cell_data_dict[cell_id] = array_of_subarrays_medians
-
-            # drop rows with NaN that pandas includes for some reason lol
-            assert isinstance(self.color_code, pd.DataFrame)
-            self.color_code = self.color_code.dropna(how="all", axis=1).dropna(
-                how="all", axis=0
+            self.progress.emit(
+                25,
+                f"Finishing Up",
             )
-            self.color_code = self.color_code.to_numpy()
-
+            # drop rows with NaN that pandas includes for some reason lol
+            # assert isinstance(self.color_code, pd.DataFrame)
+            try:
+                self.color_code = self.color_code.dropna(how="all", axis=1).dropna(
+                    how="all", axis=0
+                )
+            except Exception as e:
+                self.color_code = pd.DataFrame(self.color_code)
+                self.color_code = self.color_code.dropna(how="all", axis=1).dropna(
+                    how="all", axis=0
+                )
+            color_code = self.color_code.to_numpy()
+            self.progress.emit(
+                50,
+                f"Finishing Up",
+            )
             # lets us go from code -> protein i.e. 112 -> Fox3 or whatever
             color_code_translation_dict = {}
-            for row in self.color_code:
+            for row in color_code:
                 try:
                     protein_name = row[0]
                     code = int("".join([str(int(x)) for x in row[1:]]))
@@ -317,7 +368,10 @@ class CellIntensity(QThread):
                     header.append(readable_protein_name)
                 else:
                     header.append("N/A")
-
+            self.progress.emit(
+                75,
+                f"Finishing Up",
+            )
             # Now get all the data out of the subarrays
             save_this = np.array(
                 [v for k, v in median_values_for_cell_data_dict.items()]
@@ -345,56 +399,6 @@ class CellIntensity(QThread):
             self.df_cell_data.to_csv(file_name, index=False)
         else:
             self.critical_error("Cannot save. No cell data available")
-
-    def find_nearest_neighbor(self, query_point, data_points):
-        """
-        Calculate the Euclidean distance from the query point to each data point and returns the point of the minimum distance
-
-        :param query_point: a list containing two elements corresponding to the x and y coordinates of the cell center
-        :param data_point: a list containing the x, y coordinates of beads that has the specific protein
-
-        :returns: A tuple of two elements corresponding to the x, y coordinates of the nearest neighbor
-        :rtype: tuple of (int, int)
-        """
-        # Calculate the Euclidean distance from the query point to each data point
-        distances = np.linalg.norm(data_points - query_point, axis=1)
-        # Find the index of the nearest neighbor
-        nearest_index = np.argmin(distances)
-        # Return the nearest neighbor point
-        x_nn, y_nn = data_points[nearest_index]
-        return int(x_nn), int(y_nn)
-
-    def find_centerpoint_of_cell(self, cell_id):
-        """
-        Calculate the centerpoint for a given cell by calculating the momen
-        This method uses **image moments** to calculate the center of a contour in a binary image.
-        The **image moments** are statistical properties that can be used to find the centroid (center of mass) of a contour.
-
-        The function:
-        1. Finds the contours in the input image using OpenCV's `cv.findContours` function.
-        2. Calculates the **moments** for each contour using `cv.moments`.
-        3. Computes the **centroid** (cx, cy) using the first-order moments (m10, m01) divided by the zero-order moment (m00).
-
-        :param cell_id: the label for the cell
-        :type cell_id: int
-
-        :returns: A tuple of two elements corresponding to the x, y coordinates of the centerpoint
-        :rtype: tuple of (int, int)
-        """
-        # get just the cell with the label given
-        just_cell_id_stardist_labels = (self.stardist_labels == cell_id).astype("uint8")
-        # standard centroid finding with cv.findContours
-        contours, _ = cv.findContours(
-            just_cell_id_stardist_labels, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE
-        )
-        cx, cy = -1, -1
-        for contour in contours:
-            moment = cv.moments(contour)
-            if moment["m00"] != 0:
-                cx = int(moment["m10"] / moment["m00"])
-                cy = int(moment["m01"] / moment["m00"])
-        assert cx != -1 and cy != -1, "Centroid not found"
-        return (cx, cy)
 
     def get_adjusted_median_intensity(self, bead_x, bead_y, bead_median_threshold=5000):
         """
@@ -471,6 +475,10 @@ class CellIntensity(QThread):
         return 0.8266 * x + 3970.1
 
     def load_stardist_labels(self, stardist: ImageWrapper) -> None:
+        print("stardist label dtype:", stardist.data.dtype)
+        print(
+            "stardist label max and min", np.max(stardist.data), np.min(stardist.data)
+        )
         self.stardist_labels = stardist.data
 
     def get_bead_data(self, bead_data):
@@ -481,14 +489,21 @@ class CellIntensity(QThread):
         if isinstance(color_code, pd.DataFrame):
             self.color_code = color_code
 
-    def set_num_decoding_cycles(self, value):
-        self.params["num_decoding_cycles"] = value
-
-    def set_num_decoding_colors(self, value):
-        self.params["num_decoding_colors"] = value
-
     def set_radius_fg(self, value):
         self.params["radius_fg"] = value
 
     def set_radius_bg(self, value):
         self.params["radius_bg"] = value
+
+    def blur_and_set_protein_layer(self, blur_percentage=1):
+        """
+        Applies Gaussian blur to the 4th layer (index 3) of the image stack and subtracts
+        the specified percentage of the blurred image from the original.
+        """
+        layer4 = self.protein_signal_array
+        blurred_mask = cv.GaussianBlur(layer4, (101, 101), 0)
+        blurred_mask_adjusted = (blurred_mask * blur_percentage).astype(np.uint16)
+        corrected_layer4 = cv.subtract(layer4, blurred_mask_adjusted)
+        corrected_layer4 = np.clip(corrected_layer4, 0, 65535).astype(np.uint16)
+        self.protein_signal_array = corrected_layer4
+        return True
