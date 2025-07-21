@@ -901,7 +901,7 @@ class ImageGraphicsView(BaseGraphicsView):
         self.reset_pixmap = None
         self.reset_pixmap_item = None
         self.working_channels = {}
-        self.reset_np_channels = {}
+        self.reset_working_channels = {}
         self.current_channel = 0
         self.image_cache = {}
         self.lut_cache = {}
@@ -927,6 +927,7 @@ class ImageGraphicsView(BaseGraphicsView):
         self.image_wrapper = self.working_channels.get(
             channel_num, ImageWrapper(np.array([]), "")
         )
+        self.current_channel = index
         if len(self.image_wrapper.data) == 0:
             print("no data, background worker still workin")
             self._background_worker.finished.connect(lambda: self.swap_channel(index))
@@ -1161,8 +1162,6 @@ class ImageGraphicsView(BaseGraphicsView):
         self.working_channels = {}
         self.reset_working_channels = {}
         self._store_channel_data(channel_name, img.data)
-        # self.working_channels[channel_name] = img
-        # self.reset_np_channels[channel_name] = img.copy()
         self.image_wrapper = img
         display_image = self._prepare_display_image(img.data)
         emit_data[channel_name] = display_image
@@ -1186,9 +1185,9 @@ class ImageGraphicsView(BaseGraphicsView):
 
     def reset_image(self):
         """resets the image to original state"""
-        if len(self.reset_np_channels):
+        if len(self.reset_working_channels):
 
-            self.working_channels = copy.deepcopy(self.reset_np_channels)
+            self.working_channels = copy.deepcopy(self.reset_working_channels)
             self.image_signal.emit(self.working_channels, False)
 
             channel_num = f"Channel {self.current_channel + 1}"
@@ -1220,8 +1219,8 @@ class ImageGraphicsView(BaseGraphicsView):
 
             updated_w = int((h * sin) + (w * cos))
             updated_h = int((h * cos) + (w * sin))
-            max_w = self.reset_np_channels[channel_num].data.shape[1]
-            max_h = self.reset_np_channels[channel_num].data.shape[0]
+            max_w = self.reset_working_channels[channel_num].data.shape[1]
+            max_h = self.reset_working_channels[channel_num].data.shape[0]
             max_side = max(max_w, max_h)
             max_side *= np.sqrt(2)  # ensure it fits after rotation
             max_side = int(max_side)
@@ -1263,7 +1262,7 @@ class ImageGraphicsView(BaseGraphicsView):
             self.image_wrapper = self.working_channels.get(
                 f"Channel {self.current_channel + 1}", ImageWrapper(np.array([]), "")
             )
-            self.image_cache.clear()  # Clear cache to force redraw
+            self._clear_caches()
             self.update_image()
         else:
             raise RuntimeError("Rotation failed")
@@ -1412,7 +1411,7 @@ class ImageGraphicsView(BaseGraphicsView):
         self.image_wrapper = self.working_channels.get(
             f"Channel {self.current_channel + 1}", ImageWrapper(np.array([]), "")
         )
-        self.image_cache.clear()
+        self._clear_caches()
         self.set_pixmap(self.image_wrapper.data)
         print("Image flipped horizontally")
 
@@ -1426,7 +1425,7 @@ class ImageGraphicsView(BaseGraphicsView):
         self.image_wrapper = self.working_channels.get(
             f"Channel {self.current_channel + 1}", ImageWrapper(np.array([]), "")
         )
-        self.image_cache.clear()
+        self._clear_caches()
         self.set_pixmap(self.image_wrapper.data)
         print("Image flipped vertically")
 

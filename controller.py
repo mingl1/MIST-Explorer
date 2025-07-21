@@ -195,7 +195,13 @@ class Controller:
                 "preview_aligned_shape": aligned_small.shape,
             },
         }
-        preview_dialog = AlignmentPreviewDialog(snapshot, can_edit=True)
+        is_align_arrays = isinstance(aligned_data["layer"], list)
+        if is_align_arrays:
+            preview_dialog = AlignmentPreviewDialog(
+                snapshot, can_edit=False, can_emit=True
+            )
+        else:
+            preview_dialog = AlignmentPreviewDialog(snapshot, can_edit=True)
 
         def handle_accepted_image(moving_image):
             """Handle the moving image change in the preview dialog"""
@@ -211,9 +217,9 @@ class Controller:
                     layer
                 ), "Aligned data keys do not match the expected layers"
                 data = {}
-                for l in layer:
-                    wrapped_image = ImageWrapper(aligned_image[l], l)
-                    data[l] = wrapped_image
+                for L in layer:
+                    wrapped_image = ImageWrapper(aligned_data["data"][L], L)
+                    data[L] = wrapped_image
                 aligned_name = "Registered_" + filename
             else:
                 wrapped_image = ImageWrapper(aligned_image, layer)
