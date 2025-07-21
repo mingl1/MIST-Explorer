@@ -3,29 +3,26 @@ Expose main classes and functions for easy import from the core package
 """
 
 from .canvas import (
-    MemoryEfficientImageCache,
+    ImageGraphicsView,
     ImageStorage,
     ImageWrapper,
-    ReferenceGraphicsView,
-    ImageGraphicsView,
+    MemoryEfficientImageCache,
     MetaData,
+    ReferenceGraphicsView,
 )
 from .cell_intensity import CellIntensity
 from .cell_layer_alignment import (
     CellLayerAligner,
     calculate_alignment_metrics,
-    register_combination,
-    morph_open,
-    extract_itk_transform_matrix,
-    extract_itk_transform_matrix_verbose,
-    create_preprocessing_matrix,
     combine_transforms,
+    create_preprocessing_matrix,
     extract_complete_transformation,
-    apply_combined_transform,
+    morph_open,
+    register_combination,
 )
 from .register import Register, TileMap
-from .Worker import Worker
 from .stardist import StarDist
+from .Worker import Worker
 
 __all__ = [
     "MemoryEfficientImageCache",
@@ -39,12 +36,9 @@ __all__ = [
     "calculate_alignment_metrics",
     "register_combination",
     "morph_open",
-    "extract_itk_transform_matrix",
-    "extract_itk_transform_matrix_verbose",
     "create_preprocessing_matrix",
     "combine_transforms",
     "extract_complete_transformation",
-    "apply_combined_transform",
     "Register",
     "TileMap",
     "Worker",

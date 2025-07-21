@@ -4,6 +4,7 @@ from calendar import c
 from uuid import UUID
 
 import numpy as np
+import stardist
 from pyexpat import model
 from PyQt6.QtCore import QModelIndex, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QActionGroup
@@ -95,6 +96,7 @@ class ImageTreeWidget(QTreeView):
     tissue_target_selected = pyqtSignal(UUID, bool, int)
     tissue_unaligned_selected = pyqtSignal(UUID, bool, int)
     protein_data = pyqtSignal(UUID, int)
+    stardist_label = pyqtSignal(UUID, int)
     item_deleted = pyqtSignal(
         UUID
     )  # !TODO: implement this to make all other components reset to default if the deleted item is currently being used
@@ -167,6 +169,7 @@ class ImageTreeWidget(QTreeView):
 
             set_tissue_target_image = QAction("Tissue Target Image")
             set_tissue_unaligned_image = QAction("Tissue Unaligned Image")
+            set_stardist_label = QAction("StarDist Label")
 
             save_as_tiff = QAction("Save as TIF")
 
@@ -179,6 +182,9 @@ class ImageTreeWidget(QTreeView):
             )
             set_tissue_unaligned_image.triggered.connect(
                 lambda: self.set_as_tissue_unaligned(uuid, is_leaf, channel)
+            )
+            set_stardist_label.triggered.connect(
+                lambda: self.set_as_stardist_label(uuid, is_leaf, channel)
             )
 
             save_as_tiff.triggered.connect(lambda: self.save_as(item, "tif"))
@@ -223,19 +229,23 @@ class ImageTreeWidget(QTreeView):
                     channel_group.addAction(action)
                     set_default_channel.addAction(action)
                 menu.addMenu(set_default_channel)
-                menu.addAction(delete)
             else:
                 set_reference.setText("Set as Reference")
                 set_cell_image.setText("Set as Cell Image")
                 set_tissue_target_image.setText("Set as Tissue Target Image")
                 set_tissue_unaligned_image.setText("Set as Tissue Unaligned Image")
+                set_stardist_label.setText("Set as StarDist Label")
                 menu.addAction(set_reference)
                 menu.addAction(set_cell_image)
                 menu.addAction(set_protein_data_image)
                 menu.addAction(set_tissue_target_image)
                 menu.addAction(set_tissue_unaligned_image)
-
-            menu.addAction(save_as_tiff)
+            model_item = model.itemFromIndex(item)
+            assert model_item is not None, "Item is None"
+            # only add delete & save as tiff action if the item is a root item
+            if model_item.parent() is None:
+                menu.addAction(delete)
+                menu.addAction(save_as_tiff)
             menu.exec(event.globalPos())
 
     def set_as_protein_data_image(self, i_uuid: UUID, is_leaf: bool, channel: int):
@@ -255,7 +265,7 @@ class ImageTreeWidget(QTreeView):
     def show_message(self, message):
         QMessageBox.information(self, "Selection", message)
 
-    def delete_item(self, index: QModelIndex):
+    def delete_item(self, index):
         model = self.model()
         assert isinstance(model, ImageTreeModel), "Model is not set"
         item = model.itemFromIndex(index)
@@ -327,3 +337,7 @@ class ImageTreeWidget(QTreeView):
     def set_as_tissue_unaligned(self, i_uuid: UUID, is_leaf: bool, channel: int):
         """Set the selected image as the tissue unaligned image for alignment"""
         self.tissue_unaligned_selected.emit(i_uuid, is_leaf, channel)
+
+    def set_as_stardist_label(self, i_uuid: UUID, is_leaf: bool, channel: int):
+        """Set the selected image as the StarDist label image for alignment"""
+        self.stardist_label.emit(i_uuid, channel)

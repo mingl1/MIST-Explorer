@@ -1,21 +1,24 @@
-import pandas as pd
-import numpy as np
 import os
 import threading
+
+import numpy as np
+import pandas as pd
 import tifffile as tiff
+from numpy.typing import NDArray
+from PyQt6.QtCore import QTimer
 
 from controller import Controller
 from core.canvas import ImageWrapper
-from numpy.typing import NDArray
-from PyQt6.QtCore import QTimer
 from utils import create_lut
 
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+import os
+
+import cv2
+from numba import njit
 from PIL import Image
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
-import cv2
-import os
-from numba import njit
+
 from core import Worker
 
 Image.MAX_IMAGE_PIXELS = None
@@ -154,27 +157,27 @@ def tint_grayscale_image(grayscale_image, color):
 
 
 import os
-import numpy as np
 
+import numpy as np
 import qtrangeslider
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QColor, QImage, QPixmap
 from PyQt6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QLabel,
-    QSlider,
-    QHBoxLayout,
-    QGroupBox,
-    QFormLayout,
-    QScrollArea,
-    QSizePolicy,
-    QPushButton,
-    QListWidget,
-    QListWidgetItem,
     QDialog,
     QDialogButtonBox,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QSlider,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QImage, QPixmap, QColor
 
 
 def scale_image_to_255(image_array):
@@ -284,11 +287,11 @@ def adjust_contrast(img, min=5, max=100):
 
 
 from PyQt6.QtWidgets import (
+    QGraphicsItem,
+    QGraphicsPixmapItem,
+    QGraphicsScene,
     QGraphicsView,
     QRubberBand,
-    QGraphicsScene,
-    QGraphicsPixmapItem,
-    QGraphicsItem,
 )
 
 
@@ -353,13 +356,10 @@ class ImageOverlay(QWidget):
         return reduced_cell_img
 
     def load_df(self):
-        if self.df_path == None:
-            if self.req_df() == "":
-                raise ValueError("Need to load protein data first.")
-            else:
-                assert self.df_path is not None
-        if self.loaded_df is not None:
-            return self.loaded_df
+        if self.req_df() == "":
+            raise ValueError("Need to load protein data first.")
+        else:
+            assert self.df_path is not None
         df = None
         if self.df_path.endswith("csv"):
             df = pd.read_csv(self.df_path)
@@ -441,9 +441,10 @@ class ImageOverlay(QWidget):
         reduced_cell_img = (self.load_stardist_image()).astype(np.uint16)
         self.reduced_cell_img = reduced_cell_img
 
-        df = self.load_df()
+        df = self.loaded_df
+        if df is None:
+            return
         self.df = df
-
         end = time.time()
 
         print("TOTAL TIME ", end - start)
@@ -487,7 +488,6 @@ class ImageOverlay(QWidget):
         self.export_tif_button.setVisible(True)
         self.export_png_button.setVisible(True)
 
-
         return (ims, layer_names)
 
     def get_layer_values_at(self, x, y):
@@ -515,8 +515,8 @@ class ImageOverlay(QWidget):
 
         self.enc.analysis_tab.view_index = 0
 
-        while self.enc.analysis_tab.deleteLater():
-            pass
+        # while self.enc.analysis_tab.deleteLater():
+        #     pass
 
         # for i in range(len(self. )):
         #     self.delete_layer(0)
@@ -538,7 +538,6 @@ class ImageOverlay(QWidget):
             self.add_other_image_button.setVisible(False)
             self.export_tif_button.setVisible(False)
             self.export_png_button.setVisible(False)
-
 
     def initUI(self):
         main_layout = QVBoxLayout()
@@ -796,7 +795,6 @@ class ImageOverlay(QWidget):
                 combined_image.tobytes(), width, height, QImage.Format.Format_RGB888
             )  # interesting image.tobytes() works well, maybe you don't need to do
             q_pixmap = QPixmap(q_image)
-
             self.change_pix.emit(q_pixmap, True)
 
     def add_layer_controls(self, c):
@@ -944,12 +942,11 @@ class ImageOverlay(QWidget):
 
         q_image = numpy_to_qimage(combined_image)
         q_pixmap = QPixmap(q_image)
-
         # commented out
         if display:
             self.change_pix.emit(q_pixmap, True)
         return combined_image
-    
+
     def export_to_png(self):
         combined_image = self.process_images(False)
         if combined_image is None:
@@ -961,7 +958,6 @@ class ImageOverlay(QWidget):
             return
         img = Image.fromarray(combined_image)
         img.save(file_name)
-
 
     def export_to_tif(self):
         if len(self.controls) == 0:

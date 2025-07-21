@@ -818,6 +818,18 @@ class BaseGraphicsView(QWidget):
         self.image_cache.clear()
         self.lut_cache.clear()
 
+    def remove_from_canvas(self, uuid: uuid.UUID):
+        """Remove a specific channel from the canvas."""
+        if str(self.uuid) == str(uuid):
+            self.working_channels.clear()
+            self.reset_working_channels.clear()
+            self._clear_caches()
+            self.image_signal.emit({}, True)
+            print(f"Removed channel with UUID {uuid} from canvas.")
+            return True
+        else:
+            return False
+
 
 class ReferenceGraphicsView(BaseGraphicsView):
     update_reference = pyqtSignal(QPixmap)
@@ -842,7 +854,7 @@ class ReferenceGraphicsView(BaseGraphicsView):
         else:
             self.reference_worker = Worker(self._process_new_file, i, False)
         self.reference_worker.start()
-        self.reference_worker.signal.connect(self.display_result)
+        self.reference_worker.signal.connect(self.set_pixmap)
         self.reference_worker.finished.connect(self.reference_worker.quit)
         self.reference_worker.finished.connect(self.reference_worker.deleteLater)
 
@@ -851,16 +863,21 @@ class ReferenceGraphicsView(BaseGraphicsView):
         self.uuid = uuid
         self.storage.add_data("reference_uuid", {"value": uuid})
 
-    def display_result(self, image):
+    def set_pixmap(self, image):
         qimage = to_pixmap(image)
         self.update_reference.emit(qimage)
+
+    def remove_from_canvas(self, uuid: uuid.UUID):
+        if super().remove_from_canvas(uuid):
+            self.update_reference.emit(QPixmap())
+            return True
+        return False
 
 
 ##########################################################
 class ImageGraphicsView(BaseGraphicsView):
 
-    canvas_updated = pyqtSignal(QPixmap)
-    new_image_added = pyqtSignal(QGraphicsPixmapItem)
+    update_canvas = pyqtSignal(QPixmap)
     save_image = pyqtSignal(QGraphicsPixmapItem)
     change_slider = pyqtSignal(tuple)
     update_cmap = pyqtSignal(str)
@@ -891,7 +908,7 @@ class ImageGraphicsView(BaseGraphicsView):
         self.image_wrapper = ImageWrapper(np.array([]), "")
         self.uuid = None
         self.num_channels = 0
-        self.canvas_updated.emit(QPixmap())
+        self.update_canvas.emit(QPixmap())
 
     def swap_channel(self, index):
         """Modified swap_channel to wait for background processing if needed."""
@@ -907,7 +924,6 @@ class ImageGraphicsView(BaseGraphicsView):
             print("no background worker or already finished")
         self.current_channel = index
         channel_num = f"Channel {index+1}"
-
         self.image_wrapper = self.working_channels.get(
             channel_num, ImageWrapper(np.array([]), "")
         )
@@ -915,17 +931,13 @@ class ImageGraphicsView(BaseGraphicsView):
             print("no data, background worker still workin")
             self._background_worker.finished.connect(lambda: self.swap_channel(index))
             return
-        # self.image_wrapper.contrast_max
-        display = self._prepare_display_image(self.image_wrapper.data.copy())
-        q_pixmap = QPixmap(numpy_to_qimage(display))
+        self.update_image()
 
-        self.canvas_updated.emit(q_pixmap)
-
-    def update_contrast_memory_efficient(self, values):
+    def update_contrast_memory_efficient(self, values) -> np.ndarray:
         """Memory-efficient version of update_contrast method."""
         if self.image_wrapper is None:
             self.error_signal.emit("Canvas is empty")
-            return
+            return np.array([])
 
         contrast_min, contrast_max = int(values[0]), int(values[1])
         self.image_wrapper.contrast_min = contrast_min
@@ -938,7 +950,7 @@ class ImageGraphicsView(BaseGraphicsView):
         contrast_key = (contrast_min, contrast_max)
         cmap_key = self.image_wrapper.cmap
         cache_key = (cmap_key, contrast_key)
-        contrast_pixmap = None
+        contrasted_image = np.array([])
         if self.is_layered:
             print("Processing layered image with memory management")
             channel_num = f"Channel {self.current_channel + 1}"
@@ -947,22 +959,27 @@ class ImageGraphicsView(BaseGraphicsView):
             # Check cache first
             cached_image = self.memory_cache.get(self.uuid, channel_num, cache_key)
             if cached_image is not None:
+                assert isinstance(
+                    cached_image, np.ndarray
+                ), "Cached image must be ndarray"
                 print(f"Using cached image for {channel_num}")
-                contrast_pixmap = QPixmap(numpy_to_qimage(cached_image))
-                self.canvas_updated.emit(contrast_pixmap)
+                contrasted_image = cached_image
             else:
                 print(f"Processing new contrast for {channel_num}")
-                contrast_pixmap = self._apply_contrast_memory_efficient(
+                contrasted_image = self._apply_contrast_memory_efficient(
                     channel_num, cache_key, contrast_min, contrast_max
                 )
         else:
             # Single layer processing
             cached_image = self.memory_cache.get(self.uuid, "single", cache_key)
             if cached_image is not None:
-                contrast_pixmap = QPixmap(numpy_to_qimage(cached_image))
-                self.canvas_updated.emit(contrast_pixmap)
+                assert isinstance(
+                    cached_image, np.ndarray
+                ), "Cached image must be ndarray"
+                print("Using cached single image")
+                contrasted_image = cached_image
             else:
-                contrast_pixmap = self._apply_contrast_memory_efficient(
+                contrasted_image = self._apply_contrast_memory_efficient(
                     "single", cache_key, contrast_min, contrast_max
                 )
 
@@ -970,7 +987,7 @@ class ImageGraphicsView(BaseGraphicsView):
         self.change_slider.emit(
             (self.image_wrapper.contrast_min, self.image_wrapper.contrast_max)
         )
-        return contrast_pixmap
+        return contrasted_image
 
     def _apply_contrast_memory_efficient(
         self, channel_key, cache_key, contrast_min, contrast_max
@@ -986,11 +1003,7 @@ class ImageGraphicsView(BaseGraphicsView):
             )
 
             # Display
-            contrast_pixmap = QPixmap(numpy_to_qimage(image_to_display))
-            self.canvas_updated.emit(contrast_pixmap)
-
-            # Clean up local reference
-            del image_to_display
+            return image_to_display
 
         except MemoryError:
             print("Memory error - clearing cache and retrying")
@@ -999,11 +1012,9 @@ class ImageGraphicsView(BaseGraphicsView):
 
             # Retry with no caching
             image_to_display = self.apply_contrast(contrast_min, contrast_max)
-            contrast_pixmap = QPixmap(numpy_to_qimage(image_to_display))
-            self.canvas_updated.emit(contrast_pixmap)
-            del image_to_display
+            return image_to_display
 
-    def change_cmap(self, cmap_text="default"):
+    def change_cmap(self, cmap_text="default", image=None):
         """changes the colormap given a colormap str valid in matplotlib"""
 
         if self.image_wrapper is None:
@@ -1021,24 +1032,23 @@ class ImageGraphicsView(BaseGraphicsView):
             lut = self.generate_lut(cmap_text)
             self.lut_cache[cmap_text] = lut  # cache to avoid recalculating LUT
         else:
-            lut = self.lut_cache[cmap_text]  # Reuse the cached LUT
+            lut = self.lut_cache[cmap_text]  # Reuse the cached LaUT
 
         self.image_wrapper.cmap = cmap_text
+        if image is None:
+            image = (self.image_wrapper.data).copy()
 
-        image_wrapper_copy = (self.image_wrapper.data).copy()
+        return self.label2rgb(scale_adjust(image), lut).astype(np.uint8)
 
-        return self.label2rgb(scale_adjust(image_wrapper_copy), lut).astype(np.uint8)
-
-    def update_image(self, cmap_text="default"):
+    def update_image(self, cmap_text="default", image=None):
         """Updates the current image using the current colormap and contrast settings.
         This only changes the display and does not change the underlying data."""
         print("updating image")
 
         # update the color map
-        image_to_display = self.change_cmap(cmap_text)
-        assert image_to_display is not None, "Updating empty image"
-        pixmap = to_pixmap(image_to_display)
-        self.canvas_updated.emit(pixmap)
+        print(cmap_text)
+        if cmap_text == "default":
+            cmap_text = self.image_wrapper.cmap
         self.update_cmap.emit(cmap_text)
         # update the contrast
         assert self.image_wrapper is not None, "Updating empty image wrapper"
@@ -1046,7 +1056,12 @@ class ImageGraphicsView(BaseGraphicsView):
             self.image_wrapper.contrast_min,
             self.image_wrapper.contrast_max,
         )  # read contrast settings
-        self.update_contrast((contrast_min, contrast_max))
+        # use image_wrapper data if image is None
+        if image is None:
+            image = self.update_contrast_memory_efficient((contrast_min, contrast_max))
+        image_to_display = self.change_cmap(cmap_text, image)
+        assert image_to_display is not None, "Updating empty image"
+        self.set_pixmap(image_to_display)
 
     def generate_lut(self, cmap: str):
         """generate a 8 bit look-up table and converts to rgb space"""
@@ -1057,7 +1072,10 @@ class ImageGraphicsView(BaseGraphicsView):
         return uint8_temp.reshape(256, 1, 3)
 
     def update_contrast(self, values):
-        return self.update_contrast_memory_efficient(values)
+        print("Updating contrast with values:", values)
+        self.image_wrapper.contrast_min = int(values[0])
+        self.image_wrapper.contrast_max = int(values[1])
+        self.update_image()
 
     def _apply_contrast_and_cache(
         self, channel_num, cache_key, contrast_min, contrast_max
@@ -1079,23 +1097,7 @@ class ImageGraphicsView(BaseGraphicsView):
             return cv2.LUT(cv2.merge((labels, labels, labels)), lut)  # gray to color
 
     def load_stardist_labels(self, stardist: ImageWrapper):
-
         self.stardist_labels = stardist.data
-        # cmap = self.working_channels[f"Channel {self.current_channel+1}"].cmap
-        # self.image_wrapper = ImageWrapper(
-        #     self.stardist_labels.copy(), name="stardist_label", cmap=cmap
-        # )
-        # self.update_image(cmap_text=cmap)
-        # # !TODO: need to fix; think is broken now after changing update_manger behavior
-        # item = self.storage.get_data(self.uuid)
-        # if item:
-        #     name = item["name"]
-        # else:
-        #     name = f"Unnamed"
-        # self.update_manager.emit(
-        #     cmap,
-        #     f"Stardist_{name}",
-        # )
 
     def add_to_canvas(
         self,
@@ -1180,12 +1182,7 @@ class ImageGraphicsView(BaseGraphicsView):
         # self.set_uuid(str(uuid.uuid4()))
         qimage = numpy_to_qimage(image)
         pixmap = QPixmap(qimage)
-        self.reset_pixmap = pixmap
-        self.reset_pixmap_item = QGraphicsPixmapItem(pixmap)
-        pixmap_item = QGraphicsPixmapItem(pixmap)
-        self.new_image_added.emit(
-            pixmap_item
-        )  # emit uint16, change to uint8 in canvas_ui
+        self.update_canvas.emit(pixmap)  # emit uint16, change to uint8 in canvas_ui
 
     def reset_image(self):
         """resets the image to original state"""
@@ -1267,8 +1264,7 @@ class ImageGraphicsView(BaseGraphicsView):
                 f"Channel {self.current_channel + 1}", ImageWrapper(np.array([]), "")
             )
             self.image_cache.clear()  # Clear cache to force redraw
-            pixmap = to_pixmap(self.image_wrapper.data)
-            self.canvas_updated.emit(pixmap)
+            self.update_image()
         else:
             raise RuntimeError("Rotation failed")
 
@@ -1301,11 +1297,11 @@ class ImageGraphicsView(BaseGraphicsView):
         cumulative_hist = np.cumsum(hist) / total_pixels
         new_min = np.argmax(cumulative_hist > lower)
         new_max = np.argmax(cumulative_hist > upper)
-
         self.update_contrast((new_min, new_max))
 
-    def apply_contrast(self, new_min, new_max):
-        image = self.image_wrapper.data
+    def apply_contrast(self, new_min, new_max, image=None):
+        if image is None:
+            image = self.image_wrapper.data
         image = to_uint8(image)
         lut = create_lut(new_min, new_max)
         return cv2.LUT(image, lut)
@@ -1336,8 +1332,12 @@ class ImageGraphicsView(BaseGraphicsView):
             self.corrected_layer = np.clip(self.corrected_layer, 0, 65535).astype(
                 np.uint16
             )
-            pixmap = to_pixmap(self.corrected_layer)
-            self.canvas_updated.emit(pixmap)
+            contrasted = self.apply_contrast(
+                self.image_wrapper.contrast_min,
+                self.image_wrapper.contrast_max,
+                self.corrected_layer,
+            )
+            self.update_image(self.image_wrapper.cmap, contrasted)
 
         else:
             print("Error from gaussian blur")
@@ -1350,8 +1350,11 @@ class ImageGraphicsView(BaseGraphicsView):
             self.working_channels[self._blur_layer].data = (
                 self.corrected_layer
             )  # Replace with the corrected version
-            cmap = self.working_channels[self._blur_layer].cmap
-            self.update_image(cmap)
+            self.storage.update_data(self.uuid, self._blur_layer, self.corrected_layer)
+            self.image_wrapper = self.working_channels.get(
+                self._blur_layer, ImageWrapper(np.array([]), "")
+            )
+            self.update_image()
             self.image_signal.emit(self.working_channels, False)
             self.update_progress.emit(100, f"Replaced {self._blur_layer}")
 
@@ -1409,9 +1412,8 @@ class ImageGraphicsView(BaseGraphicsView):
         self.image_wrapper = self.working_channels.get(
             f"Channel {self.current_channel + 1}", ImageWrapper(np.array([]), "")
         )
-        self.image_cache.clear()  # Clear cache to force redraw
-        pm = to_pixmap(self.image_wrapper.data)
-        self.canvas_updated.emit(pm)
+        self.image_cache.clear()
+        self.set_pixmap(self.image_wrapper.data)
         print("Image flipped horizontally")
 
     def flip_vertical(self):
@@ -1424,10 +1426,18 @@ class ImageGraphicsView(BaseGraphicsView):
         self.image_wrapper = self.working_channels.get(
             f"Channel {self.current_channel + 1}", ImageWrapper(np.array([]), "")
         )
-        self.image_cache.clear()  # Clear cache to force redraw
-        pm = to_pixmap(self.image_wrapper.data)
-        self.canvas_updated.emit(pm)
+        self.image_cache.clear()
+        self.set_pixmap(self.image_wrapper.data)
         print("Image flipped vertically")
+
+    def delete_from_canvas(self, uuid: uuid.UUID):
+        """Delete the current image from the canvas."""
+        if super().remove_from_canvas(uuid):
+            print(f"Removing canvas with UUID {uuid}")
+            self.clear_canvas()
+            return True
+        else:
+            return False
 
 
 class MetaData(QWidget):
