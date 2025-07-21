@@ -172,6 +172,7 @@ from PyQt6.QtWidgets import (
     QListWidgetItem,
     QDialog,
     QDialogButtonBox,
+    QLineEdit,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QImage, QPixmap, QColor
@@ -821,9 +822,8 @@ class ImageOverlay(QWidget):
         )
         group_layout.addRow("Opacity:", opacity_slider)
 
-        contrast_slider = qtrangeslider.QLabeledDoubleRangeSlider(
-            Qt.Orientation.Horizontal
-        )
+                # --- Existing Contrast Slider ---
+        contrast_slider = qtrangeslider.QLabeledDoubleRangeSlider(Qt.Orientation.Horizontal)
         contrast_slider.valueChanged.connect(lambda _: self.contrast_timer.start())
         contrast_slider.setMaximum(255)
         contrast_slider.setValue((0, 255))
@@ -833,6 +833,42 @@ class ImageOverlay(QWidget):
             lambda: self.update_contrast(contrast_slider.value(), idx)
         )
         group_layout.addRow("Contrast:", contrast_slider)
+
+        # --- New: Numeric Inputs for Min/Max ---
+        min_input = QLineEdit()
+        min_input.setPlaceholderText("Min")
+        min_input.setFixedWidth(50)
+
+        max_input = QLineEdit()
+        max_input.setPlaceholderText("Max")
+        max_input.setFixedWidth(50)
+
+        apply_contrast_button = QPushButton("Set Contrast")
+
+        # Layout for inputs
+        contrast_input_layout = QHBoxLayout()
+        contrast_input_layout.addWidget(QLabel("Min:"))
+        contrast_input_layout.addWidget(min_input)
+        contrast_input_layout.addWidget(QLabel("Max:"))
+        contrast_input_layout.addWidget(max_input)
+        contrast_input_layout.addWidget(apply_contrast_button)
+        group_layout.addRow("", contrast_input_layout)
+
+        # --- Button Logic ---
+        def apply_contrast_values():
+            try:
+                min_val = int(min_input.text())
+                max_val = int(max_input.text())
+                if 0 <= min_val < max_val <= 255:
+                    contrast_slider.setValue((min_val, max_val))
+                    self.update_contrast([min_val, max_val], idx)
+                else:
+                    print("Invalid contrast range!")
+            except ValueError:
+                print("Enter valid integers for contrast.")
+
+        apply_contrast_button.clicked.connect(apply_contrast_values)
+
         group_layout.addRow(auto_contrast_button)
         visibility_button = QPushButton("Toggle Visibility")
         visibility_button.setCheckable(True)
