@@ -256,9 +256,11 @@ class CellLayerAligner(QThread):
             full_refinement_transform = self._scale_transform_matrix(
                 refinement_transform[:2, :3], self.fine_scale, 1
             )
-
-            intermediate_aligned = warp_image(self.unaligned_image, full_coarse_matrix)
-
+            _, padded_moving = make_same_shape(self.target_image, self.unaligned_image)
+            intermediate_aligned = warp_image(padded_moving, full_coarse_matrix)
+            intermediate_aligned = remove_padding(
+                intermediate_aligned, self.target_image.shape
+            )
             final_aligned_image = warp_image(
                 intermediate_aligned, full_refinement_transform
             )

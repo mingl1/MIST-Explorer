@@ -81,7 +81,7 @@ class AlignmentPreviewDialog(QDialog):
     MIN_DOWNSCALE_FACTOR = 1.0
     MAX_DOWNSCALE_FACTOR = 32.0
 
-    def __init__(self, snapshot_data: dict, can_edit: bool = False):
+    def __init__(self, snapshot_data: dict, can_edit: bool = False, can_emit=False):
         super().__init__(None)
 
         self.target_image = snapshot_data["target_image"].copy()
@@ -99,6 +99,7 @@ class AlignmentPreviewDialog(QDialog):
         self.aligned_display = self.scale_image_for_display(self.aligned_image)
         self.original_aligned_display = self.aligned_display.copy()
         self.adjust_contrast = False
+        self.can_emit = can_emit
         self._setup_ui()
         self.create_direct_overlay()
         self.image_view.mouseDoubleClickEvent = self.reset_zoom
@@ -152,7 +153,10 @@ class AlignmentPreviewDialog(QDialog):
             self._setup_editable_controls()
         else:
             self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-            self._setup_view_only_controls()
+            if self.can_emit:
+                self._setup_confirm_cancel_buttons()
+            else:
+                self._setup_view_only_controls()
 
         main_layout.addWidget(self.preview_label)
         main_layout.addWidget(self.offset_label)
@@ -214,7 +218,9 @@ class AlignmentPreviewDialog(QDialog):
         self.control_layout.addWidget(rot_group)
         self.control_layout.addStretch()
         self.control_layout.addWidget(self.reset_button)
+        self._setup_confirm_cancel_buttons()
 
+    def _setup_confirm_cancel_buttons(self):
         self.confirm_button = QPushButton("Confirm Alignment")
         self.confirm_button.clicked.connect(self.accept_alignment)
         self.cancel_button = QPushButton("Cancel")
