@@ -2,7 +2,7 @@ import math
 
 import cv2
 import numpy as np
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from PyQt6.QtGui import (
     QDoubleValidator,
     QImage,
@@ -10,6 +10,7 @@ from PyQt6.QtGui import (
     QKeyEvent,
     QPainter,
     QPixmap,
+    QTransform
 )
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -30,33 +31,52 @@ from PyQt6.QtWidgets import (
 
 from utils import adjust_contrast, to_uint8
 
+class NullableIntValidator(QIntValidator):
+    def validate(self, input_str, pos):
+        if input_str == "":
+            return (self.State.Acceptable, input_str, pos)
+        return super().validate(input_str, pos)
 
 class ZoomableImageView(QGraphicsView):
     def __init__(self, parent=None):
         super().__init__(parent)
 
         self._scene = QGraphicsScene(self)
-        self._pixmap_item = QGraphicsPixmapItem()
-        self._scene.addItem(self._pixmap_item)
+        self.target_item = QGraphicsPixmapItem()
+        self.moving_item = QGraphicsPixmapItem()
+        self.moving_item.setZValue(1)
+        self.moving_item.setOpacity(0.5)
+        self._scene.addItem(self.target_item)
+        self._scene.addItem(self.moving_item)
         self.setScene(self._scene)
 
-        # Configure view properties for better interaction
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
         self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
         self.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
 
-    def set_image(self, pixmap: QPixmap, reset_view: bool = False):
-        self._pixmap_item.setPixmap(pixmap)
-        if reset_view:
-            self.reset_zoom()
+    def set_images(self, target_pixmap: QPixmap, moving_pixmap: QPixmap):
+        self.target_item.setPixmap(target_pixmap)
+        self.moving_item.setPixmap(moving_pixmap)
+        QTimer.singleShot(0, self.reset_zoom) # center after render updates
+
 
     def reset_zoom(self):
-        self.fitInView(self._pixmap_item, Qt.AspectRatioMode.KeepAspectRatio)
-        self.centerOn(self._pixmap_item)
+        self.get_scene().setSceneRect(self.get_scene().itemsBoundingRect())
+        self.fitInView(self.target_item, Qt.AspectRatioMode.KeepAspectRatio)
+        self.centerOn(self.target_item)
+    def get_scene(self):
+        s = self.scene()
+        assert s is not None
+        return s
+
+    def update_moving_image(self, new_pixmap: QPixmap):
+        self.moving_item.setPixmap(new_pixmap)
 
     def wheelEvent(self, event):
         """Handle mouse wheel events for zooming."""
+        if event is None:
+            return
         angle = event.angleDelta().y()
         if angle > 0:
             zoom_factor = 1.15  # Zoom in
@@ -65,41 +85,24 @@ class ZoomableImageView(QGraphicsView):
 
         self.scale(zoom_factor, zoom_factor)
 
-    # doesnt work...
-    def update_pixmap_preserve_center(self, new_pixmap: QPixmap):
-        center = self.mapToScene(self.viewport().rect().center())
-
-        self._pixmap_item.setPixmap(new_pixmap)
-
-        self.centerOn(center)
-
-
 class AlignmentPreviewDialog(QDialog):
     moving_image_changed = pyqtSignal(np.ndarray)
-
-    SLIDER_SCALE_MULTIPLIER = 100.0
-    MIN_DOWNSCALE_FACTOR = 1.0
-    MAX_DOWNSCALE_FACTOR = 32.0
 
     def __init__(self, snapshot_data: dict, can_edit: bool = False, can_emit=False):
         super().__init__(None)
 
         self.target_image = snapshot_data["target_image"].copy()
         self.aligned_image = snapshot_data["aligned_image"].copy()
+        print(self.target_image.shape, self.aligned_image.shape)
         self.metadata = snapshot_data.get("metadata", {})
         self.can_edit = can_edit
         self.original_aligned_image = self.aligned_image.copy()
         self.result_accepted = False
         self.transformations = [[0.0, []]]
         self.offset_x, self.offset_y, self.move_step = 0, 0, 1
-        self.display_max_size = 1024
-        self.initial_scale_factor = self._calculate_initial_scale_factor()
-        self.scale_factor = self.initial_scale_factor
-        self.target_display = self.scale_image_for_display(self.target_image)
-        self.aligned_display = self.scale_image_for_display(self.aligned_image)
-        self.original_aligned_display = self.aligned_display.copy()
-        self.adjust_contrast = False
+        self.adjust_contrast = True
         self.can_emit = can_emit
+        self.downscaled = False
         self._setup_ui()
         self.create_direct_overlay()
         self.image_view.mouseDoubleClickEvent = self.reset_zoom
@@ -110,6 +113,7 @@ class AlignmentPreviewDialog(QDialog):
         self.resize(1000, 800)
         main_layout = QVBoxLayout(self)
         self.enhance_contrast_checkbox = QCheckBox("Enhance Contrast")
+        self.enhance_contrast_checkbox.setChecked(self.adjust_contrast)
         self.enhance_contrast_checkbox.stateChanged.connect(
             self._on_contrast_checkbox_changed
         )
@@ -125,7 +129,6 @@ class AlignmentPreviewDialog(QDialog):
         self.offset_label = QLabel()
         self.offset_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.offset_label.setVisible(self.can_edit)
-        self.update_offset_label()
 
         self.metadata_groupbox = QGroupBox("Stage Information")
         metadata_layout = QFormLayout()
@@ -160,13 +163,14 @@ class AlignmentPreviewDialog(QDialog):
 
         main_layout.addWidget(self.preview_label)
         main_layout.addWidget(self.offset_label)
-        main_layout.addWidget(self.metadata_groupbox)
-        main_layout.addWidget(self._setup_scale_controls())
+        if self.metadata:
+            main_layout.addWidget(self.metadata_groupbox)
         main_layout.addWidget(self.enhance_contrast_checkbox)
         main_layout.addWidget(self.image_view)
         main_layout.addLayout(self.control_layout)
         main_layout.addLayout(self.button_layout)
         self.setLayout(main_layout)
+        self.update_offset_label()
 
     def _on_contrast_checkbox_changed(self, state):
         self.adjust_contrast = self.enhance_contrast_checkbox.isChecked()
@@ -177,7 +181,7 @@ class AlignmentPreviewDialog(QDialog):
 
         trans_group = QGroupBox("Translate (Display Pixels)")
         trans_layout = QHBoxLayout()
-        int_validator = QIntValidator(-99999, 99999)
+        int_validator = NullableIntValidator(-99999, 99999)
 
         self.dx_input = QLineEdit("0")
         self.dx_input.setValidator(int_validator)
@@ -204,18 +208,30 @@ class AlignmentPreviewDialog(QDialog):
         rot_layout.addWidget(self.rotation_input)
         rot_layout.addWidget(self.rotate_button)
         rot_group.setLayout(rot_layout)
+        
+        scale_group = QGroupBox("Scale")
+        scale_layout = QHBoxLayout()
+        self.scale_input = QLineEdit()
+        self.scale_input.setPlaceholderText("1.0")
+        self.scale_input.setValidator(QDoubleValidator(0.0001, 10000, 2))
+        self.scale_button = QPushButton("Apply")
+        scale_layout.addWidget(self.scale_input)
+        scale_layout.addWidget(self.scale_button)
+        scale_group.setLayout(scale_layout)
 
         self.apply_trans_button.clicked.connect(self.apply_manual_translation)
-        self.dx_input.returnPressed.connect(self.apply_manual_translation)
-        self.dy_input.returnPressed.connect(self.apply_manual_translation)
+        # self.dx_input.returnPressed.connect(self.apply_manual_translation)
+        # self.dy_input.returnPressed.connect(self.apply_manual_translation)
         self.rotate_button.clicked.connect(self.apply_rotation)
-        self.rotation_input.returnPressed.connect(self.apply_rotation)
+        self.scale_button.clicked.connect(self.apply_scale)
+        # self.rotation_input.returnPressed.connect(self.apply_rotation)
 
-        self.reset_button = QPushButton("Reset Position & Rotation")
-        self.reset_button.clicked.connect(self.reset_position)
+        self.reset_button = QPushButton("Reset Transformations")
+        self.reset_button.clicked.connect(self.reset_zoom)
 
         self.control_layout.addWidget(trans_group)
         self.control_layout.addWidget(rot_group)
+        self.control_layout.addWidget(scale_group)
         self.control_layout.addStretch()
         self.control_layout.addWidget(self.reset_button)
         self._setup_confirm_cancel_buttons()
@@ -233,8 +249,14 @@ class AlignmentPreviewDialog(QDialog):
     def apply_manual_translation(self):
         """Applies translation based on the dx/dy input fields."""
         try:
-            dx = int(self.dx_input.text())
-            dy = int(self.dy_input.text())
+            xtext = self.dx_input.text()
+            ytext = self.dy_input.text() 
+            if xtext == "":
+                xtext = "0"
+            if ytext == "":
+                ytext = "0"
+            dx = int(xtext)
+            dy = int(ytext)
         except ValueError:
             QMessageBox.warning(
                 self,
@@ -248,40 +270,60 @@ class AlignmentPreviewDialog(QDialog):
 
         self.move_aligned_image(dx, dy)
 
-        self.dx_input.setText("0")
-        self.dy_input.setText("0")
-
     def apply_rotation(self):
-        """Rotate the display image and start a new transformation group."""
         if not self.rotation_input.text():
             return
         try:
             angle = float(self.rotation_input.text())
-            self.aligned_display = self.rotate_image(self.aligned_display, angle)
             self.transformations.append([angle, []])
+
+            transform = self.image_view.moving_item.transform()
+            center = self.image_view.moving_item.boundingRect().center()
+            t = QTransform()
+            t.translate(center.x(), center.y())
+            t.rotate(angle)
+            t.translate(-center.x(), -center.y())
+
+            self.image_view.moving_item.setTransform(transform * t)
             self.update_offset_label()
-            self.create_direct_overlay()
-            self.rotation_input.clear()
+            # self.rotation_input.clear()
         except ValueError:
-            QMessageBox.warning(
-                self, "Invalid Input", "Please enter a valid rotation angle."
-            )
+            QMessageBox.warning(self, "Invalid Input", "Please enter a valid rotation angle.")
+    
+    def apply_scale(self):
+        if not self.scale_input.text():
+            return
+        try:
+            scale = float(self.scale_input.text())
+            if scale < 1.0:
+                self.downscaled = True
+            self.transformations[-1].append("x" + str(scale))
+
+            transform = self.image_view.moving_item.transform()
+            center = self.image_view.moving_item.boundingRect().center()
+            t = QTransform()
+            t.translate(center.x(), center.y())
+            t.scale(scale, scale)
+            t.translate(-center.x(), -center.y())
+
+            self.image_view.moving_item.setTransform(transform * t)
+            self.update_offset_label()
+        except ValueError:
+            QMessageBox.warning(self, "Invalid Input", "Please enter a valid scale factor.")
 
     def move_aligned_image(self, dx, dy):
-        """Move the display image and record the transformation. Central method for all translations."""
         self.offset_x += dx
         self.offset_y += dy
         self.transformations[-1][1].append((dx, dy))
-        trans_mat = np.float32([[1, 0, dx], [0, 1, dy]])
-        self.aligned_display = cv2.warpAffine(
-            self.aligned_display,
-            trans_mat,
-            (self.aligned_display.shape[1], self.aligned_display.shape[0]),
-        )
+
+        transform = self.image_view.moving_item.transform()
+        transform.translate(dx, dy)
+        self.image_view.moving_item.setTransform(transform)
+
         self.update_offset_label()
-        self.create_direct_overlay()
 
     def reset_zoom(self, event=None):
+        self.image_view.moving_item.resetTransform()
         self.image_view.reset_zoom()
         if event:
             event.accept()
@@ -293,137 +335,17 @@ class AlignmentPreviewDialog(QDialog):
         self.button_layout.addWidget(self.close_button)
         self.button_layout.addStretch()
 
-    def _setup_scale_controls(self):
-        group_box = QGroupBox("Display Downscale Factor (1.0 = Full Resolution)")
-        layout = QHBoxLayout()
-        self.scale_slider = QSlider(Qt.Orientation.Horizontal)
-        self.scale_slider.setMinimum(
-            int(self.MIN_DOWNSCALE_FACTOR * self.SLIDER_SCALE_MULTIPLIER)
-        )
-        self.scale_slider.setMaximum(
-            int(self.MAX_DOWNSCALE_FACTOR * self.SLIDER_SCALE_MULTIPLIER)
-        )
-        self.scale_slider.setValue(
-            int(self.initial_scale_factor * self.SLIDER_SCALE_MULTIPLIER)
-        )
-        self.scale_slider.valueChanged.connect(self._on_slider_value_changed)
-        self.scale_input = QLineEdit(f"{self.scale_factor:.2f}")
-        self.scale_input.setValidator(
-            QDoubleValidator(self.MIN_DOWNSCALE_FACTOR, self.MAX_DOWNSCALE_FACTOR, 2)
-        )
-        self.scale_input.setMaximumWidth(70)
-        self.scale_input.editingFinished.connect(self._on_scale_text_changed)
-        self.reset_scale_button = QPushButton("Reset Scale")
-        self.reset_scale_button.setToolTip(
-            f"Reset scale to initial fit-to-screen value ({self.initial_scale_factor:.2f})"
-        )
-        self.reset_scale_button.clicked.connect(self._reset_scale_to_initial)
-        layout.addWidget(QLabel("Factor:"))
-        layout.addWidget(self.scale_input)
-        layout.addWidget(self.scale_slider)
-        layout.addWidget(self.reset_scale_button)
-        group_box.setLayout(layout)
-        return group_box
-
-    def _reset_scale_to_initial(self):
-        self.scale_slider.setValue(
-            int(self.initial_scale_factor * self.SLIDER_SCALE_MULTIPLIER)
-        )
-
-    def _calculate_initial_scale_factor(self) -> float:
-        max_dim = max(self.target_image.shape)
-        if max_dim == 0 or max_dim <= self.display_max_size:
-            return 1.0
-        return max_dim / self.display_max_size
-
-    def scale_image_for_display(self, image: np.ndarray) -> np.ndarray:
-        if math.isclose(self.scale_factor, 1.0):
-            return image.copy()
-        fx_fy = 1.0 / self.scale_factor
-        return cv2.resize(
-            image, (0, 0), fx=fx_fy, fy=fx_fy, interpolation=cv2.INTER_AREA
-        )
-
-    def display_to_actual_coordinates(self, dx: int, dy: int) -> tuple[float, float]:
-        return dx * self.scale_factor, dy * self.scale_factor
-
-    def _on_slider_value_changed(self, value: int):
-        new_scale = value / self.SLIDER_SCALE_MULTIPLIER
-        self.scale_input.setText(f"{new_scale:.2f}")
-        self._update_for_new_scale(new_scale)
-
-    def _on_scale_text_changed(self):
-        try:
-            new_scale = float(self.scale_input.text())
-            if not (
-                self.MIN_DOWNSCALE_FACTOR <= new_scale <= self.MAX_DOWNSCALE_FACTOR
-            ):
-                raise ValueError("Scale out of bounds")
-            self.scale_slider.blockSignals(True)
-            self.scale_slider.setValue(int(new_scale * self.SLIDER_SCALE_MULTIPLIER))
-            self.scale_slider.blockSignals(False)
-            self._update_for_new_scale(new_scale)
-        except ValueError:
-            self.scale_input.setText(f"{self.scale_factor:.2f}")
-
-    def _update_for_new_scale(self, new_scale: float):
-        if math.isclose(new_scale, self.scale_factor):
-            return
-        self.scale_factor = new_scale
-        self.target_display = self.scale_image_for_display(self.target_image)
-        self.original_aligned_display = self.scale_image_for_display(
-            self.original_aligned_image
-        )
-        self._reapply_display_transformations()
-        self.update_offset_label()
-        self.create_direct_overlay()
-
-    def _reapply_display_transformations(self):
-        self.aligned_display = self.original_aligned_display.copy()
-        for angle, translations in self.transformations:
-            if angle != 0.0:
-                self.aligned_display = self.rotate_image(self.aligned_display, angle)
-            if translations:
-                total_dx, total_dy = sum(t[0] for t in translations), sum(
-                    t[1] for t in translations
-                )
-                if total_dx != 0 or total_dy != 0:
-                    trans_mat = np.float32([[1, 0, total_dx], [0, 1, total_dy]])
-                    h, w = self.aligned_display.shape[:2]
-                    self.aligned_display = cv2.warpAffine(
-                        self.aligned_display, trans_mat, (w, h)
-                    )
-
     def update_offset_label(self):
-        actual_dx, actual_dy = self.display_to_actual_coordinates(
-            self.offset_x, self.offset_y
-        )
-        self.offset_label.setText(
-            f"Manual Offset: ({self.offset_x}, {self.offset_y}) display | ({actual_dx:.1f}, {actual_dy:.1f}) actual"
-        )
+        transform_matrix = self.image_view.moving_item.transform()
+        transform_text = readable_matrix_string(transform_to_matrix(transform_matrix))
+        self.offset_label.setText(transform_text)
 
     def accept_alignment(self):
         self.result_accepted = True
-        final_image = self.original_aligned_image.copy()
-        for angle, translations in self.transformations:
-            if angle != 0.0:
-                final_image = self.rotate_image(final_image, angle)
-            if translations:
-                total_dx_display, total_dy_display = sum(
-                    t[0] for t in translations
-                ), sum(t[1] for t in translations)
-                actual_dx, actual_dy = self.display_to_actual_coordinates(
-                    total_dx_display, total_dy_display
-                )
-                if not math.isclose(actual_dx, 0) or not math.isclose(actual_dy, 0):
-                    trans_mat = np.float32([[1, 0, actual_dx], [0, 1, actual_dy]])
-                    final_image = cv2.warpAffine(
-                        final_image,
-                        trans_mat,
-                        (final_image.shape[1], final_image.shape[0]),
-                    )
-        self.aligned_image = final_image
-        self.moving_image_changed.emit(self.aligned_image)
+        final_transformation = self.image_view.moving_item.transform()
+        transf_matrix = transform_to_matrix(final_transformation)
+        final_image = cv2.warpAffine(self.original_aligned_image,transf_matrix, self.target_image.shape[::-1])
+        self.moving_image_changed.emit(final_image)
         self.accept()
 
     def keyPressEvent(self, event: QKeyEvent):
@@ -445,29 +367,25 @@ class AlignmentPreviewDialog(QDialog):
         else:
             super().keyPressEvent(event)
 
-    def reset_position(self):
-        self.offset_x, self.offset_y = 0, 0
-        self.transformations = [[0.0, []]]
-        self.aligned_display = self.original_aligned_display.copy()
-        self.update_offset_label()
-        self.create_direct_overlay()
-
     def create_direct_overlay(self):
-        target_gray = self.to_uint8(self.target_display)
-        aligned_gray = self.to_uint8(self.aligned_display)
-        if self.adjust_contrast:
-            target_gray = to_uint8(
-                adjust_contrast(target_gray.astype(np.float64), 30, 99)
-            )
-            aligned_gray = to_uint8(
-                adjust_contrast(aligned_gray.astype(np.float64), 30, 99)
-            )
+        target_gray = self.to_uint8(self.target_image)
+        aligned_gray = self.to_uint8(self.aligned_image)
         h, w = target_gray.shape
-        overlay = np.zeros((h, w, 3), dtype=np.uint8)
-        overlay[:, :, 0] = target_gray
-        overlay[:, :, 1] = aligned_gray
-        q_image = QImage(overlay.data, w, h, w * 3, QImage.Format.Format_RGB888)
-        self.image_view.update_pixmap_preserve_center(QPixmap.fromImage(q_image))
+        ah, aw = aligned_gray.shape
+
+        start_y = (ah - h) // 2
+        start_x = (aw - w) // 2
+        aligned_gray = aligned_gray[start_y:start_y + h, start_x:start_x + w]
+
+        if self.adjust_contrast:
+            target_gray = to_uint8(adjust_contrast(target_gray.astype(np.float64), 30, 99))
+            aligned_gray = to_uint8(adjust_contrast(aligned_gray.astype(np.float64), 30, 99))
+
+        # Create separate QPixmaps for both layers
+        aligned_pixmap = colorize_grayscale(aligned_gray, "green")  
+        target_pixmap = colorize_grayscale(target_gray, "red")  
+
+        self.image_view.set_images(target_pixmap, aligned_pixmap)
 
     def rotate_image(self, image, angle):
         h, w = image.shape[:2]
@@ -481,7 +399,7 @@ class AlignmentPreviewDialog(QDialog):
             borderMode=cv2.BORDER_CONSTANT,
             borderValue=0,
         )
-
+    
     def to_uint8(self, image):
         if image.dtype == np.uint8:
             return image
@@ -504,3 +422,30 @@ def readable_matrix_string(matrix: np.ndarray) -> str:
     scale_x = math.sqrt(a**2 + c**2)
     scale_y = math.sqrt(b**2 + d**2)
     return f"Translation: ({tx:.2f}, {ty:.2f}), Rotation: {angle_deg:.2f}°, Scale: (x: {scale_x:.2f}, y: {scale_y:.2f})"
+
+def colorize_grayscale(gray_img: np.ndarray, color: str) -> QPixmap:
+    """Colorize grayscale image and make black pixels fully transparent."""
+    h, w = gray_img.shape
+    rgba = np.zeros((h, w, 4), dtype=np.uint8)
+
+    if color == "red":
+        rgba[:, :, 0] = gray_img  # R
+    elif color == "green":
+        rgba[:, :, 1] = gray_img  # G
+    elif color == "blue":
+        rgba[:, :, 2] = gray_img  # B
+
+    # Make black (value 0) transparent
+    mask = gray_img > 0
+    rgba[:, :, 3] = mask.astype(np.uint8) * 255  # Alpha
+
+    qimage = QImage(rgba.data, w, h, 4 * w, QImage.Format.Format_RGBA8888)
+    return QPixmap.fromImage(qimage)
+
+def transform_to_matrix(t: QTransform):
+    matrix = np.array([
+        [t.m11(), t.m21(), t.dx()],
+        [t.m12(), t.m22(), t.dy()],
+    ], dtype=np.float32)
+    return matrix
+
