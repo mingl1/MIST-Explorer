@@ -96,6 +96,22 @@ class CellLayerAligner(QThread):
         """
         self.need_gradient_descent = not skip
 
+    def manually_align(self, aligned_image: np.ndarray):
+        """
+        Emit manually aligned image
+        """
+        self.progress.emit(100, "Manual alignment set")
+        self.aligned_image_signal.emit(
+            {
+                "uuid": self.target_uuid,
+                "layer": self.target_channel,
+                "replace": self.replace,
+                "data": aligned_image,
+            },
+            np.array(0),
+            np.array(0),
+        )
+
     def _scale_for_snapshot(
         self, image_array: np.ndarray, size=(1024, 1024)
     ) -> np.ndarray:

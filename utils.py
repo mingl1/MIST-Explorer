@@ -335,7 +335,9 @@ def build_optical_flow_pyramid_pure_numpy(
     return pyramid
 
 
-def adjust_contrast(img: NDArray[np.float64], min_percentile=2, max_percentile=98):
+def adjust_contrast(
+    img: NDArray[np.float32] | NDArray[np.float64], min_percentile=2, max_percentile=98
+):
     """Adjust image contrast using percentile-based clipping for float images"""
     # Calculate percentiles
     minval = np.percentile(img, min_percentile)
