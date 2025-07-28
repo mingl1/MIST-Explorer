@@ -10,6 +10,8 @@ from PyQt6.QtCore import QTimer
 from controller import Controller
 from core.canvas import ImageWrapper
 from utils import create_lut
+from PyQt6.QtCore import QEvent
+
 
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 import os
@@ -150,8 +152,7 @@ def tint_grayscale_image(grayscale_image, color):
     )
 
     # Apply the color tint
-    for i in range(3):
-        tinted_image[:, :, i] = grayscale_image_normalized * color[i]
+    tinted_image = (grayscale_image_normalized[..., None] * np.array(color)).astype(np.uint8)
 
     return tinted_image
 
@@ -333,6 +334,11 @@ class ImageOverlay(QWidget):
         # Connect timer to the actual work
         self.grayscale = True
         self.initUI()
+        self.pending_contrast_idx = 0
+        self.contrast_timer = QTimer()
+        self.contrast_timer.setInterval(300)  # 300 ms of no movement triggers update
+        self.contrast_timer.setSingleShot(True)
+
 
     def load_stardist_image(self):
         if self.im_path is None:
@@ -355,7 +361,7 @@ class ImageOverlay(QWidget):
             interpolation=cv2.INTER_NEAREST_EXACT,
         )
         return reduced_cell_img
-
+    
     def load_df(self):
         if self.req_df() == "":
             raise ValueError("Need to load protein data first.")
@@ -798,6 +804,12 @@ class ImageOverlay(QWidget):
             q_pixmap = QPixmap(q_image)
             self.change_pix.emit(q_pixmap, True)
 
+    def restart_contrast_timer(self):
+        if self.contrast_timer.isActive():
+            return  # Don't restart while still moving
+        self.contrast_timer.start()
+
+
     def add_layer_controls(self, c):
         idx = len(self.controls) - 1
 
@@ -814,7 +826,9 @@ class ImageOverlay(QWidget):
         opacity_slider.setMinimum(0)
         opacity_slider.setMaximum(100)
         opacity_slider.setValue(100)
-        opacity_slider.valueChanged.connect(lambda _: self.opacity_timer.start())
+        opacity_slider.sliderReleased.connect(
+            lambda: self.update_opacity(opacity_slider.value(), idx)
+        )
         self.opacity_timer.timeout.connect(
             lambda: self.update_opacity(opacity_slider.value(), idx)
         )
@@ -822,14 +836,21 @@ class ImageOverlay(QWidget):
 
                 # --- Existing Contrast Slider ---
         contrast_slider = qtrangeslider.QLabeledDoubleRangeSlider(Qt.Orientation.Horizontal)
-        contrast_slider.valueChanged.connect(lambda _: self.contrast_timer.start())
+        contrast_slider.valueChanged.connect(
+            lambda _: self.restart_contrast_timer()
+        )
+
+        self.contrast_timer.timeout.connect(
+            lambda: self.set_contrast_from_slider(idx)
+        )
+
         contrast_slider.setMaximum(255)
         contrast_slider.setValue((0, 255))
         contrast_slider.setDecimals(0)
         self.contrast_sliders.append(contrast_slider)
-        self.contrast_timer.timeout.connect(
-            lambda: self.update_contrast(contrast_slider.value(), idx)
-        )
+        contrast_slider.installEventFilter(self)
+
+
         group_layout.addRow("Contrast:", contrast_slider)
 
         # --- New: Numeric Inputs for Min/Max ---
@@ -859,7 +880,7 @@ class ImageOverlay(QWidget):
                 max_val = int(max_input.text())
                 if 0 <= min_val < max_val <= 255:
                     contrast_slider.setValue((min_val, max_val))
-                    self.update_contrast([min_val, max_val], idx)
+                    self.update_contrast((min_val, max_val), idx)
                 else:
                     print("Invalid contrast range!")
             except ValueError:
@@ -900,6 +921,21 @@ class ImageOverlay(QWidget):
         self.controls[idx].layout = group_box
         self.scroll_layout.addWidget(group_box)
 
+    def set_contrast_from_slider(self, idx):
+        min_val, max_val = self.contrast_sliders[idx].value()
+        self.update_contrast((min_val, max_val), idx)
+
+    def eventFilter(self, source, event):
+        if isinstance(source, qtrangeslider.QLabeledDoubleRangeSlider):
+            if event.type() == QEvent.Type.MouseButtonRelease:
+                for idx, slider in enumerate(self.contrast_sliders):
+                    if slider is source:
+                        self.set_contrast_from_slider(idx)
+                        break
+        return super().eventFilter(source, event)
+
+
+
     def update_opacity(self, value, idx):
         self.controls[idx].current_opacity = value / 100.0
 
@@ -911,6 +947,7 @@ class ImageOverlay(QWidget):
         value = [int(value[0]), int(value[1])]
         self.controls[idx].current_contrast = value
         self.process_images()
+
 
     def auto_contrast(self, idx, lower=0.1, upper=0.9):
         img = self.controls[idx].image
@@ -933,12 +970,11 @@ class ImageOverlay(QWidget):
     def apply_tint(self, img, color):
         if color is None:
             return img
-        tint_img = np.zeros_like(img)
         if len(img.shape) == 2:
             img = np.stack((img,) * 3, axis=-1)
-        for c in range(3):
-            tint_img[:, :, c] = img[:, :, c] * (color.getRgb()[c] / 255.0)
-        return tint_img
+        factor = np.array(color.getRgb()[:3]) / 255.0
+        return (img * factor).astype(np.uint8)
+
 
     def adjust_contrast(self, img, min=5, max=100):
         # pixvals = np.array(img)
