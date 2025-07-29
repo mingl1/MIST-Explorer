@@ -190,18 +190,8 @@ class Controller:
         snapshot = {
             "target_image": target_small,
             "aligned_image": aligned_small,
-            "metadata": {
-                "preview_target_shape": target_small.shape,
-                "preview_aligned_shape": aligned_small.shape,
-            },
         }
         is_align_arrays = isinstance(aligned_data["layer"], list)
-        if is_align_arrays:
-            preview_dialog = AlignmentPreviewDialog(
-                snapshot, can_edit=False, can_emit=True
-            )
-        else:
-            preview_dialog = AlignmentPreviewDialog(snapshot, can_edit=True)
 
         def handle_accepted_image(moving_image):
             """Handle the moving image change in the preview dialog"""
@@ -227,8 +217,18 @@ class Controller:
                 data[layer] = wrapped_image
             self.model_canvas.add_to_canvas(data, True, aligned_name)
 
-        preview_dialog.moving_image_changed.connect(handle_accepted_image)
-        result = preview_dialog.exec()
+        # manual alignment
+        if not np.any(aligned_small) and not np.any(target_small):
+            handle_accepted_image(aligned_data["data"])
+        else:
+            if is_align_arrays:
+                preview_dialog = AlignmentPreviewDialog(
+                    snapshot, can_edit=False, can_emit=True
+                )
+            else:
+                preview_dialog = AlignmentPreviewDialog(snapshot, can_edit=True)
+            preview_dialog.moving_image_changed.connect(handle_accepted_image)
+            result = preview_dialog.exec()
 
     def _show_preview_dialog(self, target_small, aligned_small):
         """Show the preview dialog with red/green overlay"""

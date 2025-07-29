@@ -2,7 +2,7 @@ import math
 
 import cv2
 import numpy as np
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import (
     QDoubleValidator,
     QImage,
@@ -10,7 +10,7 @@ from PyQt6.QtGui import (
     QKeyEvent,
     QPainter,
     QPixmap,
-    QTransform
+    QTransform,
 )
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -30,6 +30,13 @@ from PyQt6.QtWidgets import (
 )
 
 from utils import adjust_contrast, to_uint8
+
+
+class NullableIntValidator(QIntValidator):
+    def validate(self, input_str, pos):
+        if input_str == "":
+            return (self.State.Acceptable, input_str, pos)
+        return super().validate(input_str, pos)
 
 
 class ZoomableImageView(QGraphicsView):
@@ -53,13 +60,13 @@ class ZoomableImageView(QGraphicsView):
     def set_images(self, target_pixmap: QPixmap, moving_pixmap: QPixmap):
         self.target_item.setPixmap(target_pixmap)
         self.moving_item.setPixmap(moving_pixmap)
-        QTimer.singleShot(0, self.reset_zoom) # center after render updates
-
+        QTimer.singleShot(0, self.reset_zoom)  # center after render updates
 
     def reset_zoom(self):
         self.get_scene().setSceneRect(self.get_scene().itemsBoundingRect())
         self.fitInView(self.target_item, Qt.AspectRatioMode.KeepAspectRatio)
         self.centerOn(self.target_item)
+
     def get_scene(self):
         s = self.scene()
         assert s is not None
@@ -79,6 +86,7 @@ class ZoomableImageView(QGraphicsView):
             zoom_factor = 1 / 1.15  # Zoom out
 
         self.scale(zoom_factor, zoom_factor)
+
 
 class AlignmentPreviewDialog(QDialog):
     moving_image_changed = pyqtSignal(np.ndarray)
@@ -198,17 +206,27 @@ class AlignmentPreviewDialog(QDialog):
         rot_layout = QHBoxLayout()
         self.rotation_input = QLineEdit()
         self.rotation_input.setPlaceholderText("Angle")
-        self.rotation_input.setValidator(QDoubleValidator(-360.0, 360.0, 2))
+        self.rotation_input.setValidator(QDoubleValidator(-360.0, 360.0, 6))
         self.rotate_button = QPushButton("Apply")
         rot_layout.addWidget(self.rotation_input)
         rot_layout.addWidget(self.rotate_button)
         rot_group.setLayout(rot_layout)
-        
+
         scale_group = QGroupBox("Scale")
         scale_layout = QHBoxLayout()
         self.scale_input = QLineEdit()
         self.scale_input.setPlaceholderText("1.0")
         self.scale_input.setValidator(QDoubleValidator(0.0001, 10000, 2))
+        self.scale_button = QPushButton("Apply")
+        scale_layout.addWidget(self.scale_input)
+        scale_layout.addWidget(self.scale_button)
+        scale_group.setLayout(scale_layout)
+
+        scale_group = QGroupBox("Scale")
+        scale_layout = QHBoxLayout()
+        self.scale_input = QLineEdit()
+        self.scale_input.setPlaceholderText("1.0")
+        self.scale_input.setValidator(QDoubleValidator(0.000001, 10000, 6))
         self.scale_button = QPushButton("Apply")
         scale_layout.addWidget(self.scale_input)
         scale_layout.addWidget(self.scale_button)
@@ -245,7 +263,7 @@ class AlignmentPreviewDialog(QDialog):
         """Applies translation based on the dx/dy input fields."""
         try:
             xtext = self.dx_input.text()
-            ytext = self.dy_input.text() 
+            ytext = self.dy_input.text()
             if xtext == "":
                 xtext = "0"
             if ytext == "":
@@ -283,8 +301,10 @@ class AlignmentPreviewDialog(QDialog):
             self.update_offset_label()
             # self.rotation_input.clear()
         except ValueError:
-            QMessageBox.warning(self, "Invalid Input", "Please enter a valid rotation angle.")
-    
+            QMessageBox.warning(
+                self, "Invalid Input", "Please enter a valid rotation angle."
+            )
+
     def apply_scale(self):
         if not self.scale_input.text():
             return
@@ -304,7 +324,32 @@ class AlignmentPreviewDialog(QDialog):
             self.image_view.moving_item.setTransform(transform * t)
             self.update_offset_label()
         except ValueError:
-            QMessageBox.warning(self, "Invalid Input", "Please enter a valid scale factor.")
+            QMessageBox.warning(
+                self, "Invalid Input", "Please enter a valid scale factor."
+            )
+
+    def apply_scale(self):
+        if not self.scale_input.text():
+            return
+        try:
+            scale = float(self.scale_input.text())
+            if scale < 1.0:
+                self.downscaled = True
+            self.transformations[-1].append("x" + str(scale))
+
+            transform = self.image_view.moving_item.transform()
+            center = self.image_view.moving_item.boundingRect().center()
+            t = QTransform()
+            t.translate(center.x(), center.y())
+            t.scale(scale, scale)
+            t.translate(-center.x(), -center.y())
+
+            self.image_view.moving_item.setTransform(transform * t)
+            self.update_offset_label()
+        except ValueError:
+            QMessageBox.warning(
+                self, "Invalid Input", "Please enter a valid scale factor."
+            )
 
     def move_aligned_image(self, dx, dy):
         self.offset_x += dx
@@ -339,7 +384,9 @@ class AlignmentPreviewDialog(QDialog):
         self.result_accepted = True
         final_transformation = self.image_view.moving_item.transform()
         transf_matrix = transform_to_matrix(final_transformation)
-        final_image = cv2.warpAffine(self.original_aligned_image,transf_matrix, self.target_image.shape[::-1])
+        final_image = cv2.warpAffine(
+            self.original_aligned_image, transf_matrix, self.target_image.shape[::-1]
+        )
         self.moving_image_changed.emit(final_image)
         self.accept()
 
@@ -370,15 +417,19 @@ class AlignmentPreviewDialog(QDialog):
 
         start_y = (ah - h) // 2
         start_x = (aw - w) // 2
-        aligned_gray = aligned_gray[start_y:start_y + h, start_x:start_x + w]
+        aligned_gray = aligned_gray[start_y : start_y + h, start_x : start_x + w]
 
         if self.adjust_contrast:
-            target_gray = to_uint8(adjust_contrast(target_gray.astype(np.float64), 30, 99))
-            aligned_gray = to_uint8(adjust_contrast(aligned_gray.astype(np.float64), 30, 99))
+            target_gray = to_uint8(
+                adjust_contrast(target_gray.astype(np.float32), 30, 99)
+            )
+            aligned_gray = to_uint8(
+                adjust_contrast(aligned_gray.astype(np.float32), 30, 99)
+            )
 
         # Create separate QPixmaps for both layers
-        aligned_pixmap = colorize_grayscale(aligned_gray, "green")  
-        target_pixmap = colorize_grayscale(target_gray, "red")  
+        aligned_pixmap = colorize_grayscale(aligned_gray, "green")
+        target_pixmap = colorize_grayscale(target_gray, "red")
 
         self.image_view.set_images(target_pixmap, aligned_pixmap)
 
@@ -394,7 +445,7 @@ class AlignmentPreviewDialog(QDialog):
             borderMode=cv2.BORDER_CONSTANT,
             borderValue=0,
         )
-    
+
     def to_uint8(self, image):
         if image.dtype == np.uint8:
             return image
@@ -418,6 +469,7 @@ def readable_matrix_string(matrix: np.ndarray) -> str:
     scale_y = math.sqrt(b**2 + d**2)
     return f"Translation: ({tx:.2f}, {ty:.2f}), Rotation: {angle_deg:.2f}°, Scale: (x: {scale_x:.2f}, y: {scale_y:.2f})"
 
+
 def colorize_grayscale(gray_img: np.ndarray, color: str) -> QPixmap:
     """Colorize grayscale image and make black pixels fully transparent."""
     h, w = gray_img.shape
@@ -437,18 +489,13 @@ def colorize_grayscale(gray_img: np.ndarray, color: str) -> QPixmap:
     qimage = QImage(rgba.data, w, h, 4 * w, QImage.Format.Format_RGBA8888)
     return QPixmap.fromImage(qimage)
 
+
 def transform_to_matrix(t: QTransform):
-    matrix = np.array([
-        [t.m11(), t.m21(), t.dx()],
-        [t.m12(), t.m22(), t.dy()],
-    ], dtype=np.float32)
+    matrix = np.array(
+        [
+            [t.m11(), t.m21(), t.dx()],
+            [t.m12(), t.m22(), t.dy()],
+        ],
+        dtype=np.float32,
+    )
     return matrix
-
-    
-from PyQt6.QtGui import QIntValidator
-
-class NullableIntValidator(QIntValidator):
-    def validate(self, input_str, pos):
-        if input_str == "":
-            return (self.State.Acceptable, input_str, pos)
-        return super().validate(input_str, pos)

@@ -65,9 +65,9 @@ class CellLayerAlignmentUI(QWidget):
         self.image1_layout.addWidget(self.image1_label)
         self.image1_layout.addWidget(self.image1_status)
         self.image1_layout.setStretch(1, 1)
-        self.image_1_channel_selector = QComboBox(self)
-        self.image1_layout.addWidget(self.image_1_channel_selector)
-        self.image_1_channel_selector.setVisible(False)
+        self.target_channel_selector = QComboBox(self)
+        self.image1_layout.addWidget(self.target_channel_selector)
+        self.target_channel_selector.setVisible(False)
 
         # Image 2 layout
         self.image2_layout = QHBoxLayout()
@@ -76,9 +76,9 @@ class CellLayerAlignmentUI(QWidget):
         self.image2_status.setStyleSheet("font-weight: bold; color: #555;")
         self.image2_layout.addWidget(self.image2_label)
         self.image2_layout.addWidget(self.image2_status)
-        self.image_2_channel_selector = QComboBox(self)
-        self.image2_layout.addWidget(self.image_2_channel_selector)
-        self.image_2_channel_selector.setVisible(False)
+        self.unaligned_channel_selector = QComboBox(self)
+        self.image2_layout.addWidget(self.unaligned_channel_selector)
+        self.unaligned_channel_selector.setVisible(False)
         self.image2_layout.setStretch(1, 1)
 
         # Ensure both image labels occupy same width; to align status labels
@@ -133,11 +133,14 @@ class CellLayerAlignmentUI(QWidget):
         self.checkbox_layout.addWidget(self.need_centering)
         self.checkbox_layout.addWidget(self.need_gradient_descent)
         # Register button
+        self.button_layout = QHBoxLayout()
+        self.button_layout.setContentsMargins(0, 0, 0, 0)
         self.register_button = QPushButton("Register Images")
         self.register_button.setEnabled(
             False
         )  # Initially disabled until both images are loaded
         self.register_button.clicked.connect(self.register_images)
+
         self.register_button.setMinimumHeight(30)
         self.register_button.setStyleSheet(
             """
@@ -156,6 +159,30 @@ class CellLayerAlignmentUI(QWidget):
             }
         """
         )
+        self.manually_align_button = QPushButton("Manually Align")
+        self.manually_align_button.setEnabled(False)
+        self.manually_align_button.setMinimumHeight(30)
+        self.manually_align_button.setStyleSheet(
+            """
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                font-weight: bold;
+                border-radius: 4px;
+            }
+            QPushButton:disabled {
+                background-color: #cccccc;
+                color: #666666;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+        """
+        )
+        self.manually_align_button.clicked.connect(self.manually_align_images)
+
+        self.button_layout.addWidget(self.manually_align_button)
+        self.button_layout.addWidget(self.register_button)
 
         # Add all elements to the main layout
         self.main_layout.addWidget(self.title_label)
@@ -166,7 +193,7 @@ class CellLayerAlignmentUI(QWidget):
         self.main_layout.addLayout(self.unaligned_spacing_row)
         self.main_layout.addLayout(self.checkbox_layout)
         self.main_layout.addSpacing(10)
-        self.main_layout.addWidget(self.register_button)
+        self.main_layout.addLayout(self.button_layout)
 
         # Add the groupbox to the containing layout
         if containing_layout:
@@ -179,14 +206,13 @@ class CellLayerAlignmentUI(QWidget):
         """Set up the connections to the aligner thread"""
         self.aligner.progress.connect(self._handle_progress)
         self.aligner.error.connect(self._handle_error)
-        self.aligner.finished.connect(self._handle_finished)
         self.aligner.snapshot.connect(self._handle_snapshot)
 
-        self.image_1_channel_selector.currentIndexChanged.connect(
-            self.change_image1_channel
+        self.target_channel_selector.currentIndexChanged.connect(
+            self.change_target_channel
         )
-        self.image_2_channel_selector.currentIndexChanged.connect(
-            self.change_image2_channel
+        self.unaligned_channel_selector.currentIndexChanged.connect(
+            self.change_unaligned_channel
         )
 
         self.aligner.error.connect(self.errorSignal)
@@ -214,11 +240,11 @@ class CellLayerAlignmentUI(QWidget):
         return
 
     @pyqtSlot(int)
-    def change_image1_channel(self, index):
+    def change_target_channel(self, index):
         self.image_channels[0] = index
 
     @pyqtSlot(int)
-    def change_image2_channel(self, index):
+    def change_unaligned_channel(self, index):
         self.image_channels[1] = index
 
     def __retranslate_UI(self):
@@ -230,6 +256,7 @@ class CellLayerAlignmentUI(QWidget):
         self.image1_label.setText(_translate("MainWindow", "Target Image:"))
         self.image2_label.setText(_translate("MainWindow", "Unaligned Image:"))
         self.register_button.setText(_translate("MainWindow", "Register Images"))
+        self.manually_align_button.setText(_translate("MainWindow", "Manually Align"))
 
     def set_target_image(self, uuid, is_leaf, channel):
         """Set the target image for alignment"""
@@ -245,10 +272,10 @@ class CellLayerAlignmentUI(QWidget):
             "font-weight: bold; color: #007700;"
         )  # Green to indicate it's loaded
         self.image1_status.setWordWrap(True)
-        self.image_1_channel_selector.setVisible(True)
-        self.image_1_channel_selector.clear()
-        self.image_1_channel_selector.addItems(obj.keys())
-        self.image_1_channel_selector.setCurrentIndex(channel)
+        self.target_channel_selector.setVisible(True)
+        self.target_channel_selector.clear()
+        self.target_channel_selector.addItems(obj.keys())
+        self.target_channel_selector.setCurrentIndex(channel)
         self._check_can_register()
 
     def set_unaligned_image(self, uuid: UUID, is_leaf: bool, channel: int):
@@ -264,10 +291,10 @@ class CellLayerAlignmentUI(QWidget):
         self.image2_status.setStyleSheet(
             "font-weight: bold; color: #007700;"
         )  # Green to indicate it's loaded
-        self.image_2_channel_selector.setVisible(True)
-        self.image_2_channel_selector.clear()
-        self.image_2_channel_selector.addItems(obj.keys())
-        self.image_2_channel_selector.setCurrentIndex(channel)
+        self.unaligned_channel_selector.setVisible(True)
+        self.unaligned_channel_selector.clear()
+        self.unaligned_channel_selector.addItems(obj.keys())
+        self.unaligned_channel_selector.setCurrentIndex(channel)
 
         self._check_can_register()
 
@@ -275,46 +302,83 @@ class CellLayerAlignmentUI(QWidget):
         """Check if both images are loaded and enable/disable register button"""
         if self.target_image is not None and self.unaligned_image is not None:
             self.register_button.setEnabled(True)
+            self.manually_align_button.setEnabled(True)
         else:
             self.register_button.setEnabled(False)
+            self.manually_align_button.setEnabled(False)
+
+    def prepare_aligner(self):
+        """Prepare the aligner with the current settings"""
+        if self.target_image is None or self.unaligned_image is None:
+            QMessageBox.warning(
+                self,
+                "Alignment Error",
+                "Please load both target and unaligned images before alignment.",
+            )
+            return
+
+        self.register_button.setEnabled(False)
+        self.manually_align_button.setEnabled(False)
+
+        try:
+            target_spacing = (
+                float(self.target_spacing_x.text().strip()),
+                float(self.target_spacing_y.text().strip()),
+            )
+            self.aligner.set_target_spacing(target_spacing)
+
+            unaligned_spacing = (
+                float(self.unaligned_spacing_x.text().strip()),
+                float(self.unaligned_spacing_y.text().strip()),
+            )
+            self.aligner.set_unaligned_spacing(unaligned_spacing)
+        except ValueError:
+            self._handle_error(
+                "Invalid spacing values. Please enter numeric values for x and y."
+            )
+            return
+        self.aligner.set_target_image(
+            self.target_image[f"Channel {self.image_channels[0]+1}"].data,
+            f"Channel {self.image_channels[0]+1}",
+            self.target_uuid,
+        )
+        self.aligner.set_unaligned_image(
+            self.unaligned_image[f"Channel {self.image_channels[1]+1}"].data,
+            f"Channel {self.image_channels[1]+1}",
+            self.unaligned_uuid,
+        )
 
     def register_images(self):
         """Start the image registration process"""
         if not self.target_image is None and not self.unaligned_image is None:
-            # Disable the register button during processing
-            self.register_button.setEnabled(False)
-            try:
-                target_spacing = (
-                    float(self.target_spacing_x.text().strip()),
-                    float(self.target_spacing_y.text().strip()),
-                )
-                self.aligner.set_target_spacing(target_spacing)
-
-                unaligned_spacing = (
-                    float(self.unaligned_spacing_x.text().strip()),
-                    float(self.unaligned_spacing_y.text().strip()),
-                )
-                self.aligner.set_unaligned_spacing(unaligned_spacing)
-            except ValueError:
-                self._handle_error(
-                    "Invalid spacing values. Please enter numeric values for x and y."
-                )
-                return
-            self.register_button.setText("Processing...")
-            self.aligner.progress.emit(10, "Starting alignment...")
-            self.aligner.set_target_image(
-                self.target_image[f"Channel {self.image_channels[0]+1}"].data,
-                f"Channel {self.image_channels[0]+1}",
-                self.target_uuid,
-            )
-            self.aligner.set_unaligned_image(
-                self.unaligned_image[f"Channel {self.image_channels[1]+1}"].data,
-                f"Channel {self.image_channels[1]+1}",
-                self.unaligned_uuid,
-            )
-
+            self.prepare_aligner()
+            self.aligner.progress.emit(0, "Starting alignment...")
             # Start the alignment process in a separate thread
             self.aligner.start()
+
+    def manually_align_images(self):
+        """Open a dialog for manual alignment of images"""
+        if self.target_image is None or self.unaligned_image is None:
+            QMessageBox.warning(
+                self,
+                "Alignment Error",
+                "Please load both target and unaligned images before manual alignment.",
+            )
+            return
+        self.prepare_aligner()
+        tc, uc = self.image_channels
+        tc = f"Channel {tc + 1}"
+        uc = f"Channel {uc + 1}"
+        # Create and show the alignment preview dialog
+        preview_dialog = AlignmentPreviewDialog(
+            {
+                "target_image": self.target_image[tc].data,
+                "aligned_image": self.unaligned_image[uc].data,
+            },
+            True,
+        )
+        preview_dialog.moving_image_changed.connect(self.aligner.manually_align)
+        preview_dialog.exec()
 
     def _handle_progress(self, value, message):
         """Handle progress updates from the aligner thread"""
