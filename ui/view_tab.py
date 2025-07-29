@@ -952,7 +952,7 @@ class ImageOverlay(QWidget):
     def contrasted_image(self, img, contrast):
         min_val, max_val = contrast
 
-        # Optimization: Skip if contrast is full range (no effect)
+        # Skip if contrast is full range
         if min_val <= 0 and max_val >= 255:
             return img.astype(np.float32)
 
