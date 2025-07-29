@@ -206,7 +206,6 @@ class CellLayerAlignmentUI(QWidget):
         """Set up the connections to the aligner thread"""
         self.aligner.progress.connect(self._handle_progress)
         self.aligner.error.connect(self._handle_error)
-        self.aligner.finished.connect(self._handle_finished)
         self.aligner.snapshot.connect(self._handle_snapshot)
 
         self.target_channel_selector.currentIndexChanged.connect(
