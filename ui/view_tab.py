@@ -323,11 +323,11 @@ class ImageOverlay(QWidget):
         self.model_canvas = None
 
         o_timer = QTimer()
-        o_timer.setInterval(200)
+        o_timer.setInterval(300)
         o_timer.setSingleShot(True)
         self.opacity_timer = o_timer
         c_timer = QTimer()
-        c_timer.setInterval(200)
+        c_timer.setInterval(300)
         c_timer.setSingleShot(True)
         self.contrast_timer = c_timer
         self.contrast_sliders = []
@@ -985,9 +985,18 @@ class ImageOverlay(QWidget):
         return img.astype(np.uint8)
 
     def contrasted_image(self, img, contrast):
-        new_lut = create_lut(contrast[0], contrast[1])
-        adjusted_img = cv2.LUT(img, new_lut)
-        return adjusted_img
+        min_val, max_val = contrast
+
+        # Skip if contrast is full range
+        if min_val <= 0 and max_val >= 255:
+            return img.astype(np.float32)
+
+        if max_val == min_val:
+            return np.zeros_like(img, dtype=np.float32)  # avoid division by 0
+
+        img = np.clip(img, min_val, max_val)
+        img = ((img - min_val) / (max_val - min_val)) * 255
+        return img.astype(np.float32)
 
     def process_images(self, display=True):
         if len(self.controls) == 0:
@@ -1000,11 +1009,11 @@ class ImageOverlay(QWidget):
                 opacity = c.current_opacity
                 contrast = c.current_contrast
                 tint = c.current_tint
-                adjusted_img = img.copy()
+                adjusted_img = img
                 # adjusted_img = winsorize_array(adjusted_img, 0, 255)
-                if isinstance(contrast, list):
+                if isinstance(contrast, list) and contrast != [0, 255]:
                     adjusted_img = self.contrasted_image(adjusted_img, contrast)
-                if c.tint_yn:
+                if c.tint_yn and c.current_tint is not None:
                     adjusted_img = self.apply_tint(adjusted_img, tint)
                 combined_image += adjusted_img * opacity
         combined_image = np.clip(combined_image, 0, 255).astype(np.uint8)
