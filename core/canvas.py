@@ -970,6 +970,7 @@ class ImageGraphicsView(BaseGraphicsView):
                 contrasted_image = self._apply_contrast_memory_efficient(
                     channel_num, cache_key, contrast_min, contrast_max
                 )
+                self.memory_cache.put(self.uuid,channel_num,cache_key,contrasted_image)
         else:
             # Single layer processing
             cached_image = self.memory_cache.get(self.uuid, "single", cache_key)
