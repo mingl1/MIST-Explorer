@@ -161,7 +161,7 @@ class ImageTreeWidget(QTreeView):
             channel = self._get_channel_from_item(item)
             is_leaf = self._is_leaf(item)
             set_reference = QAction("Reference")
-            set_cell_image = QAction("Cell Image")
+            set_cell_image = QAction("Cell Image (Stardist)")
             set_protein_data_image = QAction("Set as Protein Data Image")
             set_protein_data_image.triggered.connect(
                 lambda: self.set_as_protein_data_image(uuid, is_leaf, channel)

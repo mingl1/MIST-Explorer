@@ -13,7 +13,7 @@ from PyQt6.QtCore import (
     QRectF,
     QSize,
     Qt,
-    pyqtSignal,
+    pyqtSignal
 )
 from PyQt6.QtGui import (
     QAction,
@@ -27,6 +27,7 @@ from PyQt6.QtGui import (
     QMouseEvent,
     QPen,
     QPixmap,
+    QFont
 )
 from PyQt6.QtWidgets import (
     QApplication,
@@ -34,6 +35,7 @@ from PyQt6.QtWidgets import (
     QGraphicsItemGroup,
     QGraphicsOpacityEffect,
     QGraphicsPixmapItem,
+    QGraphicsSimpleTextItem,
     QGraphicsRectItem,
     QGraphicsScene,
     QGraphicsView,
@@ -711,7 +713,7 @@ class ImageGraphicsViewUI(QGraphicsView):
 
                 # Create a resizable crop rectangle
 
-                self.active_crop_rect = QGraphicsRectItem()
+                self.active_crop_rect = CropRectItem()
                 self.active_crop_rect.setRect(scene_pos.x(), scene_pos.y(), 0, 0)
 
                 # Style the crop rectangle
@@ -1099,30 +1101,37 @@ class ResizableRect(QGraphicsRectItem):
             self.handles.append(handle)
 
         self.updateHandles()
+        self.text_item = QGraphicsSimpleTextItem(self)
+        self.text_item.setBrush(QColor("yellow"))
+        self.text_item.setFont(QFont("Arial", 10))
+        self.text_item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
+        self.update_text()
+        # ⬆ ensures text doesn’t scale with zoom
 
     def updateHandles(self):
         rect = self.rect()
         x, y, w, h = rect.x(), rect.y(), rect.width(), rect.height()
 
         positions = [
-            QPointF(x, y),  # top-left
-            QPointF(x + w / 2, y),  # top-center
-            QPointF(x + w, y),  # top-right
+            QPointF(x, y),              # top-left
+            QPointF(x + w / 2, y),      # top-center
+            QPointF(x + w, y),          # top-right
             QPointF(x + w, y + h / 2),  # mid-right
-            QPointF(x + w, y + h),  # bottom-right
+            QPointF(x + w, y + h),      # bottom-right
             QPointF(x + w / 2, y + h),  # bottom-center
-            QPointF(x, y + h),  # bottom-left
-            QPointF(x, y + h / 2),  # mid-left
+            QPointF(x, y + h),          # bottom-left
+            QPointF(x, y + h / 2),      # mid-left
         ]
-
+        HANDLE_SIZE = 16
         for handle, pos in zip(self.handles, positions):
             handle.setPos(pos)
-            handle.setRect(
-                -handle.rect().width() / 2,
-                -handle.rect().height() / 2,
-                handle.rect().width(),
-                handle.rect().height(),
-            )
+
+            # fixed-size rect centered at (0,0)
+            handle.setRect(-HANDLE_SIZE / 2, -HANDLE_SIZE / 2,
+                        HANDLE_SIZE, HANDLE_SIZE)
+
+            # ensure handle doesn't scale with zoom
+            handle.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
 
     def setRect(self, *args, **kwargs):
         if len(args) == 1 and hasattr(args[0], "x"):
@@ -1139,6 +1148,7 @@ class ResizableRect(QGraphicsRectItem):
             # Fallback to base implementation
             super().setRect(*args, **kwargs)
         self.updateHandles()
+        self.update_text()
 
     def mousePressEvent(self, event):
         super().mousePressEvent(event)
@@ -1178,6 +1188,22 @@ class ResizableRect(QGraphicsRectItem):
             self.setRect(new_rect)
         else:
             super().mouseMoveEvent(event)
+     #
+
+
+    def update_text(self):
+        MARGIN= 360
+        rect = self.rect()
+        w = int(rect.width())
+        h = int(rect.height())
+        x = rect.x()
+        y = rect.y()
+        # self.text_item.setFlag()
+
+        self.text_item.setText(f"{w} × {h}")
+
+        # Fixed margin (5 px in scene coordinates, stays constant due to IgnoresTransformations)
+        self.text_item.setPos(x - MARGIN, y - MARGIN)
 
     def mouseReleaseEvent(self, event):
         self.selected_edge = Qt.Edge(0)
@@ -1244,3 +1270,34 @@ class ResizeHandle(QGraphicsRectItem):
         super().mouseMoveEvent(event)
         # Update the parent rectangle's position if needed
         self.parent.mouseMoveEvent(event)
+class CropRectItem(QGraphicsRectItem):
+    def __init__(self,  parent=None):
+        super().__init__(parent)
+        
+        # Rectangle style
+        self.setPen(QPen(QColor("red"), 2, Qt.PenStyle.DashLine))
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges, True)
+
+        # Size text overlay
+        self.text_item = QGraphicsSimpleTextItem(self)
+        self.text_item.setBrush(QColor("yellow"))
+        self.text_item.setFont(QFont("Arial", 10))
+        self.text_item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)  
+        # ⬆ ensures text doesn’t scale with zoom
+
+
+    def update_text(self):
+        rect = self.rect()
+        w = int(rect.width())
+        h = int(rect.height())
+        self.text_item.setText(f"{w} × {h}")
+
+        # Place text at top-left of rect with a small margin
+        self.text_item.setPos(rect.x() + 5, rect.y() + 5)
+
+    def setRect(self, *args):
+        """Override setRect to keep text updated"""
+        super().setRect(*args)
+        self.update_text()
