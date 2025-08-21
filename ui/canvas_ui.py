@@ -408,7 +408,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.reference_view = None
 
         # Setup interaction
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setMouseTracking(True)
         self.view_pixmap_item = QGraphicsPixmapItem()
 
@@ -433,22 +433,22 @@ class ImageGraphicsViewUI(QGraphicsView):
     def flip_horizontal(self):
         """Flip the image horizontally"""
         if self.pixmap_item:
-            img = self.pixmap_item.pixmap().toImage()
-            flipped_img = img.mirrored(horizontal=True, vertical=False)
-            flipped_pixmap = QPixmap.fromImage(flipped_img)
-            self.pixmap_item.setPixmap(flipped_pixmap)
-            self.get_scene().update()
+            # img = self.pixmap_item.pixmap().toImage()
+            # flipped_img = img.mirrored(horizontal=True, vertical=False)
+            # flipped_pixmap = QPixmap.fromImage(flipped_img)
+            # self.pixmap_item.setPixmap(flipped_pixmap)
+            # self.get_scene().update()
             # Emit signal to update the underlying data model
             self.horizontal_flip.emit()
 
     def flip_vertical(self):
         """Flip the image vertically"""
         if self.pixmap_item:
-            img = self.pixmap_item.pixmap().toImage()
-            flipped_img = img.mirrored(horizontal=False, vertical=True)
-            flipped_pixmap = QPixmap.fromImage(flipped_img)
-            self.pixmap_item.setPixmap(flipped_pixmap)
-            self.get_scene().update()
+            # img = self.pixmap_item.pixmap().toImage()
+            # flipped_img = img.mirrored(horizontal=False, vertical=True)
+            # flipped_pixmap = QPixmap.fromImage(flipped_img)
+            # self.pixmap_item.setPixmap(flipped_pixmap)
+            # self.get_scene().update()
             # Emit signal to update the underlying data model
             self.vertical_flip.emit()
 
@@ -463,6 +463,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.setSceneRect(0, 0, 800, 600)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
+        self.setContentsMargins(1000,1000,1000,1000)
 
         # Create floating selection buttons
         if self.show_buttons:
@@ -612,6 +613,12 @@ class ImageGraphicsViewUI(QGraphicsView):
             self.pixmap_item if self.pixmap_item.isVisible() else self.view_pixmap_item
         )
         item_rect = pixmap_item.boundingRect()
+        item_rect =QRectF(
+            item_rect.x()-item_rect.width()//2,
+            item_rect.y()-item_rect.height()//2,
+            item_rect.width()*2,
+            item_rect.height()*2,
+        )
         self.setSceneRect(item_rect)
         self.fitInView(pixmap_item, Qt.AspectRatioMode.KeepAspectRatio)
         self.centerOn(pixmap_item)
@@ -642,7 +649,7 @@ class ImageGraphicsViewUI(QGraphicsView):
             return
         elif self.pixmap_item is None:
             return
-        zooming_out = event.angleDelta().y() > 0
+        zooming_out = event.angleDelta().y() < 0
 
         # Prevent excessive zooming in either direction
         # if self.zoom > 1.1**2 and zooming_out:  # Max zoom out
@@ -652,7 +659,9 @@ class ImageGraphicsViewUI(QGraphicsView):
         #     return
         # if self.reference_view:
         #     self.reference_view.wheelEvent(event)
-        zoom_factor = 1.1 if zooming_out else 0.9
+        if self.zoom<=0.1 and zooming_out:
+            return
+        zoom_factor = 0.9 if zooming_out else 1.1
         self.zoom *= zoom_factor
 
         # Store rubber band positions before zooming
