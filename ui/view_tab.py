@@ -389,6 +389,9 @@ class ImageOverlay(QWidget):
         # return tint_grayscale_image(im, [255, 255, 255])
 
         start = time.perf_counter()
+        if self.reduced_cell_img.size == 0:
+            raise ValueError("Please load an image first.")
+        
         if self.df is None:
             self.load_df()
             print("Automatically loaded df from", self.df_path)

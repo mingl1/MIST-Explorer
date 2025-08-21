@@ -601,7 +601,8 @@ class ImageGraphicsViewUI(QGraphicsView):
             else:
                 self._show_images_tab_image()
                 self.pixmap_item.setPixmap(pixmap)
-            self.__centerImage()
+            if self.zoom == 1:
+                self.__centerImage()
 
     def __centerImage(self):
         pixmap_item = (

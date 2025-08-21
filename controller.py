@@ -94,11 +94,11 @@ class Controller:
         self.storage = self.view.images_tab.storage
 
         # Handle initial arguments
-        initial_args = vars(app.args)
-        if initial_args["image"] is not None:
-            self.model_canvas.add_to_canvas(initial_args["image"])
-        if initial_args["reference"] is not None:
-            self.model_reference_canvas.add_to_canvas(initial_args["reference"])
+        initial_args = app.args
+        if initial_args.image is not None:
+            self.model_canvas.add_to_canvas(initial_args.image)
+        if initial_args.reference is not None:
+            self.model_reference_canvas.add_to_canvas(initial_args.reference)
 
         # self.need_preview_alignment.connect(self._handle_aligned_image)
         self.view.cell_layer_alignment.aligner.aligned_image_signal.connect(
@@ -133,6 +133,8 @@ class Controller:
     def control_save(self):
 
         im = self.model_canvas.image_wrapper.data
+        if im.dtype != np.uint8:
+            im = (im * 255).astype(np.uint8)
         # qimage = pm.toImage()
         if im is not None:
             file_name, _ = QFileDialog.getSaveFileName(
@@ -214,7 +216,7 @@ class Controller:
             else:
                 wrapped_image = ImageWrapper(aligned_image, layer)
                 aligned_name = f"Aligned_{filename}"
-                data[layer] = wrapped_image
+                data = {layer: wrapped_image}
             self.model_canvas.add_to_canvas(data, True, aligned_name)
 
         # manual alignment
