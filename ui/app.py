@@ -25,8 +25,6 @@ from ui.view_tab import ImageOverlay
 
 class Ui_MainWindow(QMainWindow):
 
-    saveSignal = pyqtSignal()
-
     def __init__(self, parent=None):
         QImageReader.setAllocationLimit(0)
         super().__init__()
@@ -114,7 +112,6 @@ class Ui_MainWindow(QMainWindow):
             ("Ctrl+R", self.select),
             ("Ctrl+C", self.circle_select),
             ("Ctrl+P", self.poly_select),
-            ("Ctrl+S", self.save),
         ]
 
         for key_sequence, slot in shortcuts:
@@ -221,9 +218,6 @@ class Ui_MainWindow(QMainWindow):
 
     def _setup_preprocessing_components(self):
         """Setup individual preprocessing components"""
-        # Save button
-        self.save_button = QPushButton("Save Canvas")
-        self.save_button.clicked.connect(self.save_canvas)
 
         self.register_groupbox = RegisterUI(
             self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout
@@ -242,7 +236,6 @@ class Ui_MainWindow(QMainWindow):
         )
 
         # Add save button at the end
-        self.preprocessing_dockwidget_main_vlayout.addWidget(self.save_button)
 
     def _setup_crop_rotate_components(self):
         """Setup crop and rotate components side by side"""
@@ -407,11 +400,6 @@ class Ui_MainWindow(QMainWindow):
         """Update mouse position in toolbar"""
         self.toolBarUI.statusLine.setText(text)
 
-    def save_canvas(self):
-        """Save canvas signal emission"""
-        print("saving")
-        self.saveSignal.emit()
-
     def update_progress_bar(self, value, text):
         """Update progress bar with value and text"""
         self.progressBar.setValue(value)
@@ -439,38 +427,6 @@ class Ui_MainWindow(QMainWindow):
             self.canvas.select = False
             return
         self.canvas.select = "poly"
-
-    def save(self):
-        """Save current canvas to file"""
-        import numpy as np
-        from PIL import Image
-        from PyQt6.QtWidgets import QFileDialog
-
-        file_name, _ = QFileDialog.getSaveFileName(
-            None, "Save File", "image.png", "*.png;;*.jpg;;*.tif;; All Files(*)"
-        )
-
-        if file_name:
-            # Use pixmapItem directly if available
-            if hasattr(self.canvas, "pixmapItem") and self.canvas.pixmap_item:
-                pixmap = self.canvas.pixmap_item.pixmap()
-            else:
-                pixmap = self.canvas.grab()
-
-            # Convert to numpy array and save
-            qimage = pixmap.toImage()
-            buffer = qimage.bits().asstring(
-                qimage.width() * qimage.height() * qimage.depth() // 8
-            )
-            image = np.frombuffer(buffer, dtype=np.uint8).reshape(
-                (qimage.height(), qimage.width(), qimage.depth() // 8)
-            )
-
-            if image.shape[2] == 4:  # Remove alpha channel if present
-                image = image[:, :, :3]
-
-            image = image[:, :, ::-1]  # Convert BGR to RGB
-            Image.fromarray(image).save(file_name)
 
     def toggleSidePanel(self):
         """Toggle side panel visibility"""
