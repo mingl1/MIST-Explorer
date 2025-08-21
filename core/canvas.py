@@ -16,7 +16,7 @@ import cv2
 # Third-party imports
 import numpy as np
 import tifffile as tiff
-from cv2 import LUT
+from cv2 import LUT, rotate
 from matplotlib import colormaps
 from PIL import Image
 
@@ -1199,12 +1199,11 @@ class ImageGraphicsView(BaseGraphicsView):
             self.update_image()
 
     def rotate_image_task(self, channels: dict, angle):
-
+        
         for channel_num, wrapper in channels.items():
             try:
                 arr = wrapper.data
-                if not arr.data.contiguous:
-                    arr = np.ascontiguousarray(arr, dtype="uint16")
+                arr = np.ascontiguousarray(arr, dtype="uint16").copy()
             except Exception as e:
                 self.on_error(f"Error processing {channel_num}: {e}")
                 raise e
@@ -1231,7 +1230,9 @@ class ImageGraphicsView(BaseGraphicsView):
             rotation_matrix[1, 2] += (updated_h / 2) - center[1]
 
             rotated_arr = cv2.warpAffine(arr, rotation_matrix, (updated_w, updated_h))
-            self.working_channels[channel_num].data = rotated_arr
+            new_ch = self.working_channels[channel_num].copy()
+            new_ch.data = rotated_arr
+            self.working_channels[channel_num] = new_ch
 
         return True
 
