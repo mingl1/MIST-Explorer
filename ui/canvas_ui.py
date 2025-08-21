@@ -597,13 +597,14 @@ class ImageGraphicsViewUI(QGraphicsView):
         """Updates canvas when current image is operated on"""
 
         if self.pixmap_item:
+            prev_pixmap_shape = self.pixmap_item.boundingRect()
             if is_view:
                 self._show_view_tab_image()
                 self.view_pixmap_item.setPixmap(pixmap)
             else:
                 self._show_images_tab_image()
                 self.pixmap_item.setPixmap(pixmap)
-            if self.zoom == 1:
+            if self.zoom == 1 or self.pixmap_item.boundingRect() != prev_pixmap_shape:
                 self.__centerImage()
 
     def __centerImage(self):
