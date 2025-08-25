@@ -150,7 +150,7 @@ class StarDist(QThread):
             return
         print("here 4")
         self.progress.emit(100, "Stardist Done")
-        stardist_result = ImageWrapper(self.stardist_labels_grayscale, name="Channel 1")
+        stardist_result = ImageWrapper(self.stardist_labels_grayscale, name="Channel 1",cmap='label_image')
         self.stardist_done.emit(
             stardist_result, True, "StarDist Labels"
         )  # emit signal with result, saves to sidebar

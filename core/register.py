@@ -631,7 +631,6 @@ class Register(QThread):
             number = int(match.group())
             result = number - 1  # 0 index
             self.params["alignment_layer"] = result
-            print("alignment layer is: ", self.params["alignment_layer"])
 
     def set_cell_layer(self, channel):
         match = re.search(r"\d+", channel)
@@ -639,7 +638,6 @@ class Register(QThread):
             number = int(match.group())
             result = number - 1  # 0 index
             self.params["cell_layer"] = result
-            print("cell layer is: ", self.params["cell_layer"])
 
     def set_protein_detection_layer(self, channel):
         match = re.search(r"\d+", channel)
@@ -647,7 +645,6 @@ class Register(QThread):
             number = int(match.group())
             result = number - 1  # 0 index
             self.params["protein_detection_layer"] = result
-        print("protein_detection_layer is: ", self.params["protein_detection_layer"])
 
     def set_max_size(self, value):
         self.params["max_size"] = value

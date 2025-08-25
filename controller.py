@@ -319,7 +319,7 @@ class SignalConnectionManager:
         self.c.view.toolBarUI.actionReset.triggered.connect(
             self.c.model_canvas.reset_image
         )
-        self.c.view.toolBarUI.channelChanged.connect(self.c.model_canvas.swap_channel)
+        # self.c.view.toolBarUI.channelChanged.connect(self.c.model_canvas.swap_channel)
         self.c.view.toolBarUI.contrastSlider.valueChanged.connect(
             self.c.model_canvas.update_contrast
         )
@@ -544,7 +544,6 @@ class SignalConnectionManager:
 
     def _setup_misc_connections(self):
         """Miscellaneous connections"""
-        self.c.view.saveSignal.connect(self.c.control_save)
         self.c.view.view_tab.progress.connect(self.c.view.update_progress_bar)
         self.c.view.stackedWidget.currentChanged.connect(
             lambda x: self.c.view.small_view.setVisible(x == 1)

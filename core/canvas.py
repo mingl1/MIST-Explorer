@@ -10,10 +10,11 @@ import xml.etree.ElementTree as ET
 from collections import deque
 from queue import Queue
 from typing import Dict, Optional, OrderedDict, Union
-
+import matplotlib.pyplot as plt
 import cv2
 
 # Third-party imports
+from matplotlib.colors import Colormap
 import numpy as np
 import tifffile as tiff
 from cv2 import LUT, rotate
@@ -443,6 +444,7 @@ class BaseGraphicsView(QWidget):
 
             # Store full resolution version
             working_channels[channel_name] = ImageWrapper(image_adjusted, channel_name)
+            
 
             # Prepare display version
 
@@ -469,6 +471,8 @@ class BaseGraphicsView(QWidget):
             # # Store first channel for return value
             # if channel_num == 1:
             #     channel_one_image = display_image
+        self.image_wrapper.data = channel_one_image
+        self.image_wrapper.cmap = "default"
         self._add_to_manager(file_name, working_channels)
         return channel_one_image
 
@@ -492,6 +496,7 @@ class BaseGraphicsView(QWidget):
                 emit_data[channel_name] = display_image
                 self._update_number_of_channels(emit_data, subsample_for_emit)
                 self.file_queue.clear()
+        self._store_channel_data(channel_name, working_channel[channel_name])
         self._add_to_manager(file_name, working_channel)
         return display_image
 
@@ -509,24 +514,9 @@ class BaseGraphicsView(QWidget):
         if isinstance(data, dict):
             if not data:
                 raise ValueError("Data dict must be non empty")
-            processed_data = {}
-            for key, value in data.items():
-                if not isinstance(key, str):
-                    raise TypeError(f"Key {key} must be str")
-                # If ImageWrapper —> convert to ndarray
-                if isinstance(value, ImageWrapper):
-                    new_value = value.data
-                    # print(f"Converted ImageWrapper at key {key} to ndarray")
-                elif isinstance(value, np.ndarray):
-                    new_value = value
-                else:
-                    raise TypeError(
-                        f"Value for key {key} must be np.ndarray or ImageWrapper"
-                    )
-                processed_data[key] = new_value
-            # single channels also use this
+            print(f"replace canvds, {target_channel}")
             ret = self._replace_canvas_multichannel(
-                processed_data, target_channel, subsample_for_emit, max_display_size
+                data, target_channel, subsample_for_emit, max_display_size
             )
             if as_new_image:
                 assert (
@@ -547,7 +537,7 @@ class BaseGraphicsView(QWidget):
 
     def _replace_canvas_multichannel(
         self,
-        channels_data: Dict[str, np.ndarray],
+        channels_data: Dict[str, ImageWrapper],
         target_channel: str = "Channel 1",
         subsample_for_emit: bool = False,
         max_display_size: int = 1024,
@@ -564,7 +554,8 @@ class BaseGraphicsView(QWidget):
         if target_channel not in channels_data:
             raise ValueError(f"{target_channel} was not found in the data")
 
-        target_image_data = channels_data[target_channel]
+        target_image_wrapper = channels_data[target_channel]
+        self.current_channel = int(target_channel[-1]) - 1
 
         # Process target channel immediately
         # fill channels with dummy data:
@@ -573,16 +564,14 @@ class BaseGraphicsView(QWidget):
                 self._store_channel_data(
                     channel_name, channel_data, replace_image_wrapper=False
                 )
-        self._store_channel_data(target_channel, target_image_data)
+        self._store_channel_data(target_channel, target_image_wrapper)
         display_channel_data = self._prepare_display_image(
-            target_image_data, subsample_for_emit, max_display_size
+            target_image_wrapper.data, subsample_for_emit, max_display_size
         )
 
-     
         # Emit target channel immediately for display
         emit_data = {target_channel: display_channel_data}
         self._update_number_of_channels(emit_data, subsample_for_emit)
-        self.current_channel = int(target_channel[-1]) - 1
 
         # Process remaining channels in background if there are any
         remaining_channels = {
@@ -621,7 +610,7 @@ class BaseGraphicsView(QWidget):
             try:
                 # Store full resolution version
                 self._store_channel_data(
-                    channel_name, image_data, replace_image_wrapper=False
+                    channel_name, ImageWrapper(image_data,channel_name,'gray'), replace_image_wrapper=False
                 )
 
                 # Prepare display version
@@ -710,15 +699,14 @@ class BaseGraphicsView(QWidget):
         return image
 
     def _store_channel_data(
-        self, channel_name: str, image_data: np.ndarray, replace_image_wrapper=True
+        self, channel_name: str, image_wrapper: ImageWrapper, replace_image_wrapper=True
     ) -> None:
         """Store channel data in full resolution containers."""
-        self.working_channels[channel_name] = ImageWrapper(image_data, channel_name)
-        self.reset_working_channels[channel_name] = ImageWrapper(
-            image_data, channel_name
-        )
+        self.working_channels[channel_name] = image_wrapper.copy()
+        self.reset_working_channels[channel_name] = image_wrapper.copy()
         if replace_image_wrapper:
-            self.image_wrapper = ImageWrapper(image_data, channel_name)
+            print("stored image_wrapper")
+            self.image_wrapper = image_wrapper.copy()
 
     def _prepare_display_image(
         self,
@@ -755,9 +743,12 @@ class BaseGraphicsView(QWidget):
         self, emit_data: Dict[str, np.ndarray], subsample_for_emit: bool
     ) -> None:
         """Notify listeners that number of channels has changed and emit data."""
+        print(self.working_channels.keys())
+        
         self.working_channels = {
             k: self.working_channels[k] for k in sorted(self.working_channels.keys())
         }
+        print(self.working_channels.keys())
         if emit_data:
             if subsample_for_emit:
                 # Create wrappers for subsampled data
@@ -903,6 +894,8 @@ class ImageGraphicsView(BaseGraphicsView):
     def swap_channel(self, index):
         """Modified swap_channel to wait for background processing if needed."""
         # not 100% so need the len check later
+        self.current_channel = index
+        
         if (
             getattr(self, "_background_worker", None)
             and self._background_worker.isRunning()
@@ -912,12 +905,10 @@ class ImageGraphicsView(BaseGraphicsView):
             return
         else:
             print("no background worker or already finished")
-        self.current_channel = index
         channel_num = f"Channel {index+1}"
         self.image_wrapper = self.working_channels.get(
             channel_num, ImageWrapper(np.array([]), "")
         )
-        self.current_channel = index
         if len(self.image_wrapper.data) == 0:
             print("no data, background worker still workin")
             self._background_worker.finished.connect(lambda: self.swap_channel(index))
@@ -929,6 +920,7 @@ class ImageGraphicsView(BaseGraphicsView):
         if self.image_wrapper is None:
             self.error_signal.emit("Canvas is empty")
             return np.array([])
+            
 
         contrast_min, contrast_max = int(values[0]), int(values[1])
         self.image_wrapper.contrast_min = contrast_min
@@ -1011,31 +1003,34 @@ class ImageGraphicsView(BaseGraphicsView):
 
     def change_cmap(self, cmap_text="default", image=None):
         """changes the colormap given a colormap str valid in matplotlib"""
-
+        
         if self.image_wrapper is None:
             self.error_signal.emit("Canvas is empty")
             return
-
+        if image is None:
+            image = self.image_wrapper.data
         if self.is_layered:
             channel_num = f"Channel {self.current_channel + 1}"
+            print(channel_num)
             self.image_wrapper = self.working_channels[channel_num]  # wrapper
 
         if cmap_text == "default":
             cmap_text = self.image_wrapper.cmap
-
+        self.image_wrapper.cmap = cmap_text
+        self.update_cmap.emit(cmap_text)
+        if cmap_text=='label_image':
+            from skimage.color import label2rgb
+            return label2rgb(image)
+        
         if cmap_text not in self.lut_cache:
             lut = self.generate_lut(cmap_text)
             self.lut_cache[cmap_text] = lut  # cache to avoid recalculating LUT
         else:
             lut = self.lut_cache[cmap_text]  # Reuse the cached LaUT
 
-        self.image_wrapper.cmap = cmap_text
-        if image is None:
-            image = (self.image_wrapper.data).copy()
-
         return np.clip(self.label2rgb(scale_adjust(image), lut),0,254,dtype=np.uint8)
 
-    def update_image(self, cmap_text="default", image=None, use_cache=True):
+    def update_image(self, cmap_text="default", image=None, use_cache=True, self_emit=True):
         """Updates the current image using the current colormap and contrast settings.
         This only changes the display and does not change the underlying data."""
         # print("updating image")
@@ -1044,6 +1039,7 @@ class ImageGraphicsView(BaseGraphicsView):
         # print(cmap_text)
         if cmap_text == "default":
             cmap_text = self.image_wrapper.cmap
+        print(f"Changing cmap to {cmap_text}")
         self.update_cmap.emit(cmap_text)
         # update the contrast
         assert self.image_wrapper is not None, "Updating empty image wrapper"
@@ -1052,17 +1048,28 @@ class ImageGraphicsView(BaseGraphicsView):
             self.image_wrapper.contrast_max,
         )  # read contrast settings
         # use image_wrapper data if image is None
-        if image is None:
+        
+        if cmap_text == 'label_image':
+            image = self.image_wrapper.data
+            print(image.dtype, image.max())
+        elif image is None:
+            print(self.image_wrapper.cmap)
             image = self.update_contrast_memory_efficient((contrast_min, contrast_max),use_cache=use_cache)
         image_to_display = self.change_cmap(cmap_text, image)
         
         assert image_to_display is not None, "Updating empty image"
-        self.set_pixmap(image_to_display)
+        if self_emit:
+            self.set_pixmap(image_to_display)
+        return image_to_display
 
     def generate_lut(self, cmap: str):
         """generate a 8 bit look-up table and converts to rgb space"""
+        from matplotlib.colors import ListedColormap, BoundaryNorm
+
+        color_map: Colormap = colormaps.get_cmap(cmap)
+            
         label_range = np.linspace(0, 1, 256)
-        color_map = colormaps.get_cmap(cmap)
+        
         temp = color_map(label_range)
         uint8_temp = np.uint8(temp[:, 2::-1] * 256)
         return uint8_temp.reshape(256, 1, 3)
@@ -1107,7 +1114,6 @@ class ImageGraphicsView(BaseGraphicsView):
         self._prepare_channels_for_new_image()
         if hasattr(self, "memory_cache"):
             self.memory_cache.clear_all()
-
         # str is filepath
         if isinstance(i, str):
             assert self.storage.get_data(i) is None, "Convert str to UUID instance"
@@ -1156,14 +1162,15 @@ class ImageGraphicsView(BaseGraphicsView):
         emit_data = {}
         self.working_channels = {}
         self.reset_working_channels = {}
-        self._store_channel_data(channel_name, img.data)
-        self.image_wrapper = img
-        display_image = self._prepare_display_image(img.data)
+        self._store_channel_data(channel_name, img)
+        # display_image = self._prepare_display_image(img.data)
+        display_image = self.update_image(self_emit=False)
         emit_data[channel_name] = display_image
         if as_new_image:
             assert image_name is not None, "Image name must be provided for new image"
             self._update_number_of_channels(emit_data, subsample_for_emit)
             self._add_to_manager(image_name, self.working_channels)
+        
         return display_image
 
     @pyqtSlot(object)
@@ -1197,6 +1204,68 @@ class ImageGraphicsView(BaseGraphicsView):
 
             self._clear_caches()
             self.update_image()
+    def _replace_canvas_multichannel(
+        self,
+        channels_data: Dict[str, ImageWrapper],
+        target_channel: str = "Channel 1",
+        subsample_for_emit: bool = False,
+        max_display_size: int = 1024,
+    ) -> np.ndarray:
+        """Replace canvas with multichannel image data - target channel first, others in background."""
+        self._prepare_channels_for_new_image()
+
+        # Initialize thread lock for background processing
+
+        if hasattr(self, "_background_worker") and self._background_worker.isRunning():
+            # print("Warning: Previous channel processing still ongoing. Canceling it.")
+            self._background_worker.terminate()
+        # Process target channel first for immediate display
+        if target_channel not in channels_data:
+            raise ValueError(f"{target_channel} was not found in the data")
+
+        target_image_wrapper = channels_data[target_channel]
+
+        # Process target channel immediately
+        # fill channels with dummy data:
+        for channel_name, channel_data in channels_data.items():
+            if channel_name != target_channel:
+                self._store_channel_data(
+                    channel_name, channel_data, replace_image_wrapper=False
+                )
+        self._store_channel_data(target_channel, target_image_wrapper)
+        self.current_channel = int(target_channel[-1]) - 1
+        
+        display_channel_data = self.update_image(image=target_image_wrapper.data, self_emit=False)
+        self.update_cmap.emit(target_image_wrapper.cmap)
+
+        # Emit target channel immediately for display
+        emit_data = {target_channel: display_channel_data}
+        self._update_number_of_channels(emit_data, subsample_for_emit)
+        print(self.current_channel, "current channel")
+
+        # Process remaining channels in background if there are any
+        remaining_channels = {
+            k: v for k, v in channels_data.items() if k != target_channel
+        }
+
+        if remaining_channels:
+            background_worker = Worker(
+                self._process_remaining_channels,
+                remaining_channels,
+                subsample_for_emit,
+                max_display_size,
+            )
+            self._background_worker = background_worker
+            background_worker.signal.connect(self._on_background_channels_completed)
+            background_worker.finished.connect(background_worker.quit)
+            background_worker.finished.connect(background_worker.deleteLater)
+            background_worker.start()
+
+        self._clear_caches()
+        self.image_count += 1
+        
+
+        return display_channel_data
 
     def rotate_image_task(self, channels: dict, angle):
         

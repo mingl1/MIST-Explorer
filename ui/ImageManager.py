@@ -135,15 +135,17 @@ class ImageTreeWidget(QTreeView):
 
     def show_on_canvas(self, item):
         assert self.model_canvas is not None, "model_canvas is not set"
+        print('show on canvas')
         model_canvas = self.model_canvas
-        channel, my_uuid = self._name_and_uuid_from_item(item, tooltip=True)
+        name, my_uuid = self._name_and_uuid_from_item(item, tooltip=True)
         different = str(my_uuid) != str(model_canvas.uuid)
         if not different:
             channel = self._get_channel_from_item(item)
             model_canvas.swap_channel(channel)
         else:
+            channel = self._get_channel_from_item(item, as_int=False)
             model_canvas.add_to_canvas(
-                my_uuid, as_new_image=False, target_channel=channel
+                my_uuid, as_new_image=False, target_channel=str(channel)
             )
 
     def show_on_reference_canvas(self, uuid: UUID, channel: int):
@@ -287,14 +289,17 @@ class ImageTreeWidget(QTreeView):
 
         return name, item_uuid
 
-    def _get_channel_from_item(self, item):
+    def _get_channel_from_item(self, item, as_int=True):
         model = self.model()
         assert isinstance(model, ImageTreeModel), "Model is not set"
         item = model.itemFromIndex(item)
         assert item is not None, "Item is None"
         channel = item.data(Qt.ItemDataRole.ToolTipRole)
+        if as_int is False:
+            return str(channel)
         try:
             channel = int(channel.replace("Channel ", "")) - 1
+            print(channel)
         except ValueError:
             raise ValueError("Invalid default channel format.")
         return channel

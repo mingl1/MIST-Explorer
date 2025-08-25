@@ -15,6 +15,8 @@ from qtrangeslider import QRangeSlider
 
 from ui.toolbar.Action import Action
 from utils import resource_path
+from matplotlib.colors import ListedColormap
+
 
 
 class ToolBarUI(QToolBar):
@@ -27,7 +29,7 @@ class ToolBarUI(QToolBar):
         super().__init__(parent=parent)
         self._init_tab_buttons()
         self._init_actions(parent)
-        self._init_channel_selector(parent)
+        # self._init_channel_selector(parent)
         self._init_status_line()
         self._init_cmap_selector(parent)
         self._init_contrast_slider()
@@ -78,13 +80,13 @@ class ToolBarUI(QToolBar):
         if index == 2:  # View tab
             # hide all actions
             self.actionReset.setVisible(False)
-            self.channelSelector.setDisabled(True)
+            # self.channelSelector.setDisabled(True)
             self.cmapSelector.setDisabled(True)
             self.auto_contrast_button.setDisabled(True)
             self.contrastSlider.setDisabled(True)
         else:
             self.actionReset.setVisible(True)
-            self.channelSelector.setDisabled(False)
+            # self.channelSelector.setDisabled(False)
             self.cmapSelector.setDisabled(False)
             self.auto_contrast_button.setDisabled(False)
             self.contrastSlider.setDisabled(False)
@@ -108,18 +110,23 @@ class ToolBarUI(QToolBar):
         )
 
     def updateChannelSelector(self, channels: dict, clear=False):
-        if clear:
-            self.clearChannelSelector()
-        channel_keys = sorted(
-            channels.keys(), key=lambda x: int(x.replace("Channel ", ""))
-        )
-        self.channelSelector.addItems(channel_keys)
+        # self.initialized = False
+        # # if clear:
+        # #     self.clearChannelSelector()
+        # channel_keys = sorted(
+        #     channels.keys(), key=lambda x: int(x.replace("Channel ", ""))
+        # )
+        # self.channelSelector.addItems(channel_keys)
+        return
 
     def clearChannelSelector(self):
-        self.channelSelector.clear()
+        # self.channelSelector.clear()
+        return
 
     @pyqtSlot(int)
     def on_channelSelector_currentIndexChanged(self, index):
+        if self.initialized is False:
+            self.initialized = True
         if self.channelSelector.count() > 0:
             self.channelChanged.emit(index)
 
@@ -152,20 +159,43 @@ class ToolBarUI(QToolBar):
         self.cmapSelector.setCurrentText(cmap_value)
 
     def _generate_cmap_thumbnails(self):
-        self.cmap_names = ["gray", "viridis", "plasma", "inferno", "magma", "cividis"]
+        self.cmap_names = ["gray", "viridis", "plasma", "inferno", "magma", "cividis", "label_image"]
         thumbnails = []
         for cmap_name in self.cmap_names:
-            gradient = np.linspace(0, 1, 256)
-            gradient = np.vstack((gradient, gradient))
-            fig, ax = plt.subplots(figsize=(4, 1))
-            ax.imshow(gradient, aspect="auto", cmap=cmap_name)
-            ax.set_xticks([])
-            ax.set_yticks([])
-            fig.tight_layout(pad=0)
-            fig.canvas.draw()
-            thumbnails.append(np.array(fig.canvas.renderer.buffer_rgba()))
-            plt.close()
+            if cmap_name == "label_image":
+                # Make a thumbnail with discrete colors (like skimage.label2rgb default)
+                from skimage.color import color_dict
+
+                # Get a list of default categorical colors
+                colors = list(color_dict.values())[:10]  # take first N colors (e.g. 10)
+                n = len(colors)
+
+                # Make an array of shape (1, n) with categorical colors
+                gradient = np.arange(n).reshape(1, -1)
+
+                fig, ax = plt.subplots(figsize=(4, 1))
+                cmap = ListedColormap(colors)
+                ax.imshow(gradient, aspect="auto", cmap=cmap)
+                ax.set_xticks([])
+                ax.set_yticks([])
+                fig.tight_layout(pad=0)
+                fig.canvas.draw()
+                thumbnails.append(np.array(fig.canvas.renderer.buffer_rgba()))
+                plt.close()
+            else:
+                # Continuous cmap preview
+                gradient = np.linspace(0, 1, 256)
+                gradient = np.vstack((gradient, gradient))
+                fig, ax = plt.subplots(figsize=(4, 1))
+                ax.imshow(gradient, aspect="auto", cmap=cmap_name)
+                ax.set_xticks([])
+                ax.set_yticks([])
+                fig.tight_layout(pad=0)
+                fig.canvas.draw()
+                thumbnails.append(np.array(fig.canvas.renderer.buffer_rgba()))
+                plt.close()
         return thumbnails
+
 
     def _numpy_to_QIcon(self, array: np.ndarray):
         height, width, channels = array.shape
@@ -193,7 +223,7 @@ class ToolBarUI(QToolBar):
 
         # Actions & widgets
         self.addAction(self.actionReset)
-        self.addWidget(self.channelSelector)
+        # self.addWidget(self.channelSelector)
         self.addWidget(self.cmapSelector)
         self.addWidget(self.statusLine)
         self.addWidget(self.auto_contrast_button)
@@ -204,4 +234,4 @@ class ToolBarUI(QToolBar):
         self.setWindowTitle(_translate("MainWindow", "toolBar"))
         self.actionReset.setText(_translate("MainWindow", "Reset"))
         self.actionReset.setToolTip(_translate("MainWindow", "Reset Image"))
-        self.channelSelector.setToolTip(_translate("MainWindow", "Select a channel"))
+        # self.channelSelector.setToolTip(_translate("MainWindow", "Select a channel"))
