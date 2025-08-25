@@ -54,41 +54,36 @@ def numpy_to_qimage(array: np.ndarray) -> QImage:
 
 def qimage_to_numpy(qimage: QImage):
     # Ensure the QImage format is suitable for conversion
-    valid_formats = [QImage.Format.Format_Grayscale8, QImage.Format.Format_Grayscale16]
     ptr = qimage.bits()
     width = qimage.width()
     height = qimage.height()
-
-    # convert to grayscale
-    if qimage.format() not in valid_formats:
-        if qimage.format() == QImage.Format.Format_RGB32:
-            assert ptr is not None, "QImage bits() returned None"
-            ptr.setsize(width * height * 4)
-            arr = np.array(ptr, dtype=np.uint8).reshape(height, width, 4)
-
-            return arr
-        else:
-            raise ValueError("Unsupported dtype")
-
+    
+    if qimage.format() == QImage.Format.Format_Grayscale8:
+        assert ptr is not None, "QImage bits() returned None"
+        ptr.setsize(width * height)
+        arr = np.frombuffer(ptr, dtype=np.uint8).reshape(height, width)
+        return arr
     elif qimage.format() == QImage.Format.Format_Grayscale16:
-        qimage = qimage.convertToFormat(QImage.Format.Format_Grayscale8)
-
-    elif qimage.format() == QImage.Format.Format_Grayscale8:
-        qimage = qimage
+        assert ptr is not None, "QImage bits() returned None"
+        ptr.setsize(width * height * 2)
+        arr = np.frombuffer(ptr, dtype=np.uint16).reshape(height, width)
+        return arr
+    elif qimage.format() in [QImage.Format.Format_RGB32, QImage.Format.Format_ARGB32, QImage.Format.Format_RGBX8888, QImage.Format.Format_RGBA8888, QImage.Format.Format_ARGB32_Premultiplied]:
+        assert ptr is not None, "QImage bits() returned None"
+        ptr.setsize(width * height * 4)
+        arr = np.frombuffer(ptr, dtype=np.uint8).reshape(height, width, 4)
+        return arr
+    elif qimage.format() == QImage.Format.Format_RGB888:
+        assert ptr is not None, "QImage bits() returned None"
+        ptr.setsize(width * height * 3)
+        arr = np.frombuffer(ptr, dtype=np.uint8).reshape(height, width, 3)
+        return arr
     else:
-        raise ValueError("Unsupported dtype")
-
-    # Set buffer size based on dtype
-    assert ptr is not None, "QImage bits() returned None"
-    ptr.setsize(width * height)
-
-    print(qimage.format())
-    arr = np.array(ptr).reshape(height, width)
-
-    return arr
+        raise ValueError(f"Unsupported QImage format: {qimage.format()}")
 
 
 # this and qimage to numpy seems repetitive, delete one of them
+# Dead code: This function is not used anywhere in the codebase.
 def pixmap_to_image(pixmap: QPixmap):
 
     if pixmap == None:
@@ -96,16 +91,7 @@ def pixmap_to_image(pixmap: QPixmap):
     # Convert QPixmap to QImage
     qimage = pixmap.toImage()
 
-    # Convert QImage to numpy array
-    width = qimage.width()
-    height = qimage.height()
-    ptr = qimage.bits()
-    assert ptr is not None, "QImage bits() returned None"
-    ptr.setsize(height * width * 4)
-    arr = np.array(ptr).reshape(height, width, 4)  # 4 for RGBA
-
-    # Save numpy array as an image file using OpenCV
-    return arr
+    return qimage_to_numpy(qimage)
 
 
 def to_pixmap(data: QPixmap | np.ndarray | QImage):
@@ -130,6 +116,17 @@ def is_grayscale(image: np.ndarray) -> bool:
         return True
     else:
         raise ValueError("Image format not recognized")
+def to_uint8_rgb(image):
+    """Convert RGB image to uint8 with per-channel scaling"""
+    if image.dtype == np.uint8:
+        return image
+    img_float = image.astype(np.float32)
+    img_uint8 = np.zeros_like(image, dtype=np.uint8)
+    for c in range(image.shape[2]):
+        ch = img_float[..., c]
+        if ch.max() > ch.min():
+            img_uint8[..., c] = ((ch - ch.min()) * 255.0 / (ch.max() - ch.min())).astype(np.uint8)
+    return img_uint8
 
 
 def to_uint8(image):
@@ -137,7 +134,8 @@ def to_uint8(image):
     # Check if image is already uint8
     if image.dtype == np.uint8:
         return image
-
+    if not is_grayscale(image):
+        return to_uint8_rgb(image)
     # Convert to float and scale to 0-255
     img_float = image.astype(np.float32)
     if img_float.max() > img_float.min():  # Check to avoid division by zero
@@ -234,21 +232,29 @@ def adjustContrast(img, alpha=5, beta=15):
 
 
 # uint16 to uint8
+
 def scale_adjust(arr: np.ndarray) -> NDArray[np.uint8]:
     if arr.dtype == np.uint16:
-        return cv2.convertScaleAbs(arr, alpha=(255.0 / 65535.0)).astype(np.uint8)
+        return cv2.convertScaleAbs(arr, alpha=(255.0 / 65535.0))
     elif arr.dtype == np.uint8:
         return arr
     elif arr.dtype == np.uint32:
-        array_uint8 = ((arr / arr.max()) * 255).astype(np.uint8)
-        return array_uint8
-    elif arr.dtype == np.float32 or arr.dtype == np.float64:
-        if arr.max() > 1.0:
-            arr = arr / arr.max()
-        array_uint8 = np.clip(arr * 255, 0, 255).astype(np.uint8)
-        return array_uint8
+        max_val = arr.max()
+        if max_val == 0:
+            return np.zeros_like(arr, dtype=np.uint8)
+        return ((arr / max_val) * 255).astype(np.uint8)
+    elif arr.dtype in [np.float32, np.float64]:
+        arr_clipped = np.clip(arr, 0, None)  # remove negative values
+        max_val = arr_clipped.max()
+        if max_val > 0:
+            arr_scaled = (arr_clipped / max_val) * 255
+        else:
+            arr_scaled = arr_clipped
+        return np.clip(arr_scaled, 0, 255).astype(np.uint8)
+    
     else:
-        raise ValueError("unsupported array type: ", arr.dtype)
+        raise ValueError(f"Unsupported array type: {arr.dtype}")
+
 
 
 def create_lut(new_min, new_max):
@@ -285,7 +291,10 @@ def gaussian_kernel_1d(sigma, radius=None):
     return kernel
 
 
-def gaussian_blur_separable(image: NDArray[np.float64], sigma=1.0):
+
+# Dead code: This function is not used anywhere in the codebase.
+def debounce(wait_time):
+
     """Apply separable Gaussian blur manually using numpy."""
     kernel = gaussian_kernel_1d(sigma)
 
@@ -432,6 +441,7 @@ def warp_image(img, transform_matrix) -> NDArray[np.uint8]:
 
 
 # Memory monitoring utility
+# Dead code: This function is not used anywhere in the codebase.
 def monitor_memory_usage():
     """Simple memory monitoring function."""
     import os
@@ -516,3 +526,348 @@ def resource_path(relative_path):
     if hasattr(sys, "_MEIPASS"):
         return os.path.join(sys._MEIPASS, relative_path)
     return os.path.join(os.path.abspath("."), relative_path)
+
+def get_read_function(path: str):
+    if path.endswith(".tif") or path.endswith(".tiff"):
+        return tiff.imread
+    elif path.endswith(".png") or path.endswith(".jpg") or path.endswith(".jpeg"):
+        return cv2.imread
+    else:
+        raise ValueError("Unsupported file type")
+
+def get_save_function(path: str):
+    if path.endswith(".tif") or path.endswith(".tiff"):
+        return tiff.imwrite
+    elif path.endswith(".png") or path.endswith(".jpg") or path.endswith(".jpeg"):
+        return cv2.imwrite
+    else:
+        raise ValueError("Unsupported file type")
+
+def get_home_dir():
+    return os.path.expanduser("~")
+
+def get_desktop_dir():
+    return os.path.join(get_home_dir(), "Desktop")
+
+def get_most_recent_file(directory: str, ext: str = ".tif"):
+    files = [
+        os.path.join(directory, f)
+        for f in os.listdir(directory)
+        if f.endswith(ext) and os.path.isfile(os.path.join(directory, f))
+    ]
+    if not files:
+        return None
+    return max(files, key=os.path.getmtime)
+
+def get_file_name(path: str):
+    return os.path.basename(path)
+
+def get_file_ext(path: str):
+    return os.path.splitext(path)[1]
+
+def get_file_dir(path: str):
+    return os.path.dirname(path)
+
+def get_file_name_without_ext(path: str):
+    return os.path.splitext(get_file_name(path))[0]
+
+def get_files_in_dir(directory: str, ext: str = ".tif"):
+    return [
+        os.path.join(directory, f)
+        for f in os.listdir(directory)
+        if f.endswith(ext) and os.path.isfile(os.path.join(directory, f))
+    ]
+
+def get_sub_dirs(directory: str):
+    return [
+        os.path.join(directory, d)
+        for d in os.listdir(directory)
+        if os.path.isdir(os.path.join(directory, d))
+    ]
+
+def create_dir(directory: str):
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
+def get_shared_contrast_limits(images: list[np.ndarray]):
+    min_val = min([np.min(img) for img in images])
+    max_val = max([np.max(img) for img in images])
+    return min_val, max_val
+
+def get_shared_dtype(images: list[np.ndarray]):
+    return np.find_common_type([img.dtype for img in images], [])
+
+def get_shared_shape(images: list[np.ndarray]):
+    shapes = [img.shape for img in images]
+    if len(set(shapes)) > 1:
+        raise ValueError("Images have different shapes")
+    return shapes[0]
+
+def get_shared_ndim(images: list[np.ndarray]):
+    ndims = [img.ndim for img in images]
+    if len(set(ndims)) > 1:
+        raise ValueError("Images have different number of dimensions")
+    return ndims[0]
+
+def get_shared_itemsize(images: list[np.ndarray]):
+    itemsizes = [img.itemsize for img in images]
+    if len(set(itemsizes)) > 1:
+        raise ValueError("Images have different item sizes")
+    return itemsizes[0]
+
+def get_shared_strides(images: list[np.ndarray]):
+    strides = [img.strides for img in images]
+    if len(set(strides)) > 1:
+        raise ValueError("Images have different strides")
+    return strides[0]
+
+def get_shared_flags(images: list[np.ndarray]):
+    flags = [img.flags.c_contiguous for img in images]
+    if len(set(flags)) > 1:
+        raise ValueError("Images have different memory layout")
+    return flags[0]
+
+def check_images_are_compatible(images: list[np.ndarray]):
+    get_shared_dtype(images)
+    get_shared_shape(images)
+    get_shared_ndim(images)
+    get_shared_itemsize(images)
+    get_shared_strides(images)
+    get_shared_flags(images)
+    return True
+
+def check_image_is_grayscale(image: np.ndarray):
+    if image.ndim == 2:
+        return True
+    elif image.ndim == 3 and image.shape[2] == 1:
+        return True
+    else:
+        return False
+
+def check_image_is_rgb(image: np.ndarray):
+    if image.ndim == 3 and image.shape[2] == 3:
+        return True
+    else:
+        return False
+
+def check_image_is_rgba(image: np.ndarray):
+    if image.ndim == 3 and image.shape[2] == 4:
+        return True
+    else:
+        return False
+
+def check_image_is_uint8(image: np.ndarray):
+    if image.dtype == np.uint8:
+        return True
+    else:
+        return False
+
+def check_image_is_uint16(image: np.ndarray):
+    if image.dtype == np.uint16:
+        return True
+    else:
+        return False
+
+def check_image_is_float(image: np.ndarray):
+    if image.dtype == np.float32 or image.dtype == np.float64:
+        return True
+    else:
+        return False
+
+def check_image_is_bool(image: np.ndarray):
+    if image.dtype == np.bool_:
+        return True
+    else:
+        return False
+
+def check_image_is_binary(image: np.ndarray):
+    if image.dtype == np.bool_ and len(np.unique(image)) <= 2:
+        return True
+    else:
+        return False
+
+def check_image_is_label(image: np.ndarray):
+    if image.dtype == np.uint16 and len(np.unique(image)) > 2:
+        return True
+    else:
+        return False
+
+def check_image_is_distance_transform(image: np.ndarray):
+    if image.dtype == np.float32 and np.min(image) >= 0 and np.max(image) <= 1:
+        return True
+    else:
+        return False
+
+def check_image_is_valid(image: np.ndarray):
+    if image.ndim not in [2, 3]:
+        return False
+    if image.ndim == 3 and image.shape[2] not in [1, 3, 4]:
+        return False
+    if image.dtype not in [
+        np.uint8,
+        np.uint16,
+        np.float32,
+        np.float64,
+        np.bool_,
+    ]:
+        return False
+    return True
+
+def get_image_diagnostics(image: np.ndarray):
+    diagnostics = {
+        "shape": image.shape,
+        "ndim": image.ndim,
+        "dtype": image.dtype,
+        "min": np.min(image),
+        "max": np.max(image),
+        "mean": np.mean(image),
+        "std": np.std(image),
+        "is_grayscale": check_image_is_grayscale(image),
+        "is_rgb": check_image_is_rgb(image),
+        "is_rgba": check_image_is_rgba(image),
+        "is_uint8": check_image_is_uint8(image),
+        "is_uint16": check_image_is_uint16(image),
+        "is_float": check_image_is_float(image),
+        "is_bool": check_image_is_bool(image),
+        "is_binary": check_image_is_binary(image),
+        "is_label": check_image_is_label(image),
+        "is_distance_transform": check_image_is_distance_transform(image),
+        "is_valid": check_image_is_valid(image),
+    }
+    return diagnostics
+
+def print_image_diagnostics(image: np.ndarray):
+    diagnostics = get_image_diagnostics(image)
+    for key, value in diagnostics.items():
+        print(f"{key}: {value}")
+
+def get_dummy_image(shape=(100, 100), dtype=np.uint8):
+    if dtype == np.uint8:
+        return np.random.randint(0, 256, shape, dtype=np.uint8)
+    elif dtype == np.uint16:
+        return np.random.randint(0, 65536, shape, dtype=np.uint16)
+    elif dtype == np.float32:
+        return np.random.rand(*shape).astype(np.float32)
+    elif dtype == np.float64:
+        return np.random.rand(*shape)
+    elif dtype == np.bool_:
+        return np.random.randint(0, 2, shape, dtype=np.bool_)
+    else:
+        raise ValueError("Unsupported dtype")
+
+def get_dummy_label_image(shape=(100, 100), num_labels=10):
+    return np.random.randint(0, num_labels, shape, dtype=np.uint16)
+
+def get_dummy_distance_transform_image(shape=(100, 100)):
+    return np.random.rand(*shape).astype(np.float32)
+
+def get_dummy_binary_image(shape=(100, 100)):
+    return np.random.randint(0, 2, shape, dtype=np.bool_)
+
+def get_dummy_rgb_image(shape=(100, 100, 3)):
+    return np.random.randint(0, 256, shape, dtype=np.uint8)
+
+def get_dummy_rgba_image(shape=(100, 100, 4)):
+    return np.random.randint(0, 256, shape, dtype=np.uint8)
+
+def get_dummy_grayscale_image(shape=(100, 100), dtype=np.uint8):
+    return get_dummy_image(shape, dtype)
+
+def get_dummy_image_with_nan(shape=(100, 100)):
+    image = np.random.rand(*shape).astype(np.float32)
+    image[10, 10] = np.nan
+    return image
+
+def get_dummy_image_with_inf(shape=(100, 100)):
+    image = np.random.rand(*shape).astype(np.float32)
+    image[10, 10] = np.inf
+    return image
+
+def get_dummy_image_with_negative(shape=(100, 100)):
+    image = np.random.rand(*shape).astype(np.float32)
+    image[10, 10] = -1
+    return image
+
+def get_dummy_image_with_zero_std(shape=(100, 100)):
+    return np.ones(shape, dtype=np.uint8)
+
+def get_dummy_image_with_two_values(shape=(100, 100)):
+    image = np.zeros(shape, dtype=np.uint8)
+    image[50:, :] = 1
+    return image
+
+def get_dummy_image_with_three_values(shape=(100, 100)):
+    image = np.zeros(shape, dtype=np.uint8)
+    image[33:, :] = 1
+    image[66:, :] = 2
+    return image
+
+def get_dummy_image_with_four_values(shape=(100, 100)):
+    image = np.zeros(shape, dtype=np.uint8)
+    image[25:, :] = 1
+    image[50:, :] = 2
+    image[75:, :] = 3
+    return image
+
+def get_dummy_image_with_five_values(shape=(100, 100)):
+    image = np.zeros(shape, dtype=np.uint8)
+    image[20:, :] = 1
+    image[40:, :] = 2
+    image[60:, :] = 3
+    image[80:, :] = 4
+    return image
+
+def get_dummy_image_with_six_values(shape=(100, 100)):
+    image = np.zeros(shape, dtype=np.uint8)
+    image[16:, :] = 1
+    image[32:, :] = 2
+    image[48:, :] = 3
+    image[64:, :] = 4
+    image[80:, :] = 5
+    return image
+
+def get_dummy_image_with_seven_values(shape=(100, 100)):
+    image = np.zeros(shape, dtype=np.uint8)
+    image[14:, :] = 1
+    image[28:, :] = 2
+    image[42:, :] = 3
+    image[56:, :] = 4
+    image[70:, :] = 5
+    image[84:, :] = 6
+    return image
+
+def get_dummy_image_with_eight_values(shape=(100, 100)):
+    image = np.zeros(shape, dtype=np.uint8)
+    image[12:, :] = 1
+    image[24:, :] = 2
+    image[36:, :] = 3
+    image[48:, :] = 4
+    image[60:, :] = 5
+    image[72:, :] = 6
+    image[84:, :] = 7
+    return image
+
+def get_dummy_image_with_nine_values(shape=(100, 100)):
+    image = np.zeros(shape, dtype=np.uint8)
+    image[11:, :] = 1
+    image[22:, :] = 2
+    image[33:, :] = 3
+    image[44:, :] = 4
+    image[55:, :] = 5
+    image[66:, :] = 6
+    image[77:, :] = 7
+    image[88:, :] = 8
+    return image
+
+def get_dummy_image_with_ten_values(shape=(100, 100)):
+    image = np.zeros(shape, dtype=np.uint8)
+    image[10:, :] = 1
+    image[20:, :] = 2
+    image[30:, :] = 3
+    image[40:, :] = 4
+    image[50:, :] = 5
+    image[60:, :] = 6
+    image[70:, :] = 7
+    image[80:, :] = 8
+    image[90:, :] = 9
+    return image

@@ -1,21 +1,3 @@
-"""
-Cell Intensity Analysis Module for MIST-Explorer
-
-This module provides the CellIntensity class for quantifying protein signal intensities
-within segmented cells using bead-based decoding. It supports:
-    - Calculation of median-adjusted protein intensities per cell
-    - Handling of missing protein data via nearest-neighbor bead search
-    - Flexible decoding cycles/colors and region radii
-    - Export of results to CSV or Excel
-    - Progress and error signaling for integration with PyQt GUIs
-
-Classes:
-    CellIntensity: QThread subclass for background computation of cell intensity tables
-
-Typical usage involves setting the required data (stardist labels, bead data, color code, and protein signal array),
-then calling generateCellIntensityTable() to compute and save the results.
-"""
-
 import itertools
 
 import cv2 as cv
@@ -226,6 +208,11 @@ class CellIntensity(QThread):
             # --- 3. Combine Masks ---
             # The final mask identifies beads that satisfy ALL conditions
             valid_bead_mask = in_cell_mask & in_bounds_mask
+
+# remove in_cell_mask and edit self.stardist_labels to include psuedo-cells, 
+# note the labels should start with max(self.stardist_labels)+1;
+# after editing self.stardist_labels, rest of code shouldn't need to be changed
+
 
             # --- 4. Filter the Data ---
             # Create a much smaller array containing only the beads we need to process

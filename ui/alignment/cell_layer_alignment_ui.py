@@ -54,8 +54,6 @@ class CellLayerAlignmentUI(QWidget):
         self.main_layout = QVBoxLayout(self.alignment_groupbox)
 
         # Title and labels
-        self.title_label = QLabel("Cell Layer Alignment")
-        self.title_label.setStyleSheet("font-weight: bold; font-size: 14px;")
 
         # Image 1 layout
         self.image1_layout = QHBoxLayout()
@@ -185,8 +183,7 @@ class CellLayerAlignmentUI(QWidget):
         self.button_layout.addWidget(self.register_button)
 
         # Add all elements to the main layout
-        self.main_layout.addWidget(self.title_label)
-        self.main_layout.addSpacing(5)
+        # self.main_layout.addSpacing(5)
         self.main_layout.addLayout(self.image1_layout)
         self.main_layout.addLayout(self.target_spacing_row)
         self.main_layout.addLayout(self.image2_layout)
@@ -252,7 +249,6 @@ class CellLayerAlignmentUI(QWidget):
         self.alignment_groupbox.setTitle(
             _translate("MainWindow", "Cell Layer Alignment")
         )
-        self.title_label.setText(_translate("MainWindow", "Cell Layer Alignment"))
         self.image1_label.setText(_translate("MainWindow", "Target Image:"))
         self.image2_label.setText(_translate("MainWindow", "Unaligned Image:"))
         self.register_button.setText(_translate("MainWindow", "Register Images"))
