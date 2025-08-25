@@ -1,4 +1,5 @@
 import copy
+from curses import meta
 import gc
 
 # Standard library imports
@@ -306,12 +307,13 @@ class ImageWrapper:
 
 
 # Be able to reset to first version, contrast, crop
+# use object for signal parameter if can be None
 class BaseGraphicsView(QWidget):
     image_signal = pyqtSignal(dict, bool)
     update_progress = pyqtSignal(int, str)
     error_signal = pyqtSignal(str)
     fill_metadata = pyqtSignal(dict)
-    update_manager = pyqtSignal(dict, str)
+    update_manager = pyqtSignal(dict, str, object)
     add_image_to_storage = pyqtSignal(str, object)
 
     def __init__(self, parent=None):
@@ -473,7 +475,8 @@ class BaseGraphicsView(QWidget):
             #     channel_one_image = display_image
         self.image_wrapper.data = channel_one_image
         self.image_wrapper.cmap = "default"
-        self._add_to_manager(file_name, working_channels)
+        metadata_text = metadata_widget.metadata_tooltip(metadata)
+        self._add_to_manager(file_name, working_channels, metadata_text)
         return channel_one_image
 
     def _process_single_image(
@@ -783,14 +786,14 @@ class BaseGraphicsView(QWidget):
         progress = 10 + int(channel_num / total_channels * 70)
         self.update_progress.emit(progress, f"Processing Channel {channel_num}")
 
-    def _add_to_manager(self, file_name: str, image_channels) -> None:
+    def _add_to_manager(self, file_name: str, image_channels, metadata=None) -> None:
         """Finalize processing with cleanup and emissions."""
         # self._clear_caches()
         self.update_progress.emit(100, "Image Loaded")
 
         # print("Emitting to update manager")
 
-        self.update_manager.emit(image_channels, file_name)
+        self.update_manager.emit(image_channels, file_name,metadata)
         self.image_count += 1
 
     def _clear_caches(self) -> None:
@@ -1562,6 +1565,7 @@ class MetaData(QWidget):
 
         self.table.setHorizontalHeaderLabels(["Value"])
         self.table.setColumnWidth(0, 300)
+        self.table.setStyleSheet("background-color: transparent")
 
         layout = QVBoxLayout(self)
         layout.addWidget(self.table)
@@ -1635,6 +1639,16 @@ class MetaData(QWidget):
                 metadata["DimensionOrder"] = "Unknown"
 
         return metadata
+    def metadata_tooltip(self, metadata: dict) -> str:
+        """
+        Generate a tooltip string from the metadata dictionary.
+        """
+        tooltip_lines = []
+        for key in self.headers:
+            value = metadata.get(key, "Unknown")
+            tooltip_lines.append(f"<b>{key}:</b> {value}")
+        return "<br>".join(tooltip_lines)
+
 
 
 class ImageDialog(QDialog):

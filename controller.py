@@ -164,9 +164,10 @@ class Controller:
         self.open_file_dialog(self.model_canvas)
 
     # add new image to storage
-    def handle_new_image(self, data, file_name):
+    def handle_new_image(self, data, file_name, metadata=None):
         storage_item = {}
         storage_item["name"] = os.path.basename(file_name)
+        storage_item['metadata'] = metadata
         self.image_count += 1
 
         storage_item["data"] = data

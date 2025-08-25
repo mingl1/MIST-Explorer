@@ -209,7 +209,7 @@ class ImageTreeWidget(QTreeView):
 
                 current_default = model.itemFromIndex(item)
                 assert current_default is not None, "Current default item is None"
-                current_default = current_default.data(Qt.ItemDataRole.ToolTipRole)
+                current_default = current_default.data(Qt.ItemDataRole.WhatsThisRole)
                 if current_default is None:
                     current_default = "Channel 1"
                 children = model.itemFromIndex(item)
@@ -217,14 +217,14 @@ class ImageTreeWidget(QTreeView):
                 for i in range(children.rowCount()):
                     child_item = children.child(i)
                     assert child_item is not None, "Child item is None"
-                    channel_name = child_item.data(Qt.ItemDataRole.ToolTipRole)
+                    channel_name = child_item.data(Qt.ItemDataRole.WhatsThisRole)
                     action = QAction(channel_name, self)
                     action.setCheckable(True)
                     action.setChecked(channel_name == current_default)
                     action.triggered.connect(
                         lambda _, channel_name=channel_name: (
                             model.setData(
-                                item, channel_name, Qt.ItemDataRole.ToolTipRole
+                                item, channel_name, Qt.ItemDataRole.WhatsThisRole
                             )
                         )
                     )
@@ -282,7 +282,7 @@ class ImageTreeWidget(QTreeView):
         if tooltip is False:
             name = item.text()
         else:
-            name = item.data(Qt.ItemDataRole.ToolTipRole)
+            name = item.data(Qt.ItemDataRole.WhatsThisRole)
         item_uuid = uuid.UUID(item.data(Qt.ItemDataRole.UserRole))
         if not item_uuid:
             raise ValueError("Item does not have a valid UUID.")
@@ -294,7 +294,7 @@ class ImageTreeWidget(QTreeView):
         assert isinstance(model, ImageTreeModel), "Model is not set"
         item = model.itemFromIndex(item)
         assert item is not None, "Item is None"
-        channel = item.data(Qt.ItemDataRole.ToolTipRole)
+        channel = item.data(Qt.ItemDataRole.WhatsThisRole)
         if as_int is False:
             return str(channel)
         try:
