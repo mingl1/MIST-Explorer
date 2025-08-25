@@ -6,7 +6,6 @@ from utils import numpy_to_qimage
 
 
 class ImageTreeItem(QStandardItem):
-
     def __init__(self, uuid, channel="Channel 1", useItemName=False, image_ready=False):
         super().__init__()
         self.storage = ImageStorage()
@@ -36,6 +35,10 @@ class ImageTreeItem(QStandardItem):
                     | Qt.ItemFlag.ItemIsSelectable
                     | Qt.ItemFlag.ItemIsEditable
                 )
+                metadata_text = image_dict.get("metadata",None)
+                if metadata_text is not None:
+                    self.setData(metadata_text,Qt.ItemDataRole.ToolTipRole)
+                
             else:
                 thumbnail = QPixmap(icon).scaled(
                     30, 30, Qt.AspectRatioMode.KeepAspectRatio
@@ -47,7 +50,9 @@ class ImageTreeItem(QStandardItem):
             self.setIcon(icon)
         self.setText(text)
         self.setData(uuid, Qt.ItemDataRole.UserRole)
-        self.setData(channel, Qt.ItemDataRole.ToolTipRole)
+        self.setData(channel, Qt.ItemDataRole.WhatsThisRole)
+        
+
 
     def set_icon(self):
         """Set the icon for the item. Always a child"""

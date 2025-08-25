@@ -375,6 +375,8 @@ class CellLayerAlignmentUI(QWidget):
         )
         preview_dialog.moving_image_changed.connect(self.aligner.manually_align)
         preview_dialog.exec()
+        self.register_button.setEnabled(True)
+        self.manually_align_button.setEnabled(True)
 
     def _handle_progress(self, value, message):
         """Handle progress updates from the aligner thread"""

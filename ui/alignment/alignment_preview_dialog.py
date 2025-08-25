@@ -46,7 +46,7 @@ class ZoomableImageView(QGraphicsView):
         self._scene = QGraphicsScene(self)
         self.target_item = QGraphicsPixmapItem()
         self.moving_item = QGraphicsPixmapItem()
-        self.moving_item.setZValue(1)
+        self.moving_item.setZValue(0.5)
         self.moving_item.setOpacity(0.5)
         self._scene.addItem(self.target_item)
         self._scene.addItem(self.moving_item)
@@ -382,9 +382,9 @@ class AlignmentPreviewDialog(QDialog):
         h, w = target_gray.shape
         ah, aw = aligned_gray.shape
 
-        start_y = (ah - h) // 2
-        start_x = (aw - w) // 2
-        aligned_gray = aligned_gray[start_y : start_y + h, start_x : start_x + w]
+        # start_y = (ah - h) // 2
+        # start_x = (aw - w) // 2
+        # aligned_gray = aligned_gray[start_y : start_y + h, start_x : start_x + w]
 
         if self.adjust_contrast:
             target_gray = to_uint8(

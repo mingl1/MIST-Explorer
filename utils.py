@@ -291,57 +291,12 @@ def gaussian_kernel_1d(sigma, radius=None):
     return kernel
 
 
-
-# Dead code: This function is not used anywhere in the codebase.
-def debounce(wait_time):
-
-    """Apply separable Gaussian blur manually using numpy."""
-    kernel = gaussian_kernel_1d(sigma)
-
-    # Manual separable convolution - more efficient than apply_along_axis
-    # Horizontal pass
-    pad_width = len(kernel) // 2
-    padded = np.pad(image, ((0, 0), (pad_width, pad_width)), mode="reflect")
-    blurred_h = np.zeros_like(image)
-
-    for i in range(image.shape[0]):
-        blurred_h[i] = np.convolve(padded[i], kernel, mode="valid")
-
-    # Vertical pass
-    padded = np.pad(blurred_h, ((pad_width, pad_width), (0, 0)), mode="reflect")
-    blurred = np.zeros_like(image)
-
-    for j in range(image.shape[1]):
-        blurred[:, j] = np.convolve(padded[:, j], kernel, mode="valid")
-
-    return blurred
-
-
 def downsample(image: NDArray[np.float64], scale=0.5):
     """Downsample image by given scale factor."""
     step = int(round(1 / scale))
     return image[::step, ::step]
 
 
-def build_optical_flow_pyramid_pure_numpy(
-    image: NDArray[np.uint16], max_level=3, scale=0.5, sigma=1.0, min_size=16
-) -> List[NDArray[np.float64]]:
-    """Version using only numpy with manual separable convolution."""
-    assert image.ndim == 2, "Only grayscale images supported"
-    float_image = image.astype(np.float64)
-
-    pyramid = [float_image]
-    current = float_image
-
-    for level in range(max_level):
-        if min(current.shape) < min_size:
-            break
-
-        blurred = gaussian_blur_separable(current, sigma=sigma)
-        current = downsample(blurred, scale=scale)
-        pyramid.append(current)
-
-    return pyramid
 
 
 def adjust_contrast(
