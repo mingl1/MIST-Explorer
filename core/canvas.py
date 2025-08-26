@@ -3,6 +3,7 @@ from curses import meta
 import gc
 
 # Standard library imports
+from operator import is_
 import os
 import threading
 import typing
@@ -21,6 +22,7 @@ import tifffile as tiff
 from cv2 import LUT, rotate
 from matplotlib import colormaps
 from PIL import Image
+from skimage.color import label2rgb as sk_label2rgb
 
 # PyQt6 imports
 from PyQt6.QtCore import QSize, Qt, pyqtSignal, pyqtSlot
@@ -918,11 +920,11 @@ class ImageGraphicsView(BaseGraphicsView):
             return
         self.update_image()
 
-    def update_contrast_memory_efficient(self, values, use_cache=True) -> np.ndarray:
+    def update_contrast_memory_efficient(self, values, use_cache=True, is_labeled=False):
         """Memory-efficient version of update_contrast method."""
         if self.image_wrapper is None:
             self.error_signal.emit("Canvas is empty")
-            return np.array([])
+            return np.array([]), ""
             
 
         contrast_min, contrast_max = int(values[0]), int(values[1])
@@ -934,49 +936,56 @@ class ImageGraphicsView(BaseGraphicsView):
             self.memory_cache = MemoryEfficientImageCache()
 
         contrast_key = (contrast_min, contrast_max)
+        if is_labeled:
+            contrast_key = ('labeled','labeled')
         cmap_key = self.image_wrapper.cmap
         cache_key = (cmap_key, contrast_key)
         contrasted_image = np.array([])
-        if self.is_layered:
+        # if self.is_layered:
             # print("Processing layered image with memory management")
-            channel_num = f"Channel {self.current_channel + 1}"
-            self.image_wrapper = self.working_channels[channel_num]
+        channel_num = f"Channel {self.current_channel + 1}"
+        self.image_wrapper = self.working_channels[channel_num]
 
-            # Check cache first
-            cached_image = None
-            if use_cache:
-                cached_image = self.memory_cache.get(self.uuid, channel_num, cache_key)
-            if cached_image is not None:
-                assert isinstance(
-                    cached_image, np.ndarray
-                ), "Cached image must be ndarray"
-                print(f"Using cached image for {channel_num}")
-                contrasted_image = cached_image
+        # Check cache first
+        cached_image = None
+        if use_cache:
+            cached_image = self.memory_cache.get(self.uuid, channel_num, cache_key)
+        if cached_image is not None:
+            assert isinstance(
+                cached_image, np.ndarray
+            ), "Cached image must be ndarray"
+            print(f"Using cached image for {channel_num}")
+            contrasted_image = cached_image
+        else:
+            print(f"Processing new contrast for {channel_num}")
+            if is_labeled:
+                # ignore contast
+                contrasted_image= sk_label2rgb(self.image_wrapper.data)
+                cmap_key = 'label_image'
             else:
-                print(f"Processing new contrast for {channel_num}")
                 contrasted_image = self._apply_contrast_memory_efficient(
                     channel_num, cache_key, contrast_min, contrast_max
                 )
-                self.memory_cache.put(self.uuid,channel_num,cache_key,contrasted_image)
-        else:
-            # Single layer processing
-            cached_image = self.memory_cache.get(self.uuid, "single", cache_key)
-            if cached_image is not None:
-                assert isinstance(
-                    cached_image, np.ndarray
-                ), "Cached image must be ndarray"
-                # print("Using cached single image")
-                contrasted_image = cached_image
-            else:
-                contrasted_image = self._apply_contrast_memory_efficient(
-                    "single", cache_key, contrast_min, contrast_max
-                )
+            self.memory_cache.put(self.uuid,channel_num,cache_key,contrasted_image)
+        # else:
+        #     # Single layer processing, not sure if this is working
+        #     cached_image = self.memory_cache.get(self.uuid, "single", cache_key)
+        #     if cached_image is not None:
+        #         assert isinstance(
+        #             cached_image, np.ndarray
+        #         ), "Cached image must be ndarray"
+        #         # print("Using cached single image")
+        #         contrasted_image = cached_image
+        #     else:
+        #         contrasted_image = self._apply_contrast_memory_efficient(
+        #             "single", cache_key, contrast_min, contrast_max
+        #         )
 
         # Update slider
         self.change_slider.emit(
             (self.image_wrapper.contrast_min, self.image_wrapper.contrast_max)
         )
-        return contrasted_image
+        return contrasted_image, cmap_key
 
     def _apply_contrast_memory_efficient(
         self, channel_key, cache_key, contrast_min, contrast_max
@@ -1021,9 +1030,7 @@ class ImageGraphicsView(BaseGraphicsView):
             cmap_text = self.image_wrapper.cmap
         self.image_wrapper.cmap = cmap_text
         self.update_cmap.emit(cmap_text)
-        if cmap_text=='label_image':
-            from skimage.color import label2rgb
-            return label2rgb(image)
+        
         
         if cmap_text not in self.lut_cache:
             lut = self.generate_lut(cmap_text)
@@ -1043,6 +1050,7 @@ class ImageGraphicsView(BaseGraphicsView):
         if cmap_text == "default":
             cmap_text = self.image_wrapper.cmap
         print(f"Changing cmap to {cmap_text}")
+        # updates cmap ui but also updated in change_cmap, mainly for label_image
         self.update_cmap.emit(cmap_text)
         # update the contrast
         assert self.image_wrapper is not None, "Updating empty image wrapper"
@@ -1051,14 +1059,17 @@ class ImageGraphicsView(BaseGraphicsView):
             self.image_wrapper.contrast_max,
         )  # read contrast settings
         # use image_wrapper data if image is None
-        
+        image_to_display = None
+        prev_cmap = None
         if cmap_text == 'label_image':
-            image = self.image_wrapper.data
-            print(image.dtype, image.max())
+            # image = self.image_wrapper.data
+            image,prev_cmap = self.update_contrast_memory_efficient((contrast_min, contrast_max),use_cache=use_cache, is_labeled=True)
         elif image is None:
-            print(self.image_wrapper.cmap)
-            image = self.update_contrast_memory_efficient((contrast_min, contrast_max),use_cache=use_cache)
-        image_to_display = self.change_cmap(cmap_text, image)
+            image,prev_cmap = self.update_contrast_memory_efficient((contrast_min, contrast_max),use_cache=use_cache)
+        if cmap_text != 'label_image' and prev_cmap != 'label_image' and prev_cmap != cmap_text:
+            image_to_display = self.change_cmap(cmap_text, image)
+        else:
+            image_to_display = image
         
         assert image_to_display is not None, "Updating empty image"
         if self_emit:
@@ -1067,7 +1078,6 @@ class ImageGraphicsView(BaseGraphicsView):
 
     def generate_lut(self, cmap: str):
         """generate a 8 bit look-up table and converts to rgb space"""
-        from matplotlib.colors import ListedColormap, BoundaryNorm
 
         color_map: Colormap = colormaps.get_cmap(cmap)
             
