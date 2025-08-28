@@ -4,8 +4,6 @@ from calendar import c
 from uuid import UUID
 
 import numpy as np
-import stardist
-from pyexpat import model
 from PyQt6.QtCore import QModelIndex, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QActionGroup
 from PyQt6.QtWidgets import (
@@ -160,7 +158,7 @@ class ImageTreeWidget(QTreeView):
         item = self.indexAt(event.pos())
         if item:
             _, uuid = self._name_and_uuid_from_item(item)
-            channel = self._get_channel_from_item(item)
+            channel = int(self._get_channel_from_item(item))
             is_leaf = self._is_leaf(item)
             set_reference = QAction("Reference")
             set_cell_image = QAction("Cell Image (Stardist)")

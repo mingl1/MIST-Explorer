@@ -476,7 +476,7 @@ class BaseGraphicsView(QWidget):
             # if channel_num == 1:
             #     channel_one_image = display_image
         self.image_wrapper.data = channel_one_image
-        self.image_wrapper.cmap = "default"
+        self.image_wrapper.cmap = "gray"
         metadata_text = metadata_widget.metadata_tooltip(metadata)
         self._add_to_manager(file_name, working_channels, metadata_text)
         return channel_one_image
@@ -519,7 +519,6 @@ class BaseGraphicsView(QWidget):
         if isinstance(data, dict):
             if not data:
                 raise ValueError("Data dict must be non empty")
-            print(f"replace canvds, {target_channel}")
             ret = self._replace_canvas_multichannel(
                 data, target_channel, subsample_for_emit, max_display_size
             )

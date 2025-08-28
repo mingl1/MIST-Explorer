@@ -408,7 +408,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.reference_view = None
 
         # Setup interaction
-        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        # self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setMouseTracking(True)
         self.view_pixmap_item = QGraphicsPixmapItem()
 
@@ -463,6 +463,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.setSceneRect(0, 0, 800, 600)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setContentsMargins(1000,1000,1000,1000)
 
         # Create floating selection buttons
@@ -567,6 +568,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.begin_crop = True
         self.select = False
         self.current_polygon = None
+        self.setFocus()
 
         # Clear any existing crop rectangle
         if self.active_crop_rect:
@@ -796,6 +798,7 @@ class ImageGraphicsViewUI(QGraphicsView):
             and self.crop_mode
             and self.active_crop_rect
         ):
+            print('confirming')
             self.confirm_crop()
             return
 
