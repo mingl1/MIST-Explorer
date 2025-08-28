@@ -321,7 +321,7 @@ class SignalConnectionManager:
             self.c.model_canvas.reset_image
         )
         # self.c.view.toolBarUI.channelChanged.connect(self.c.model_canvas.swap_channel)
-        self.c.view.toolBarUI.contrastSlider.valueChanged.connect(
+        self.c.view.toolBarUI.contrast_slider.valueChanged.connect(
             self.c.model_canvas.update_contrast
         )
         self.c.view.toolBarUI.cmapChanged.connect(self.c.model_canvas.update_image)
