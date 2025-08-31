@@ -3,7 +3,7 @@
 import os
 import typing
 import uuid
-
+import copy
 import numpy as np
 from PIL import Image
 from PyQt6.QtCore import QObject, pyqtSignal
@@ -167,7 +167,7 @@ class Controller:
     def handle_new_image(self, data, file_name, metadata=None):
         storage_item = {}
         storage_item["name"] = os.path.basename(file_name)
-        storage_item['metadata'] = metadata
+        storage_item["metadata"] = metadata
         self.image_count += 1
 
         storage_item["data"] = data
@@ -203,7 +203,7 @@ class Controller:
             layer = aligned_data["layer"]
             item = self.storage.get_data(item_uuid)
             assert item is not None, "Aligned image data not found in storage"
-            data = item["data"].copy()
+            data = copy.deepcopy(item["data"])
             filename = item["name"]
             if isinstance(layer, list):
                 assert len(aligned_data["data"].keys()) == len(
@@ -217,7 +217,7 @@ class Controller:
             else:
                 wrapped_image = ImageWrapper(aligned_image, layer)
                 aligned_name = f"Aligned_{filename}"
-                data = {layer: wrapped_image}
+                data[layer] = wrapped_image
             self.model_canvas.add_to_canvas(data, True, aligned_name)
 
         # manual alignment
@@ -321,7 +321,7 @@ class SignalConnectionManager:
             self.c.model_canvas.reset_image
         )
         # self.c.view.toolBarUI.channelChanged.connect(self.c.model_canvas.swap_channel)
-        self.c.view.toolBarUI.contrastSlider.valueChanged.connect(
+        self.c.view.toolBarUI.contrast_slider.valueChanged.connect(
             self.c.model_canvas.update_contrast
         )
         self.c.view.toolBarUI.cmapChanged.connect(self.c.model_canvas.update_image)

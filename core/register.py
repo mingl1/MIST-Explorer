@@ -101,6 +101,7 @@ class Register(QThread):
         reference_image_file = self.tifs[0]
         self.progress.emit(0, "preparing alignment")  # update progress bar
         channel_wrappers = reference_image_file["image_dict"]
+        assert channel_wrappers is not None, "channel wrappers are empty"
         reference_tif_index = self.params["alignment_layer"]
         alignment_layer = channel_wrappers[f"Channel {reference_tif_index  + 1}"].data
 

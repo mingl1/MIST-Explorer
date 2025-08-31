@@ -960,8 +960,10 @@ class ImageOverlay(QWidget):
         hist, _ = np.histogram(flat_img, bins=256, range=(0, 255))
         total_pixels = flat_img.size
         cumulative_hist = np.cumsum(hist) / total_pixels
-        new_min = np.argmax(cumulative_hist > lower)
-        new_max = np.argmax(cumulative_hist > upper)
+        new_min = np.argmax(cumulative_hist > lower).round()
+        new_max = np.argmax(cumulative_hist > upper).round()
+        if new_min==new_max:
+            new_max +=1
         self.contrast_sliders[idx].setValue((int(new_min), int(new_max)))
         self.update_contrast([new_min, new_max], idx)
 

@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from PyQt6.QtCore import QCoreApplication, QSize, Qt, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QIcon, QImage, QPixmap
+from PyQt6.QtCore import QCoreApplication, QSize, Qt, pyqtSignal, pyqtSlot 
+from PyQt6.QtGui import QIcon, QImage, QPixmap,QAction
 from PyQt6.QtWidgets import (
     QButtonGroup,
     QComboBox,
@@ -10,9 +10,9 @@ from PyQt6.QtWidgets import (
     QSizePolicy,
     QToolBar,
     QToolButton,
+    QApplication,
 )
 from qtrangeslider import QRangeSlider
-
 from ui.toolbar.Action import Action
 from utils import resource_path
 from matplotlib.colors import ListedColormap
@@ -81,15 +81,15 @@ class ToolBarUI(QToolBar):
             # hide all actions
             self.actionReset.setVisible(False)
             # self.channelSelector.setDisabled(True)
-            self.cmapSelector.setDisabled(True)
-            self.auto_contrast_button.setDisabled(True)
-            self.contrastSlider.setDisabled(True)
+            self.cmap_action.setVisible(False)
+            self.auto_contrast_button_action.setVisible(False)
+            self.contrast_slider_action.setVisible(False)
+            
         else:
             self.actionReset.setVisible(True)
-            # self.channelSelector.setDisabled(False)
-            self.cmapSelector.setDisabled(False)
-            self.auto_contrast_button.setDisabled(False)
-            self.contrastSlider.setDisabled(False)
+            self.cmap_action.setVisible(True)
+            self.auto_contrast_button_action.setVisible(True)
+            self.contrast_slider_action.setVisible(True)
 
     def _init_actions(self, parent):
         self.actionRotate = Action(
@@ -203,16 +203,16 @@ class ToolBarUI(QToolBar):
         return QIcon(QPixmap.fromImage(image))
 
     def _init_contrast_slider(self):
-        self.auto_contrast_button = QPushButton("Auto Contrast")
-        self.contrastSlider = QRangeSlider()
-        self.contrastSlider.setOrientation(Qt.Orientation.Horizontal)
-        self.contrastSlider.setRange(0, 255)
-        self.contrastSlider.setMaximumWidth(200)
+        self.auto_contrast_button = QPushButton("Auto Contrast",self)
+        self.contrast_slider = QRangeSlider(parent=self)
+        self.contrast_slider.setOrientation(Qt.Orientation.Horizontal)
+        self.contrast_slider.setRange(0, 255)
+        self.contrast_slider.setMaximumWidth(200)
 
     def update_contrast_slider(self, values):
-        self.contrastSlider.blockSignals(True)
-        self.contrastSlider.setValue(values)
-        self.contrastSlider.blockSignals(False)
+        self.contrast_slider.blockSignals(True)
+        self.contrast_slider.setValue(values)
+        self.contrast_slider.blockSignals(False)
 
     def _populate_toolbar(self):
         # Tabs first
@@ -224,10 +224,10 @@ class ToolBarUI(QToolBar):
         # Actions & widgets
         self.addAction(self.actionReset)
         # self.addWidget(self.channelSelector)
-        self.addWidget(self.cmapSelector)
+        self.cmap_action = self.addWidget(self.cmapSelector)
         self.addWidget(self.statusLine)
-        self.addWidget(self.auto_contrast_button)
-        self.addWidget(self.contrastSlider)
+        self.auto_contrast_button_action = self.addWidget(self.auto_contrast_button)
+        self.contrast_slider_action = self.addWidget(self.contrast_slider)
 
     def _retranslateUI(self):
         _translate = QCoreApplication.translate
