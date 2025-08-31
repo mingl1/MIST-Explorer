@@ -3,14 +3,16 @@ import platform
 
 import cv2 as cv
 import numpy as np
+
+# import pyclesperanto as cle
 import tensorflow as tf
 from csbdeep.utils import normalize
 from matplotlib import colormaps
 from PIL import Image
-from pyclesperanto_prototype import dilate_labels
-from skimage.segmentation import expand_labels
+from pyclesperanto import dilate_labels
 from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtWidgets import QFileDialog
+from skimage.segmentation import expand_labels
 from stardist.models import StarDist2D
 
 from core import ImageWrapper
@@ -140,8 +142,11 @@ class StarDist(QThread):
         self.progress.emit(95, "Dilating")
         # If error is platform not found, ask user to install run "sudo apt install pocl-opencl-icd"
         try:
+            # self.stardist_labels_grayscale = np.array(
+            #     expand_labels(stardist_labels, distance=radius), dtype=np.uint16
+            # )
             self.stardist_labels_grayscale = np.array(
-                expand_labels(stardist_labels, distance=radius), dtype=np.uint16
+                dilate_labels(stardist_labels, radius=radius), dtype=np.uint16
             )
         except Exception as e:
             self._fatal_error_message(
@@ -150,7 +155,9 @@ class StarDist(QThread):
             return
         print("here 4")
         self.progress.emit(100, "Stardist Done")
-        stardist_result = ImageWrapper(self.stardist_labels_grayscale, name="Channel 1",cmap='label_image')
+        stardist_result = ImageWrapper(
+            self.stardist_labels_grayscale, name="Channel 1", cmap="label_image"
+        )
         self.stardist_done.emit(
             stardist_result, True, "StarDist Labels"
         )  # emit signal with result, saves to sidebar

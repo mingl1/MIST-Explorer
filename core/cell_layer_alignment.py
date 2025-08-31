@@ -9,7 +9,6 @@ from numpy.typing import NDArray
 from PyQt6.QtCore import QThread, pyqtSignal
 from pystackreg import StackReg
 from pystackreg.util import to_uint16
-from pytools import P
 from scipy.ndimage import binary_fill_holes, rotate, zoom
 
 from utils import (
@@ -103,8 +102,8 @@ class CellLayerAligner(QThread):
         self.progress.emit(100, "Manual alignment set")
         self.aligned_image_signal.emit(
             {
-                "uuid": self.target_uuid,
-                "layer": self.target_channel,
+                "uuid": self.unaligned_uuid,
+                "layer": self.unaligned_channel,
                 "replace": self.replace,
                 "data": aligned_image,
             },
