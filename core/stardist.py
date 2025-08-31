@@ -41,41 +41,16 @@ class StarDist(QThread):
             "radius": 5,
         }
         self.aligned = False
+        self.current_model = self.params["model"]
+        try:
+            self.model = StarDist2D.from_pretrained(str(self.params["model"]))
+        except Exception as e:
+            self._fatal_error_message(f"Model load failed: {e}")
+            return
 
     def load_cell_image(self, arr):
         self.cell_image = arr
         self.aligned = True
-
-    def run_stardist(self):
-        if self.protein_channels is None and self.np_image is None:
-            self.error_signal.emit("please load image first")  # emit error message
-            return
-        elif self.protein_channels and self.np_image:
-            self.error_signal.emit(
-                "unknown error, canvas has both single channel image and multi-channel image initiated"
-            )  # emit error message
-            return
-
-        system = platform.system()
-        print("system: ", system)
-        print("tensorflow version: ", tf.__version__)
-        gpu = len(tf.config.list_physical_devices("GPU")) > 0
-        # if gpu:
-        #     device_name = tf.test.gpu_device_name()
-        #     print("gpu name: ", device_name)
-        # else:
-        device_name = "/CPU:0"
-
-        with tf.device(device_name):
-            try:
-                self.run()
-            except Exception as e:
-                self._fatal_error_message(f"StarDist Error: {str(e)}")
-                return
-            self.finished.connect(self.quit)
-            self.finished.connect(self.deleteLater)
-
-        print("here")
 
     def __get_cell_image(self):
         if self.protein_channels is None and self.np_image:
@@ -84,86 +59,97 @@ class StarDist(QThread):
             return self.protein_channels[self.params["channel"]].data
 
     def run(self):
+        self._cancel_requested = False  # reset each run
+
         cell_image = self.__get_cell_image()
         if cell_image is None:
             self._fatal_error_message("No cell image available for processing")
             return
         assert isinstance(cell_image, np.ndarray), "cell_image must be a numpy array"
 
-        # adjusted = cv.convertScaleAbs(cell_image, alpha=(255.0/65535.0))
-
-        # alpha = 5 # Contrast control
-        # beta = 15 # Brightness control
-        # adjusted = cv.convertScaleAbs(adjusted, alpha=alpha, beta=beta)
-        # cv.imshow('Image Window',adjusted)
-
-        # cv.waitKey(0)
-
-        # cv.destroyAllWindows()
-
         self.progress.emit(0, "Starting StarDist")
-        model = StarDist2D.from_pretrained(str(self.params["model"]))
-        assert model is not None, "Failed to load model"
-        self.progress.emit(25, "Training model")
+        if self.current_model != str(self.params["model"]):
+            try:
+                self.model = StarDist2D.from_pretrained(str(self.params["model"]))
+            except Exception as e:
+                self._fatal_error_message(f"Model load failed: {e}")
+                return
+            self.current_model = str(self.params["model"])
+        model = self.model
 
-        print("here2")
+        self.progress.emit(10, "Model loaded")
+
+        # normalize input
+        norm_img = normalize(
+            cell_image,
+            self.params["percentile_low"],
+            self.params["percentile_high"],
+        )
+
         guess_tiles = self.params["n_tiles"]
         if guess_tiles == 0:
             guess_tiles = model._guess_n_tiles(cell_image)
-            # total_tiles = int(guess_tiles[0] * guess_tiles[1])
-            # self.setNumberTiles(n_tiles)
-            stardist_labels, _ = model.predict_instances(
-                normalize(
-                    cell_image,
-                    self.params["percentile_low"],
-                    self.params["percentile_high"],
-                ),
+
+        # total number of tiles
+        total_tiles = int(guess_tiles[0] * guess_tiles[1])
+
+        # run tile generator
+        try:
+            labels_gen = model._predict_instances_generator(
+                norm_img,
                 prob_thresh=self.params["prob_threshold"],
                 nms_thresh=self.params["nms_threshold"],
                 n_tiles=guess_tiles,
-            )  # type: ignore
+            )
+        except Exception as e:
+            self._fatal_error_message(f"Prediction error: {e}")
+            return
 
-        else:
+        # accumulate with progress
+        stardist_labels = None
+        for i, (labels, *_) in enumerate(labels_gen):
+            if self._cancel_requested:
+                self.progress.emit(100, "Cancelled")
+                return
+            stardist_labels = labels  # last one is full image
+            pct = 10 + int(80 * max(0, (i - 2) / total_tiles))
+            self.progress.emit(pct, f"Processing tile {i+1}/{total_tiles}")
 
-            stardist_labels, _ = model.predict_instances(
-                normalize(
-                    cell_image,
-                    self.params["percentile_low"],
-                    self.params["percentile_high"],
-                ),
-                prob_thresh=self.params["prob_threshold"],
-                nms_thresh=self.params["nms_threshold"],
-                n_tiles=(self.params["n_tiles"], (self.params["n_tiles"])),
-            )  # type: ignore
+        if stardist_labels is None:
+            self._fatal_error_message("No labels produced")
+            return
 
-        # dilate
-        print("here3")
-        radius = self.params["radius"]
+        if self._cancel_requested:
+            self.progress.emit(100, "Cancelled")
+            return
+
+        # post-processing
         self.progress.emit(95, "Dilating")
-        # If error is platform not found, ask user to install run "sudo apt install pocl-opencl-icd"
         try:
-            # self.stardist_labels_grayscale = np.array(
-            #     expand_labels(stardist_labels, distance=radius), dtype=np.uint16
-            # )
             self.stardist_labels_grayscale = np.array(
-                dilate_labels(stardist_labels, radius=radius), dtype=np.uint16
+                dilate_labels(stardist_labels, radius=self.params["radius"]),
+                dtype=np.uint16,
             )
         except Exception as e:
             self._fatal_error_message(
-                f"Error during dilation: {e}. You may need to install pocl-opencl-icd(wsl2 users)."
+                f"Error during dilation: {e}. You may need to install pocl-opencl-icd (WSL2 users)."
             )
             return
-        print("here 4")
-        self.progress.emit(100, "Stardist Done")
-        stardist_result = ImageWrapper(
+
+        if self._cancel_requested:
+            self.progress.emit(100, "Cancelled")
+            return
+
+        # done
+        self.progress.emit(100, "StarDist Done")
+        result = ImageWrapper(
             self.stardist_labels_grayscale, name="Channel 1", cmap="label_image"
         )
-        self.stardist_done.emit(
-            stardist_result, True, "StarDist Labels"
-        )  # emit signal with result, saves to sidebar
+        self.stardist_done.emit(result, True, "StarDist Labels")
 
     def cancel(self):
-        self.terminate()
+        self._cancel_requested = True
+        self.progress.emit(99, "Cancelling...")
 
     def save_image(self):
         file_name, _ = QFileDialog.getSaveFileName(
@@ -173,15 +159,6 @@ class StarDist(QThread):
             Image.fromarray(self.stardist_labels_grayscale).save(file_name)
         else:
             self.error_signal.emit("Cannot save. No stardist labels available")
-
-    # @pyqtSlot(int)
-    # def updateProgress(self, num):
-    #     self.progress.emit(num, f"Generating Tile {num}")
-
-    # only uint8
-    # @pyqtSlot(ImageWrapper)
-    # def on_stardist_completed(self, stardist_result):
-    #     self.stardistDone.emit(stardist_result)
 
     def change_cmap(self):
         pass

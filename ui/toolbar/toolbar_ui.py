@@ -1,8 +1,10 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from PyQt6.QtCore import QCoreApplication, QSize, Qt, pyqtSignal, pyqtSlot 
-from PyQt6.QtGui import QIcon, QImage, QPixmap,QAction
+from matplotlib.colors import ListedColormap
+from PyQt6.QtCore import QCoreApplication, QSize, Qt, pyqtSignal, pyqtSlot
+from PyQt6.QtGui import QAction, QIcon, QImage, QPixmap
 from PyQt6.QtWidgets import (
+    QApplication,
     QButtonGroup,
     QComboBox,
     QLabel,
@@ -10,13 +12,11 @@ from PyQt6.QtWidgets import (
     QSizePolicy,
     QToolBar,
     QToolButton,
-    QApplication,
 )
 from qtrangeslider import QRangeSlider
+
 from ui.toolbar.Action import Action
 from utils import resource_path
-from matplotlib.colors import ListedColormap
-
 
 
 class ToolBarUI(QToolBar):
@@ -40,7 +40,7 @@ class ToolBarUI(QToolBar):
 
     def _init_tab_buttons(self):
         self.tab_buttons = []
-        tab_names = ["Images", "Data Processing", "View", "Analysis", "Details"]
+        tab_names = ["Images", "Data Processing", "View", "Analysis"]
         for name in tab_names:
             button = QToolButton()
             button.setText(name)
@@ -84,7 +84,7 @@ class ToolBarUI(QToolBar):
             self.cmap_action.setVisible(False)
             self.auto_contrast_button_action.setVisible(False)
             self.contrast_slider_action.setVisible(False)
-            
+
         else:
             self.actionReset.setVisible(True)
             self.cmap_action.setVisible(True)
@@ -159,7 +159,15 @@ class ToolBarUI(QToolBar):
         self.cmapSelector.setCurrentText(cmap_value)
 
     def _generate_cmap_thumbnails(self):
-        self.cmap_names = ["gray", "viridis", "plasma", "inferno", "magma", "cividis", "label_image"]
+        self.cmap_names = [
+            "gray",
+            "viridis",
+            "plasma",
+            "inferno",
+            "magma",
+            "cividis",
+            "label_image",
+        ]
         thumbnails = []
         for cmap_name in self.cmap_names:
             if cmap_name == "label_image":
@@ -196,14 +204,13 @@ class ToolBarUI(QToolBar):
                 plt.close()
         return thumbnails
 
-
     def _numpy_to_QIcon(self, array: np.ndarray):
         height, width, channels = array.shape
         image = QImage(array.tobytes(), width, height, QImage.Format.Format_RGBA8888)
         return QIcon(QPixmap.fromImage(image))
 
     def _init_contrast_slider(self):
-        self.auto_contrast_button = QPushButton("Auto Contrast",self)
+        self.auto_contrast_button = QPushButton("Auto Contrast", self)
         self.contrast_slider = QRangeSlider(parent=self)
         self.contrast_slider.setOrientation(Qt.Orientation.Horizontal)
         self.contrast_slider.setRange(0, 255)

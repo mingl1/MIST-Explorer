@@ -426,7 +426,7 @@ class SignalConnectionManager:
 
         # Execution and results
         self.c.view.stardist_groupbox.stardist_run_button.pressed.connect(
-            self.c.model_stardist.run_stardist
+            self.c.model_stardist.start
         )
         self.c.model_stardist.stardist_done.connect(self.c.model_canvas.add_to_canvas)
         # self.c.model_stardist.stardist_done.connect(
