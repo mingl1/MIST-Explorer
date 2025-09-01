@@ -7,11 +7,13 @@ from PyQt6.QtWidgets import (
     QApplication,
     QButtonGroup,
     QComboBox,
+    QHBoxLayout,
     QLabel,
     QPushButton,
     QSizePolicy,
     QToolBar,
     QToolButton,
+    QWidget,
 )
 from qtrangeslider import QRangeSlider
 
@@ -66,7 +68,7 @@ class ToolBarUI(QToolBar):
                 font-size: 12px;
             }
             QToolButton:hover {
-                background: rgba(0, 0, 0, 0.1);
+                background: rgba(0, 0, 0, 0.3);
             }
             QToolButton:checked {
                 border-bottom: 2px solid #007AFF;
@@ -77,7 +79,7 @@ class ToolBarUI(QToolBar):
     @pyqtSlot(int)
     def onTabButtonClicked(self, index):
         self.tabChanged.emit(index)
-        if index == 2:  # View tab
+        if index != 0 and index != 1:  # View tab
             # hide all actions
             self.actionReset.setVisible(False)
             # self.channelSelector.setDisabled(True)
@@ -175,7 +177,22 @@ class ToolBarUI(QToolBar):
                 from skimage.color import color_dict
 
                 # Get a list of default categorical colors
-                colors = list(color_dict.values())[:10]  # take first N colors (e.g. 10)
+                colors = [
+                    "red",  # (1, 0, 0)
+                    "blue",  # (0, 0, 1)
+                    "green",  # (0, 0.502, 0)
+                    "gold",  # (1, 0.843, 0)
+                    "purple",  # (0.502, 0, 0.502)
+                    "orange",  # (1, 0.647, 0)
+                    "cyan",  # (0, 1, 1)
+                    "magenta",  # (1, 0, 1)
+                    "brown",  # (0.647, 0.165, 0.165)
+                    "lime",  # (0, 1, 0)
+                ]
+
+                colors = [
+                    color_dict[i] for i in colors
+                ]  # take first N colors (e.g. 10)
                 n = len(colors)
 
                 # Make an array of shape (1, n) with categorical colors
@@ -221,24 +238,48 @@ class ToolBarUI(QToolBar):
         self.contrast_slider.setValue(values)
         self.contrast_slider.blockSignals(False)
 
+    def _create_tab_button_bar(self, fixed_width=400):
+        container = QWidget()
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(8, 0, 0, 0)
+        layout.setSpacing(0)
+
+        for btn in self.tab_buttons:
+            btn.setSizePolicy(
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+            )
+            layout.addWidget(btn)
+
+        container.setFixedWidth(fixed_width)
+
+        return container
+
     def _populate_toolbar(self):
-        # Tabs first
-        for button in self.tab_buttons:
-            self.addWidget(button)
+        tab_bar = self._create_tab_button_bar(fixed_width=488)
+        self.addWidget(tab_bar)
 
         self.addSeparator()
-
-        # Actions & widgets
         self.addAction(self.actionReset)
-        # self.addWidget(self.channelSelector)
         self.cmap_action = self.addWidget(self.cmapSelector)
         self.addWidget(self.statusLine)
         self.auto_contrast_button_action = self.addWidget(self.auto_contrast_button)
         self.contrast_slider_action = self.addWidget(self.contrast_slider)
+        self.disable_actions()
+
+    def enable_actions(self):
+        self.actionReset.setEnabled(True)
+        self.cmap_action.setEnabled(True)
+        self.auto_contrast_button_action.setEnabled(True)
+        self.contrast_slider_action.setEnabled(True)
+
+    def disable_actions(self):
+        self.actionReset.setEnabled(False)
+        self.cmap_action.setEnabled(False)
+        self.auto_contrast_button_action.setEnabled(False)
+        self.contrast_slider_action.setEnabled(False)
 
     def _retranslateUI(self):
         _translate = QCoreApplication.translate
         self.setWindowTitle(_translate("MainWindow", "toolBar"))
         self.actionReset.setText(_translate("MainWindow", "Reset"))
         self.actionReset.setToolTip(_translate("MainWindow", "Reset Image"))
-        # self.channelSelector.setToolTip(_translate("MainWindow", "Select a channel"))

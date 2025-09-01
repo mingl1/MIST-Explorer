@@ -1,9 +1,10 @@
 """Class to handle signal connections"""
 
+import copy
 import os
 import typing
 import uuid
-import copy
+
 import numpy as np
 from PIL import Image
 from PyQt6.QtCore import QObject, pyqtSignal
@@ -165,6 +166,7 @@ class Controller:
 
     # add new image to storage
     def handle_new_image(self, data, file_name, metadata=None):
+        self.view.toolBarUI.enable_actions()
         storage_item = {}
         storage_item["name"] = os.path.basename(file_name)
         storage_item["metadata"] = metadata
@@ -302,7 +304,7 @@ class SignalConnectionManager:
         self.c.view.cell_layer_alignment.loadOnCanvasSignal.connect(
             self.c.model_canvas.add_to_canvas
         )
-        self.c.view.cell_layer_alignment.aligner.progress.connect(
+        self.c.view.cell_layer_alignment.progress.connect(
             self.c.view.update_progress_bar
         )
 

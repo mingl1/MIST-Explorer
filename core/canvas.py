@@ -960,21 +960,6 @@ class ImageGraphicsView(BaseGraphicsView):
                     channel_num, cache_key, contrast_min, contrast_max
                 )
             self.memory_cache.put(self.uuid, channel_num, cache_key, contrasted_image)
-        # else:
-        #     # Single layer processing, not sure if this is working
-        #     cached_image = self.memory_cache.get(self.uuid, "single", cache_key)
-        #     if cached_image is not None:
-        #         assert isinstance(
-        #             cached_image, np.ndarray
-        #         ), "Cached image must be ndarray"
-        #         # print("Using cached single image")
-        #         contrasted_image = cached_image
-        #     else:
-        #         contrasted_image = self._apply_contrast_memory_efficient(
-        #             "single", cache_key, contrast_min, contrast_max
-        #         )
-
-        # Update slider
         self.change_slider.emit(
             (self.image_wrapper.contrast_min, self.image_wrapper.contrast_max)
         )
