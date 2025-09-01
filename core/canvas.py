@@ -58,6 +58,7 @@ from utils import (
     scale_adjust,
     to_pixmap,
     to_uint8,
+    auto_contrast_helper,
 )
 
 if typing.TYPE_CHECKING:
@@ -923,8 +924,6 @@ class ImageGraphicsView(BaseGraphicsView):
             return np.array([]), ""
 
         contrast_min, contrast_max = int(values[0]), int(values[1])
-        self.image_wrapper.contrast_min = contrast_min
-        self.image_wrapper.contrast_max = contrast_max
 
         # Initialize memory-efficient cache if not exists
         if not hasattr(self, "memory_cache"):
@@ -940,6 +939,8 @@ class ImageGraphicsView(BaseGraphicsView):
         # print("Processing layered image with memory management")
         channel_num = f"Channel {self.current_channel + 1}"
         self.image_wrapper = self.working_channels[channel_num]
+        self.image_wrapper.contrast_min = contrast_min
+        self.image_wrapper.contrast_max = contrast_max
 
         # Check cache first
         cached_image = None
@@ -1049,13 +1050,11 @@ class ImageGraphicsView(BaseGraphicsView):
             image, prev_cmap = self.update_contrast_memory_efficient(
                 (contrast_min, contrast_max), use_cache=use_cache
             )
-        if (
-            cmap_text != "label_image"
-            and prev_cmap != "label_image"
-            and prev_cmap != cmap_text
-        ):
+        if cmap_text != "label_image" and prev_cmap != "label_image":
+            print(f"changing cmap to {cmap_text}")
             image_to_display = self.change_cmap(cmap_text, image)
         else:
+            print("using raw image")
             image_to_display = image
 
         assert image_to_display is not None, "Updating empty image"
@@ -1359,23 +1358,24 @@ class ImageGraphicsView(BaseGraphicsView):
     def update_current_image(self, data_dict):
         self.image = data_dict[f"Channel {self.current_channel + 1}"].data
 
-    def auto_contrast(self, lower=0.1, upper=0.9):
+    def auto_contrast(self, lower=1.0, upper=99.0, zero_eps=None, min_span=5):
+        """
+        Auto-contrast using robust percentiles on foreground (non-zero) pixels.
+        lower/upper are *percentiles* (e.g., 1.0, 99.0).
+        """
         if self.image_wrapper.data.size == 0:
             return
+
+        # Get the channel in its native scale (0..1 or 0..255 or whatever scale_adjust gives)
         if self.is_layered:
             channel_num = f"Channel {self.current_channel + 1}"
-            channel = scale_adjust(self.working_channels[channel_num].data)
+            img = scale_adjust(self.working_channels[channel_num].data)
         else:
-            channel = scale_adjust(self.image_wrapper.data)
+            img = scale_adjust(self.image_wrapper.data)
 
-        flat_channel = channel.flatten()
+        vmin, vmax = auto_contrast_helper(img, lower, upper, zero_eps, min_span)
 
-        hist, _ = np.histogram(flat_channel, bins=256, range=(0, 255))
-        total_pixels = flat_channel.size
-        cumulative_hist = np.cumsum(hist) / total_pixels
-        new_min = np.argmax(cumulative_hist > lower)
-        new_max = np.argmax(cumulative_hist > upper)
-        self.update_contrast((new_min, new_max))
+        self.update_contrast((int(round(vmin)), int(round(vmax))))
 
     def apply_contrast(self, new_min, new_max, image=None):
         if image is None:
