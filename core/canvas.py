@@ -587,8 +587,7 @@ class BaseGraphicsView(QWidget):
             background_worker = Worker(
                 self._cache_remaining_channels,
                 remaining_channels,
-                subsample_for_emit,
-                max_display_size,
+                self.uuid
             )
             self._background_worker = background_worker
             background_worker.finished.connect(background_worker.quit)
@@ -604,8 +603,6 @@ class BaseGraphicsView(QWidget):
     def _cache_remaining_channels(
         self,
         remaining_channels: Dict[str, ImageWrapper],
-        subsample_for_emit: bool,
-        max_display_size: int,
         uuid
     ) -> Dict[str, np.ndarray]:
         processed_channels = {}
