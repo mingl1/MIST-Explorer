@@ -1,18 +1,14 @@
 import os
-import platform
 
 import cv2 as cv
 import numpy as np
 
-# import pyclesperanto as cle
-import tensorflow as tf
 from csbdeep.utils import normalize
 from matplotlib import colormaps
 from PIL import Image
 from pyclesperanto import dilate_labels
 from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtWidgets import QFileDialog
-from skimage.segmentation import expand_labels
 from stardist.models import StarDist2D
 
 from core import ImageWrapper
@@ -41,12 +37,7 @@ class StarDist(QThread):
             "radius": 5,
         }
         self.aligned = False
-        self.current_model = self.params["model"]
-        try:
-            self.model = StarDist2D.from_pretrained(str(self.params["model"]))
-        except Exception as e:
-            self._fatal_error_message(f"Model load failed: {e}")
-            return
+        self.current_model = ""
 
     def load_cell_image(self, arr):
         self.cell_image = arr
@@ -143,7 +134,7 @@ class StarDist(QThread):
         # done
         self.progress.emit(100, "StarDist Done")
         result = ImageWrapper(
-            self.stardist_labels_grayscale, name="Channel 1", cmap="label_image"
+            self.stardist_labels_grayscale, name="Channel 1", cmap="gray"
         )
         self.stardist_done.emit(result, True, "StarDist Labels")
 

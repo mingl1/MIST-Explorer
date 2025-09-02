@@ -341,6 +341,7 @@ class BaseGraphicsView(QWidget):
         self.num_channels = 0
         self.file_queue = deque()
         self.queue_lock = threading.Lock()
+        self.memory_cache = MemoryEfficientImageCache(max_cache_size_mb=3000)
 
     def set_uuid(self, uuid):
         self.uuid = uuid
@@ -579,53 +580,44 @@ class BaseGraphicsView(QWidget):
 
         # Process remaining channels in background if there are any
         remaining_channels = {
-            k: v for k, v in channels_data.items() if k != target_channel
+            k: v for k, v in self.working_channels.items() if k != target_channel
         }
 
         if remaining_channels:
             background_worker = Worker(
-                self._process_remaining_channels,
+                self._cache_remaining_channels,
                 remaining_channels,
                 subsample_for_emit,
                 max_display_size,
             )
             self._background_worker = background_worker
-            background_worker.signal.connect(self._on_background_channels_completed)
             background_worker.finished.connect(background_worker.quit)
             background_worker.finished.connect(background_worker.deleteLater)
             background_worker.start()
 
-        self._clear_caches()
+        # self._clear_caches()
         self.image_count += 1
 
         return display_channel_data
 
-    def _process_remaining_channels(
+
+    def _cache_remaining_channels(
         self,
-        remaining_channels: Dict[str, np.ndarray],
+        remaining_channels: Dict[str, ImageWrapper],
         subsample_for_emit: bool,
         max_display_size: int,
+        uuid
     ) -> Dict[str, np.ndarray]:
-        """Process remaining channels in background thread."""
         processed_channels = {}
-
-        for channel_name, image_data in remaining_channels.items():
+        for channel_name, image_wrapper in remaining_channels.items():
             try:
-                # Store full resolution version
-                self._store_channel_data(
-                    channel_name,
-                    ImageWrapper(image_data, channel_name, "gray"),
-                    replace_image_wrapper=False,
-                )
-
-                # Prepare display version
-                display_image = self._prepare_display_image(
-                    image_data, subsample_for_emit, max_display_size
-                )
-                processed_channels[channel_name] = display_image
-
+                cache_key = contrast_key_from_wrapper(image_wrapper)
+                if self.memory_cache.get(uuid,channel_name, cache_key) is not None:
+                    continue
+                contrasted = self.apply_contrast(image_wrapper.contrast_min,image_wrapper.contrast_max,image_wrapper.data)
+                self.memory_cache.put(uuid,channel_name,cache_key, contrasted)
             except Exception as e:
-                # print(f"Error processing {channel_name} in background: {e}")
+                print(f"Error processing {channel_name} in background: {e}")
                 continue
 
         return processed_channels
@@ -810,6 +802,13 @@ class BaseGraphicsView(QWidget):
             return True
         else:
             return False
+    def apply_contrast(self, new_min, new_max, image=None):
+        if image is None:
+            image = self.image_wrapper.data
+        image = scale_adjust(image)
+        lut = create_lut(new_min, new_max)
+        res = np.clip(cv2.LUT(image, lut), 0, 254, dtype=np.uint8)
+        return res
 
 
 class ReferenceGraphicsView(BaseGraphicsView):
@@ -925,15 +924,11 @@ class ImageGraphicsView(BaseGraphicsView):
 
         contrast_min, contrast_max = int(values[0]), int(values[1])
 
-        # Initialize memory-efficient cache if not exists
-        if not hasattr(self, "memory_cache"):
-            self.memory_cache = MemoryEfficientImageCache()
-
         contrast_key = (contrast_min, contrast_max)
         if is_labeled:
             contrast_key = ("labeled", "labeled")
         cmap_key = self.image_wrapper.cmap
-        cache_key = (cmap_key, contrast_key)
+        cache_key = contrast_key
         contrasted_image = np.array([])
         # if self.is_layered:
         # print("Processing layered image with memory management")
@@ -1011,12 +1006,12 @@ class ImageGraphicsView(BaseGraphicsView):
         self.update_cmap.emit(cmap_text)
 
         if cmap_text not in self.lut_cache:
-            lut = self.generate_lut(cmap_text)
+            lut = generate_lut(cmap_text)
             self.lut_cache[cmap_text] = lut  # cache to avoid recalculating LUT
         else:
             lut = self.lut_cache[cmap_text]  # Reuse the cached LaUT
 
-        return np.clip(self.label2rgb(scale_adjust(image), lut), 0, 254, dtype=np.uint8)
+        return np.clip(label2rgb(scale_adjust(image), lut), 0, 254, dtype=np.uint8)
 
     def update_image(
         self, cmap_text="default", image=None, use_cache=True, self_emit=True
@@ -1062,16 +1057,7 @@ class ImageGraphicsView(BaseGraphicsView):
             self.set_pixmap(image_to_display)
         return image_to_display
 
-    def generate_lut(self, cmap: str):
-        """generate a 8 bit look-up table and converts to rgb space"""
 
-        color_map: Colormap = colormaps.get_cmap(cmap)
-
-        label_range = np.linspace(0, 1, 256)
-
-        temp = color_map(label_range)
-        uint8_temp = np.uint8(temp[:, 2::-1] * 256)
-        return uint8_temp.reshape(256, 1, 3)
 
     def update_contrast(self, values):
         # print("Updating contrast with values:", values)
@@ -1086,17 +1072,6 @@ class ImageGraphicsView(BaseGraphicsView):
             channel_num, cache_key, contrast_min, contrast_max
         )
 
-    def label2rgb(self, labels, lut):
-        """applys the look-up table and merges r, g, b channels to form colored image"""
-        # print(type(labels))
-        if len(labels.shape) == 3 and labels.shape[2] == 3:
-            r, g, b = cv2.split(labels)
-            return cv2.LUT(cv2.merge((r, g, b)), lut)
-        else:
-            # Ensure labels is 2D before merging
-            if len(labels.shape) > 2:
-                labels = labels[:, :, 0]  # Take first channel if multi-channel
-            return cv2.LUT(cv2.merge((labels, labels, labels)), lut)  # gray to color
 
     def load_stardist_labels(self, stardist: ImageWrapper):
         self.stardist_labels = stardist.data
@@ -1252,13 +1227,13 @@ class ImageGraphicsView(BaseGraphicsView):
 
         if remaining_channels:
             background_worker = Worker(
-                self._process_remaining_channels,
+                self._cache_remaining_channels,
                 remaining_channels,
                 subsample_for_emit,
                 max_display_size,
             )
             self._background_worker = background_worker
-            background_worker.signal.connect(self._on_background_channels_completed)
+            # background_worker.signal.connect(self._on_background_channels_completed)
             background_worker.finished.connect(background_worker.quit)
             background_worker.finished.connect(background_worker.deleteLater)
             background_worker.start()
@@ -1268,7 +1243,8 @@ class ImageGraphicsView(BaseGraphicsView):
 
         return display_channel_data
 
-    def rotate_image_task(self, channels: dict, angle):
+    def rotate_image_task(self, current_uuid, channels: dict, reset_working_channels:dict, angle):
+        result = {}
 
         for channel_num, wrapper in channels.items():
             try:
@@ -1288,8 +1264,8 @@ class ImageGraphicsView(BaseGraphicsView):
 
             updated_w = int((h * sin) + (w * cos))
             updated_h = int((h * cos) + (w * sin))
-            max_w = self.reset_working_channels[channel_num].data.shape[1]
-            max_h = self.reset_working_channels[channel_num].data.shape[0]
+            max_w = reset_working_channels[channel_num].data.shape[1]
+            max_h = reset_working_channels[channel_num].data.shape[0]
             max_side = max(max_w, max_h)
             max_side *= np.sqrt(2)  # ensure it fits after rotation
             max_side = int(max_side)
@@ -1300,11 +1276,11 @@ class ImageGraphicsView(BaseGraphicsView):
             rotation_matrix[1, 2] += (updated_h / 2) - center[1]
 
             rotated_arr = cv2.warpAffine(arr, rotation_matrix, (updated_w, updated_h))
-            new_ch = self.working_channels[channel_num].copy()
+            new_ch = channels[channel_num].copy()
             new_ch.data = rotated_arr
-            self.working_channels[channel_num] = new_ch
+            result[channel_num] = new_ch
 
-        return True
+        return result, current_uuid
 
     def rotate_image(self, angle_text: str):
         try:
@@ -1315,26 +1291,28 @@ class ImageGraphicsView(BaseGraphicsView):
 
         if len(self.working_channels) > 0 and angle is not None:
             self.rotation_worker = Worker(
-                self.rotate_image_task, self.working_channels, angle
+                self.rotate_image_task, self.uuid, self.working_channels, self.reset_working_channels, angle
             )
             self.rotation_worker.signal.connect(self.on_rotation_completed)
             self.rotation_worker.error.connect(self.on_error)
             self.rotation_worker.finished.connect(self.rotation_worker.quit)
             self.rotation_worker.finished.connect(self.rotation_worker.deleteLater)
             self.rotation_worker.start()
-
+    def same_uuid(self, other_uuid):
+        return str(self.uuid)==str(other_uuid)
     @pyqtSlot(object)
-    def on_rotation_completed(self, success):
-        if success:
-            # print("completing rotation")
-            for channel_name, wrapper in self.working_channels.items():
+    def on_rotation_completed(self, result_uuid, result):
+        if result is not None :
+            for channel_name, wrapper in result.items():
                 if "Channel" in channel_name:
-                    self.storage.update_data(self.uuid, channel_name, wrapper.data)
-            self.image_wrapper = self.working_channels.get(
-                f"Channel {self.current_channel + 1}", ImageWrapper(np.array([]), "")
-            )
+                    self.storage.update_data(result_uuid, channel_name, wrapper.data)
+            if self.same_uuid(result_uuid):
+                self.working_channels = self.storage.get_data(result_uuid) # type: ignore
+                self.image_wrapper = self.working_channels.get(
+                    f"Channel {self.current_channel + 1}", ImageWrapper(np.array([]), "")
+                )
+                self.update_image()
             self._clear_caches()
-            self.update_image()
         else:
             raise RuntimeError("Rotation failed")
 
@@ -1342,21 +1320,15 @@ class ImageGraphicsView(BaseGraphicsView):
     def on_error(self, error_message):
         self.error_signal.emit(error_message)
 
-    def update_channels(
-        self, channels: dict[str, ImageWrapper], clear: bool
-    ) -> None:  # cropsignal will update this
-        self.working_channels = (
-            channels  # replace channels with new, cropped/rotated, etc
-        )
-        self.image_signal.emit(self.working_channels, clear)
-
-    def _clear_caches(self) -> None:
+    def _clear_caches(self, uuid=None, channel=None) -> None:
         super()._clear_caches()
-        if hasattr(self, "memory_cache"):
+        if uuid is not None:
+            if channel is not None:
+                self.memory_cache.clear_channel(uuid, channel)
+            else:
+                self.memory_cache.clear_uuid(uuid)
+        else:
             self.memory_cache.clear_all()
-
-    def update_current_image(self, data_dict):
-        self.image = data_dict[f"Channel {self.current_channel + 1}"].data
 
     def auto_contrast(self, lower=1.0, upper=99.0, zero_eps=None, min_span=5):
         """
@@ -1377,30 +1349,7 @@ class ImageGraphicsView(BaseGraphicsView):
 
         self.update_contrast((int(round(vmin)), int(round(vmax))))
 
-    def apply_contrast(self, new_min, new_max, image=None):
-        if image is None:
-            image = self.image_wrapper.data
-
-        # print("pre_scale", image.dtype, image.min(), image.max())
-
-        image = scale_adjust(image)
-
-        # print("after scale", image.dtype, image.min(), image.max())
-
-        lut = create_lut(new_min, new_max)
-
-        # check LUT range before applying
-        # if lut.min() < 0 or lut.max() > 255:
-        # print("⚠️ LUT values out of range:", lut.min(), lut.max())
-
-        res = np.clip(cv2.LUT(image, lut), 0, 254, dtype=np.uint8)
-
-        # print("res", res.dtype, res.min(), res.max())
-
-        # detect if clipping occurred
-        # if (res == 0).any() or (res == 255).any():
-        # print("⚠️ Potential clipping/overflow: values hit boundary 0 or 255")
-        return res
+    
 
     def blur_layer(self, blur_percentage: float, confirm=False):
         """start gaussian blur in a separate thread"""
@@ -1422,27 +1371,22 @@ class ImageGraphicsView(BaseGraphicsView):
         if not confirm:
             # blur_percentage = self._blur_percentage
             layer_to_blur = (self.working_channels[self._blur_layer].data).copy()
+            layer_to_blur = scale_adjust(layer_to_blur)
             blurred_mask = cv2.GaussianBlur(layer_to_blur, (101, 101), 0)
             blurred_mask_adjusted = (blurred_mask * blur_percentage).astype(np.uint16)
             self.corrected_layer = cv2.subtract(layer_to_blur, blurred_mask_adjusted)
-            self.corrected_layer = np.clip(self.corrected_layer, 0, 65535).astype(
+            
+            self.corrected_layer = np.clip(self.corrected_layer, 0,  65565).astype(
                 np.uint16
             )
-            contrasted = self.apply_contrast(
-                self.image_wrapper.contrast_min,
-                self.image_wrapper.contrast_max,
-                self.corrected_layer,
-            )
-            self.update_image(self.image_wrapper.cmap, contrasted)
-
-        else:
-            raise RuntimeError("Error from gaussian")
+            self.update_image(self.image_wrapper.cmap, self.corrected_layer)
 
         if (
             confirm
             and hasattr(self, "corrected_layer")
             and (self.working_channels.get(self._blur_layer) is not None)
         ):
+            print(f'saving. {self.uuid} {self._blur_layer}')
             self.working_channels[self._blur_layer].data = (
                 self.corrected_layer
             )  # Replace with the corrected version
@@ -1450,6 +1394,7 @@ class ImageGraphicsView(BaseGraphicsView):
             self.image_wrapper = self.working_channels.get(
                 self._blur_layer, ImageWrapper(np.array([]), "")
             )
+            self._clear_caches(self.uuid, self._blur_layer)
             self.update_image()
             self.image_signal.emit(self.working_channels, False)
             self.update_progress.emit(100, f"Replaced {self._blur_layer}")
@@ -1737,3 +1682,26 @@ class ImageDialog(QDialog):
         lut[new_max + 1 :] = 255
 
         return lut
+def contrast_key_from_wrapper(wrapper: ImageWrapper):
+    return (wrapper.contrast_min, wrapper.contrast_max)
+def generate_lut(cmap: str):
+    """generate a 8 bit look-up table and converts to rgb space"""
+
+    color_map: Colormap = colormaps.get_cmap(cmap)
+
+    label_range = np.linspace(0, 1, 256)
+
+    temp = color_map(label_range)
+    uint8_temp = np.uint8(temp[:, 2::-1] * 256)
+    return uint8_temp.reshape(256, 1, 3)
+def label2rgb(labels, lut):
+    """applys the look-up table and merges r, g, b channels to form colored image"""
+    # print(type(labels))
+    if len(labels.shape) == 3 and labels.shape[2] == 3:
+        r, g, b = cv2.split(labels)
+        return cv2.LUT(cv2.merge((r, g, b)), lut)
+    else:
+        # Ensure labels is 2D before merging
+        if len(labels.shape) > 2:
+            labels = labels[:, :, 0]  # Take first channel if multi-channel
+        return cv2.LUT(cv2.merge((labels, labels, labels)), lut)  # gray to color
