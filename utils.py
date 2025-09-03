@@ -53,7 +53,6 @@ def auto_contrast_helper(img, lower=1.0, upper=99.0, zero_eps=None, min_span=5):
 
 
 def numpy_to_qimage(array: np.ndarray) -> QImage:
-
     if not array.data.contiguous:
         array = np.ascontiguousarray(array)
 
@@ -288,7 +287,7 @@ def scale_adjust(arr: np.ndarray) -> NDArray[np.uint8]:
     if arr.dtype == np.uint16:
         return cv2.convertScaleAbs(arr, alpha=(255.0 / 65535.0))
     elif arr.dtype == np.uint8:
-        return arr
+        return np.clip(arr,0,255)
     elif arr.dtype == np.uint32:
         max_val = arr.max()
         if max_val == 0:
