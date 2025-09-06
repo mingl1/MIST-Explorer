@@ -1,22 +1,24 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from PyQt6.QtCore import QCoreApplication, QSize, Qt, pyqtSignal, pyqtSlot 
-from PyQt6.QtGui import QIcon, QImage, QPixmap,QAction
+from matplotlib.colors import ListedColormap
+from PyQt6.QtCore import QCoreApplication, QSize, Qt, pyqtSignal, pyqtSlot
+from PyQt6.QtGui import QAction, QIcon, QImage, QPixmap
 from PyQt6.QtWidgets import (
+    QApplication,
     QButtonGroup,
     QComboBox,
+    QHBoxLayout,
     QLabel,
     QPushButton,
     QSizePolicy,
     QToolBar,
     QToolButton,
-    QApplication,
+    QWidget,
 )
 from qtrangeslider import QRangeSlider
+
 from ui.toolbar.Action import Action
 from utils import resource_path
-from matplotlib.colors import ListedColormap
-
 
 
 class ToolBarUI(QToolBar):
@@ -40,7 +42,7 @@ class ToolBarUI(QToolBar):
 
     def _init_tab_buttons(self):
         self.tab_buttons = []
-        tab_names = ["Images", "Data Processing", "View", "Analysis", "Details"]
+        tab_names = ["Images", "Data Processing", "View", "Analysis"]
         for name in tab_names:
             button = QToolButton()
             button.setText(name)
@@ -66,7 +68,7 @@ class ToolBarUI(QToolBar):
                 font-size: 12px;
             }
             QToolButton:hover {
-                background: rgba(0, 0, 0, 0.1);
+                background: rgba(0, 0, 0, 0.3);
             }
             QToolButton:checked {
                 border-bottom: 2px solid #007AFF;
@@ -77,14 +79,14 @@ class ToolBarUI(QToolBar):
     @pyqtSlot(int)
     def onTabButtonClicked(self, index):
         self.tabChanged.emit(index)
-        if index == 2:  # View tab
+        if index != 0 and index != 1:  # View tab
             # hide all actions
             self.actionReset.setVisible(False)
             # self.channelSelector.setDisabled(True)
             self.cmap_action.setVisible(False)
             self.auto_contrast_button_action.setVisible(False)
             self.contrast_slider_action.setVisible(False)
-            
+
         else:
             self.actionReset.setVisible(True)
             self.cmap_action.setVisible(True)
@@ -159,7 +161,15 @@ class ToolBarUI(QToolBar):
         self.cmapSelector.setCurrentText(cmap_value)
 
     def _generate_cmap_thumbnails(self):
-        self.cmap_names = ["gray", "viridis", "plasma", "inferno", "magma", "cividis", "label_image"]
+        self.cmap_names = [
+            "gray",
+            "viridis",
+            "plasma",
+            "inferno",
+            "magma",
+            "cividis",
+            "label_image",
+        ]
         thumbnails = []
         for cmap_name in self.cmap_names:
             if cmap_name == "label_image":
@@ -167,7 +177,22 @@ class ToolBarUI(QToolBar):
                 from skimage.color import color_dict
 
                 # Get a list of default categorical colors
-                colors = list(color_dict.values())[:10]  # take first N colors (e.g. 10)
+                colors = [
+                    "red",  # (1, 0, 0)
+                    "blue",  # (0, 0, 1)
+                    "green",  # (0, 0.502, 0)
+                    "gold",  # (1, 0.843, 0)
+                    "purple",  # (0.502, 0, 0.502)
+                    "orange",  # (1, 0.647, 0)
+                    "cyan",  # (0, 1, 1)
+                    "magenta",  # (1, 0, 1)
+                    "brown",  # (0.647, 0.165, 0.165)
+                    "lime",  # (0, 1, 0)
+                ]
+
+                colors = [
+                    color_dict[i] for i in colors
+                ]  # take first N colors (e.g. 10)
                 n = len(colors)
 
                 # Make an array of shape (1, n) with categorical colors
@@ -196,14 +221,13 @@ class ToolBarUI(QToolBar):
                 plt.close()
         return thumbnails
 
-
     def _numpy_to_QIcon(self, array: np.ndarray):
         height, width, channels = array.shape
         image = QImage(array.tobytes(), width, height, QImage.Format.Format_RGBA8888)
         return QIcon(QPixmap.fromImage(image))
 
     def _init_contrast_slider(self):
-        self.auto_contrast_button = QPushButton("Auto Contrast",self)
+        self.auto_contrast_button = QPushButton("Auto Contrast", self)
         self.contrast_slider = QRangeSlider(parent=self)
         self.contrast_slider.setOrientation(Qt.Orientation.Horizontal)
         self.contrast_slider.setRange(0, 255)
@@ -214,24 +238,48 @@ class ToolBarUI(QToolBar):
         self.contrast_slider.setValue(values)
         self.contrast_slider.blockSignals(False)
 
+    def _create_tab_button_bar(self, fixed_width=400):
+        container = QWidget()
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(8, 0, 0, 0)
+        layout.setSpacing(0)
+
+        for btn in self.tab_buttons:
+            btn.setSizePolicy(
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+            )
+            layout.addWidget(btn)
+
+        container.setFixedWidth(fixed_width)
+
+        return container
+
     def _populate_toolbar(self):
-        # Tabs first
-        for button in self.tab_buttons:
-            self.addWidget(button)
+        tab_bar = self._create_tab_button_bar(fixed_width=488)
+        self.addWidget(tab_bar)
 
         self.addSeparator()
-
-        # Actions & widgets
         self.addAction(self.actionReset)
-        # self.addWidget(self.channelSelector)
         self.cmap_action = self.addWidget(self.cmapSelector)
         self.addWidget(self.statusLine)
         self.auto_contrast_button_action = self.addWidget(self.auto_contrast_button)
         self.contrast_slider_action = self.addWidget(self.contrast_slider)
+        self.disable_actions()
+
+    def enable_actions(self):
+        self.actionReset.setEnabled(True)
+        self.cmap_action.setEnabled(True)
+        self.auto_contrast_button_action.setEnabled(True)
+        self.contrast_slider_action.setEnabled(True)
+
+    def disable_actions(self):
+        self.actionReset.setEnabled(False)
+        self.cmap_action.setEnabled(False)
+        self.auto_contrast_button_action.setEnabled(False)
+        self.contrast_slider_action.setEnabled(False)
 
     def _retranslateUI(self):
         _translate = QCoreApplication.translate
         self.setWindowTitle(_translate("MainWindow", "toolBar"))
         self.actionReset.setText(_translate("MainWindow", "Reset"))
         self.actionReset.setToolTip(_translate("MainWindow", "Reset Image"))
-        # self.channelSelector.setToolTip(_translate("MainWindow", "Select a channel"))

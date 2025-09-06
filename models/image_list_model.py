@@ -56,7 +56,7 @@ class ImageTreeItem(QStandardItem):
 
     def set_icon(self):
         """Set the icon for the item. Always a child"""
-        data = self.storage.get_data(self.data(Qt.ItemDataRole.UserRole))
+        data = self.storage.get_data(self.data(Qt.ItemDataRole.UserRole))['data']
         if not data:
             raise ValueError(
                 f"No image data found for UUID: {self.data(Qt.ItemDataRole.UserRole)}"

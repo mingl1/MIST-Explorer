@@ -24,6 +24,7 @@ class CellLayerAlignmentUI(QWidget):
     alignmentCompleteSignal = pyqtSignal(object, str)
     loadOnCanvasSignal = pyqtSignal(dict, bool, str)
     channelChanged = pyqtSignal(int)
+    progress = pyqtSignal(int, str)
 
     def __init__(
         self,
@@ -382,7 +383,8 @@ class CellLayerAlignmentUI(QWidget):
         """Handle progress updates from the aligner thread"""
         # You could add a progress bar to the UI if needed
         # For now, we'll just update the button text
-        self.register_button.setText(f"{message} ({value}%)")
+        # self.register_button.setText(f"{message} ({value}%)")
+        self.progress.emit(value, message)
 
     def _handle_error(self, error_message):
         """Handle error messages from the aligner thread"""
