@@ -103,8 +103,8 @@ class CellLayerAligner(QThread):
         self.progress.emit(100, "Manual alignment set")
         self.aligned_image_signal.emit(
             {
-                "uuid": self.target_uuid,
-                "layer": self.target_channel,
+                "uuid": self.unaligned_uuid,
+                "layer": self.unaligned_channel,
                 "replace": self.replace,
                 "data": aligned_image,
             },

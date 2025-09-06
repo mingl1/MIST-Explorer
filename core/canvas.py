@@ -1,5 +1,4 @@
 import copy
-from curses import meta
 import gc
 
 # Standard library imports
@@ -448,7 +447,6 @@ class BaseGraphicsView(QWidget):
 
             # Store full resolution version
             working_channels[channel_name] = ImageWrapper(image_adjusted, channel_name)
-            
 
             # Prepare display version
 
@@ -598,7 +596,6 @@ class BaseGraphicsView(QWidget):
 
         self._clear_caches()
         self.image_count += 1
-        
 
         return display_channel_data
 
@@ -615,7 +612,9 @@ class BaseGraphicsView(QWidget):
             try:
                 # Store full resolution version
                 self._store_channel_data(
-                    channel_name, ImageWrapper(image_data,channel_name,'gray'), replace_image_wrapper=False
+                    channel_name,
+                    ImageWrapper(image_data, channel_name, "gray"),
+                    replace_image_wrapper=False,
                 )
 
                 # Prepare display version
@@ -623,8 +622,6 @@ class BaseGraphicsView(QWidget):
                     image_data, subsample_for_emit, max_display_size
                 )
                 processed_channels[channel_name] = display_image
-
-              
 
             except Exception as e:
                 # print(f"Error processing {channel_name} in background: {e}")
@@ -653,8 +650,6 @@ class BaseGraphicsView(QWidget):
                 name: ImageWrapper(data, name) for name, data in all_emit_data.items()
             }
             # self.image_signal.emit(display_wrappers, True)
-
-            
 
     def _prepare_channels_for_new_image(self):
         self.working_channels = {}
@@ -738,7 +733,7 @@ class BaseGraphicsView(QWidget):
         if subsample_for_emit and image_data.size > max_display_size * max_display_size:
             subsampled = self._subsample_for_display(image_data, max_display_size)
             self.image_signal.emit(subsampled, True)
-           
+
             return subsampled
         else:
             self.image_signal.emit(image_data, True)
@@ -749,7 +744,7 @@ class BaseGraphicsView(QWidget):
     ) -> None:
         """Notify listeners that number of channels has changed and emit data."""
         print(self.working_channels.keys())
-        
+
         self.working_channels = {
             k: self.working_channels[k] for k in sorted(self.working_channels.keys())
         }
@@ -795,14 +790,13 @@ class BaseGraphicsView(QWidget):
 
         # print("Emitting to update manager")
 
-        self.update_manager.emit(image_channels, file_name,metadata)
+        self.update_manager.emit(image_channels, file_name, metadata)
         self.image_count += 1
 
     def _clear_caches(self) -> None:
         """Clear image and LUT caches."""
         self.image_cache.clear()
         self.lut_cache.clear()
-
 
     def remove_from_canvas(self, uuid: uuid.UUID):
         """Remove a specific channel from the canvas."""
@@ -862,7 +856,7 @@ class ReferenceGraphicsView(BaseGraphicsView):
 
 ##########################################################
 class ImageGraphicsView(BaseGraphicsView):
-    
+
     update_canvas = pyqtSignal(QPixmap)
     save_image = pyqtSignal(QGraphicsPixmapItem)
     change_slider = pyqtSignal(tuple)
@@ -900,7 +894,7 @@ class ImageGraphicsView(BaseGraphicsView):
         """Modified swap_channel to wait for background processing if needed."""
         # not 100% so need the len check later
         self.current_channel = index
-        
+
         if (
             getattr(self, "_background_worker", None)
             and self._background_worker.isRunning()
@@ -920,12 +914,13 @@ class ImageGraphicsView(BaseGraphicsView):
             return
         self.update_image()
 
-    def update_contrast_memory_efficient(self, values, use_cache=True, is_labeled=False):
+    def update_contrast_memory_efficient(
+        self, values, use_cache=True, is_labeled=False
+    ):
         """Memory-efficient version of update_contrast method."""
         if self.image_wrapper is None:
             self.error_signal.emit("Canvas is empty")
             return np.array([]), ""
-            
 
         contrast_min, contrast_max = int(values[0]), int(values[1])
         self.image_wrapper.contrast_min = contrast_min
@@ -937,12 +932,12 @@ class ImageGraphicsView(BaseGraphicsView):
 
         contrast_key = (contrast_min, contrast_max)
         if is_labeled:
-            contrast_key = ('labeled','labeled')
+            contrast_key = ("labeled", "labeled")
         cmap_key = self.image_wrapper.cmap
         cache_key = (cmap_key, contrast_key)
         contrasted_image = np.array([])
         # if self.is_layered:
-            # print("Processing layered image with memory management")
+        # print("Processing layered image with memory management")
         channel_num = f"Channel {self.current_channel + 1}"
         self.image_wrapper = self.working_channels[channel_num]
 
@@ -951,22 +946,20 @@ class ImageGraphicsView(BaseGraphicsView):
         if use_cache:
             cached_image = self.memory_cache.get(self.uuid, channel_num, cache_key)
         if cached_image is not None:
-            assert isinstance(
-                cached_image, np.ndarray
-            ), "Cached image must be ndarray"
+            assert isinstance(cached_image, np.ndarray), "Cached image must be ndarray"
             print(f"Using cached image for {channel_num}")
             contrasted_image = cached_image
         else:
             print(f"Processing new contrast for {channel_num}")
             if is_labeled:
                 # ignore contast
-                contrasted_image= sk_label2rgb(self.image_wrapper.data)
-                cmap_key = 'label_image'
+                contrasted_image = sk_label2rgb(self.image_wrapper.data)
+                cmap_key = "label_image"
             else:
                 contrasted_image = self._apply_contrast_memory_efficient(
                     channel_num, cache_key, contrast_min, contrast_max
                 )
-            self.memory_cache.put(self.uuid,channel_num,cache_key,contrasted_image)
+            self.memory_cache.put(self.uuid, channel_num, cache_key, contrasted_image)
         # else:
         #     # Single layer processing, not sure if this is working
         #     cached_image = self.memory_cache.get(self.uuid, "single", cache_key)
@@ -1015,7 +1008,7 @@ class ImageGraphicsView(BaseGraphicsView):
 
     def change_cmap(self, cmap_text="default", image=None):
         """changes the colormap given a colormap str valid in matplotlib"""
-        
+
         if self.image_wrapper is None:
             self.error_signal.emit("Canvas is empty")
             return
@@ -1030,17 +1023,18 @@ class ImageGraphicsView(BaseGraphicsView):
             cmap_text = self.image_wrapper.cmap
         self.image_wrapper.cmap = cmap_text
         self.update_cmap.emit(cmap_text)
-        
-        
+
         if cmap_text not in self.lut_cache:
             lut = self.generate_lut(cmap_text)
             self.lut_cache[cmap_text] = lut  # cache to avoid recalculating LUT
         else:
             lut = self.lut_cache[cmap_text]  # Reuse the cached LaUT
 
-        return np.clip(self.label2rgb(scale_adjust(image), lut),0,254,dtype=np.uint8)
+        return np.clip(self.label2rgb(scale_adjust(image), lut), 0, 254, dtype=np.uint8)
 
-    def update_image(self, cmap_text="default", image=None, use_cache=True, self_emit=True):
+    def update_image(
+        self, cmap_text="default", image=None, use_cache=True, self_emit=True
+    ):
         """Updates the current image using the current colormap and contrast settings.
         This only changes the display and does not change the underlying data."""
         # print("updating image")
@@ -1061,16 +1055,24 @@ class ImageGraphicsView(BaseGraphicsView):
         # use image_wrapper data if image is None
         image_to_display = None
         prev_cmap = None
-        if cmap_text == 'label_image':
+        if cmap_text == "label_image":
             # image = self.image_wrapper.data
-            image,prev_cmap = self.update_contrast_memory_efficient((contrast_min, contrast_max),use_cache=use_cache, is_labeled=True)
+            image, prev_cmap = self.update_contrast_memory_efficient(
+                (contrast_min, contrast_max), use_cache=use_cache, is_labeled=True
+            )
         elif image is None:
-            image,prev_cmap = self.update_contrast_memory_efficient((contrast_min, contrast_max),use_cache=use_cache)
-        if cmap_text != 'label_image' and prev_cmap != 'label_image' and prev_cmap != cmap_text:
+            image, prev_cmap = self.update_contrast_memory_efficient(
+                (contrast_min, contrast_max), use_cache=use_cache
+            )
+        if (
+            cmap_text != "label_image"
+            and prev_cmap != "label_image"
+            and prev_cmap != cmap_text
+        ):
             image_to_display = self.change_cmap(cmap_text, image)
         else:
             image_to_display = image
-        
+
         assert image_to_display is not None, "Updating empty image"
         if self_emit:
             self.set_pixmap(image_to_display)
@@ -1080,9 +1082,9 @@ class ImageGraphicsView(BaseGraphicsView):
         """generate a 8 bit look-up table and converts to rgb space"""
 
         color_map: Colormap = colormaps.get_cmap(cmap)
-            
+
         label_range = np.linspace(0, 1, 256)
-        
+
         temp = color_map(label_range)
         uint8_temp = np.uint8(temp[:, 2::-1] * 256)
         return uint8_temp.reshape(256, 1, 3)
@@ -1183,7 +1185,7 @@ class ImageGraphicsView(BaseGraphicsView):
             assert image_name is not None, "Image name must be provided for new image"
             self._update_number_of_channels(emit_data, subsample_for_emit)
             self._add_to_manager(image_name, self.working_channels)
-        
+
         return display_image
 
     @pyqtSlot(object)
@@ -1217,6 +1219,7 @@ class ImageGraphicsView(BaseGraphicsView):
 
             self._clear_caches()
             self.update_image()
+
     def _replace_canvas_multichannel(
         self,
         channels_data: Dict[str, ImageWrapper],
@@ -1247,8 +1250,10 @@ class ImageGraphicsView(BaseGraphicsView):
                 )
         self._store_channel_data(target_channel, target_image_wrapper)
         self.current_channel = int(target_channel[-1]) - 1
-        
-        display_channel_data = self.update_image(image=target_image_wrapper.data, self_emit=False)
+
+        display_channel_data = self.update_image(
+            image=target_image_wrapper.data, self_emit=False
+        )
         self.update_cmap.emit(target_image_wrapper.cmap)
 
         # Emit target channel immediately for display
@@ -1276,12 +1281,11 @@ class ImageGraphicsView(BaseGraphicsView):
 
         self._clear_caches()
         self.image_count += 1
-        
 
         return display_channel_data
 
     def rotate_image_task(self, channels: dict, angle):
-        
+
         for channel_num, wrapper in channels.items():
             try:
                 arr = wrapper.data
@@ -1366,6 +1370,7 @@ class ImageGraphicsView(BaseGraphicsView):
         super()._clear_caches()
         if hasattr(self, "memory_cache"):
             self.memory_cache.clear_all()
+
     def update_current_image(self, data_dict):
         self.image = data_dict[f"Channel {self.current_channel + 1}"].data
 
@@ -1392,7 +1397,7 @@ class ImageGraphicsView(BaseGraphicsView):
             image = self.image_wrapper.data
 
         # print("pre_scale", image.dtype, image.min(), image.max())
-    
+
         image = scale_adjust(image)
 
         # print("after scale", image.dtype, image.min(), image.max())
@@ -1401,17 +1406,16 @@ class ImageGraphicsView(BaseGraphicsView):
 
         # check LUT range before applying
         # if lut.min() < 0 or lut.max() > 255:
-            # print("⚠️ LUT values out of range:", lut.min(), lut.max())
+        # print("⚠️ LUT values out of range:", lut.min(), lut.max())
 
-        res = np.clip(cv2.LUT(image, lut),0, 254,dtype=np.uint8)
+        res = np.clip(cv2.LUT(image, lut), 0, 254, dtype=np.uint8)
 
         # print("res", res.dtype, res.min(), res.max())
-        
+
         # detect if clipping occurred
         # if (res == 0).any() or (res == 255).any():
-            # print("⚠️ Potential clipping/overflow: values hit boundary 0 or 255")
+        # print("⚠️ Potential clipping/overflow: values hit boundary 0 or 255")
         return res
-
 
     def blur_layer(self, blur_percentage: float, confirm=False):
         """start gaussian blur in a separate thread"""
@@ -1514,7 +1518,7 @@ class ImageGraphicsView(BaseGraphicsView):
         """Flip the image horizontally"""
         for channel_name, wrapper in self.working_channels.items():
             if "Channel" in channel_name:
-                print('flipped',channel_name)
+                print("flipped", channel_name)
                 wrapper.data = cv2.flip(wrapper.data, 1)
                 self.storage.update_data(self.uuid, channel_name, wrapper.data)
         self.image_wrapper = self.working_channels.get(
@@ -1629,7 +1633,7 @@ class MetaData(QWidget):
                 }
 
                 # for k, v in metadata.items():
-                    # print(f"{k}: {v}")
+                # print(f"{k}: {v}")
             else:
                 print("Pixels element not found.")
 
@@ -1649,6 +1653,7 @@ class MetaData(QWidget):
                 metadata["DimensionOrder"] = "Unknown"
 
         return metadata
+
     def metadata_tooltip(self, metadata: dict) -> str:
         """
         Generate a tooltip string from the metadata dictionary.
@@ -1658,7 +1663,6 @@ class MetaData(QWidget):
             value = metadata.get(key, "Unknown")
             tooltip_lines.append(f"<b>{key}:</b> {value}")
         return "<br>".join(tooltip_lines)
-
 
 
 class ImageDialog(QDialog):
