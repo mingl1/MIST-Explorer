@@ -214,9 +214,13 @@ class ImageTreeWidget(QTreeView):
                 set_menu = QMenu("Set as...", self)
                 menu.addMenu(set_menu)
                 set_menu.addAction(set_reference)
-                set_menu.addAction(set_cell_image)
-                set_menu.addAction(set_tissue_target_image)
-                set_menu.addAction(set_tissue_unaligned_image)
+
+                stardist_menu = set_menu.addMenu("Stardist")
+                stardist_menu.addAction(set_cell_image)
+
+                tissue_menu = set_menu.addMenu("Tissue")
+                tissue_menu.addAction(set_tissue_target_image)
+                tissue_menu.addAction(set_tissue_unaligned_image)
 
                 set_default_channel = QMenu("Set Default Channel as", self)
                 channel_group = QActionGroup(self)
@@ -253,10 +257,15 @@ class ImageTreeWidget(QTreeView):
                 set_tissue_unaligned_image.setText("Set as Tissue Unaligned Image")
                 set_stardist_label.setText("Set as StarDist Label")
                 menu.addAction(set_reference)
-                menu.addAction(set_cell_image)
                 menu.addAction(set_protein_data_image)
-                menu.addAction(set_tissue_target_image)
-                menu.addAction(set_tissue_unaligned_image)
+
+                stardist_menu = menu.addMenu("Stardist")
+                stardist_menu.addAction(set_cell_image)
+                stardist_menu.addAction(set_stardist_label)
+
+                tissue_menu = menu.addMenu("Tissue")
+                tissue_menu.addAction(set_tissue_target_image)
+                tissue_menu.addAction(set_tissue_unaligned_image)
             model_item = model.itemFromIndex(item)
             assert model_item is not None, "Item is None"
             # only add delete & save as tiff action if the item is a root item
@@ -273,11 +282,11 @@ class ImageTreeWidget(QTreeView):
 
     def set_for_stardist(self, item):
         assert isinstance(self.model_stardist, StarDist), "model_stardist is not set"
-        _, uuid = self._name_and_uuid_from_item(item)
+        name, uuid = self._name_and_uuid_from_item(item)
         item = self.storage.get_data(uuid)
         assert item is not None, f"No data found for UUID: {uuid}"
         data = item["data"]
-        self.model_stardist.set_protein_image(data)
+        self.model_stardist.set_protein_image(data, name=name)
 
     def show_message(self, message):
         QMessageBox.information(self, "Selection", message)

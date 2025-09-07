@@ -354,7 +354,7 @@ class BaseGraphicsView(QWidget):
         self.file_queue = deque()
         self.queue_lock = threading.Lock()
         self.caching_queue = Queue()
-        self.memory_cache = MemoryEfficientImageCache(max_cache_size_mb=3000)
+        self.memory_cache = MemoryEfficientImageCache()
 
     def set_uuid(self, uuid):
         self.uuid = uuid
@@ -645,32 +645,11 @@ class BaseGraphicsView(QWidget):
             )
             self._caching_worker.start()
 
-    @pyqtSlot(object)
-    def _on_background_channels_completed(
-        self, processed_channels: Dict[str, np.ndarray]
-    ):
-        """Handle completion of background channel processing."""
-        if processed_channels:
-            # Update the full multichannel data
-            all_emit_data = {
-                **{
-                    f"Channel {self.current_channel + 1}": self.working_channels[
-                        f"Channel {self.current_channel + 1}"
-                    ].data
-                },
-                **processed_channels,
-            }
-
-            # Create display wrappers for all channels
-            display_wrappers = {
-                name: ImageWrapper(data, name) for name, data in all_emit_data.items()
-            }
-            # self.image_signal.emit(display_wrappers, True)
-
     def _prepare_channels_for_new_image(self):
         self.working_channels = {}
         self.reset_working_channels = {}
         self.display_channels = {}
+        self.current_channel = 0
 
     def _replace_canvas_single(
         self,
@@ -894,7 +873,6 @@ class ImageGraphicsView(BaseGraphicsView):
         self.crop_cursor = QCursor(Qt.CursorShape.CrossCursor)
         self.memory_cache = MemoryEfficientImageCache(max_cache_size_mb=3000)
         self.blur_worker = None
-        self._background_worker = None
         self.uuid = None
 
     def set_uuid(self, uuid):
@@ -922,23 +900,10 @@ class ImageGraphicsView(BaseGraphicsView):
         # not 100% so need the len check later
         self.current_channel = index
 
-        if (
-            getattr(self, "_background_worker", None)
-            and self._background_worker.isRunning()
-        ):
-            print("Waiting for background channel processing to complete...")
-            self._background_worker.finished.connect(lambda: self.swap_channel(index))
-            return
-        else:
-            print("no background worker or already finished")
         channel_num = f"Channel {index+1}"
         self.image_wrapper = self.working_channels.get(
             channel_num, ImageWrapper(np.array([]), "")
         )
-        if len(self.image_wrapper.data) == 0:
-            print("no data, background worker still workin")
-            self._background_worker.finished.connect(lambda: self.swap_channel(index))
-            return
         self.update_image()
 
     def update_contrast_memory_efficient(
@@ -1304,7 +1269,7 @@ class ImageGraphicsView(BaseGraphicsView):
             new_ch.data = rotated_arr
             result[channel_num] = new_ch
 
-        return result, current_uuid
+        return current_uuid, result
 
     def rotate_image(self, angle_text: str):
         try:
@@ -1331,7 +1296,8 @@ class ImageGraphicsView(BaseGraphicsView):
         return str(self.uuid) == str(other_uuid)
 
     @pyqtSlot(object)
-    def on_rotation_completed(self, result_uuid, result):
+    def on_rotation_completed(self, output):
+        result_uuid, result = output
         print("rot complete")
         if result is not None:
             for channel_name, wrapper in result.items():
@@ -1487,12 +1453,11 @@ class ImageGraphicsView(BaseGraphicsView):
         if right <= left or bottom <= top:
             raise ValueError("❌ Invalid crop region: empty or out-of-bounds")
 
+    @pyqtSlot()
     def flip_horizontal(self):
         """Flip the image horizontally"""
-        print("flip")
         for channel_name, wrapper in self.working_channels.items():
             if "Channel" in channel_name:
-                print("flipped", channel_name)
                 wrapper.data = cv2.flip(wrapper.data, 1)
                 self.storage.update_data(
                     self.uuid, channel_name, wrapper, emitter=self.update_sidebar
@@ -1505,6 +1470,7 @@ class ImageGraphicsView(BaseGraphicsView):
         # self.set_pixmap(self.image_wrapper.data)
         # print("Image flipped horizontally")
 
+    @pyqtSlot()
     def flip_vertical(self):
         """Flip the image vertically"""
         for channel_name, wrapper in self.working_channels.items():

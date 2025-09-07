@@ -419,6 +419,12 @@ class SignalConnectionManager:
         self.c.view.stardist_groupbox.stardist_channel_selector.currentTextChanged.connect(
             self.c.model_stardist.set_channel
         )
+        self.c.model_stardist.cell_image_set.connect(
+            self.c.view.stardist_groupbox.set_groupbox_title
+        )
+        self.c.model_stardist.cell_channel.connect(
+            self.c.view.stardist_groupbox.stardist_channel_selector.setCurrentText
+        )
         self.c.view.stardist_groupbox.stardist_pretrained_models.currentTextChanged.connect(
             self.c.model_stardist.set_model
         )
@@ -446,17 +452,12 @@ class SignalConnectionManager:
             self.c.model_stardist.start
         )
         self.c.model_stardist.stardist_done.connect(self.c.model_canvas.add_to_canvas)
-        # self.c.model_stardist.stardist_done.connect(
-        #     lambda x, y, z: self.c.model_canvas.load_stardist_labels(x)
-        # )
+
         self.c.model_stardist.stardist_done.connect(
             lambda x, y, z: self.c.model_cell_intensity.load_stardist_labels(x)
         )
         self.c.model_stardist.error_signal.connect(self.c.handle_error)
         self.c.model_stardist.progress.connect(self.c.view.update_progress_bar)
-        self.c.view.stardist_groupbox.save_button.clicked.connect(
-            self.c.model_stardist.save_image
-        )
         self.c.view.stardist_groupbox.cancel_button.clicked.connect(
             self.c.model_stardist.cancel
         )
@@ -545,10 +546,10 @@ class SignalConnectionManager:
 
         image_signal = self.c.model_canvas.image_signal
         image_signal.connect(self.c.view.toolBarUI.updateChannelSelector)
-        image_signal.connect(self.c.view.stardist_groupbox.updateChannelSelector)
         image_signal.connect(self.c.view.register_groupbox.updateChannelSelector)
         image_signal.connect(self.c.view.canvas.loadChannels)
         image_signal.connect(self.c.model_stardist.update_channels)
+        image_signal.connect(self.c.view.stardist_groupbox.updateChannelSelector)
         image_signal.connect(self.c.view.gaussian_blur.updateChannelSelector)
         image_signal.connect(self.c.model_register.update_moving_image)
 
