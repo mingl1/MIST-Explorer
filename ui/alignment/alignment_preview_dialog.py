@@ -384,8 +384,9 @@ class AlignmentPreviewDialog(QDialog):
         self.result_accepted = True
         final_transformation = self.image_view.moving_item.transform()
         transf_matrix = transform_to_matrix(final_transformation)
+        h, w = self.target_image.shape[:2]
         final_image = cv2.warpAffine(
-            self.original_aligned_image, transf_matrix, self.target_image.shape[::-1]
+            self.original_aligned_image, transf_matrix, (w, h)
         )
         self.moving_image_changed.emit(final_image)
         self.accept()
@@ -410,8 +411,16 @@ class AlignmentPreviewDialog(QDialog):
             super().keyPressEvent(event)
 
     def create_direct_overlay(self):
-        target_gray = self.to_uint8(self.target_image)
-        aligned_gray = self.to_uint8(self.aligned_image)
+        target_img = self.target_image
+        if self.target_image.ndim == 3:
+            target_img = cv2.cvtColor(self.target_image, cv2.COLOR_RGB2GRAY)
+
+        aligned_img = self.aligned_image
+        if self.aligned_image.ndim == 3:
+            aligned_img = cv2.cvtColor(self.aligned_image, cv2.COLOR_RGB2GRAY)
+
+        target_gray = self.to_uint8(target_img)
+        aligned_gray = self.to_uint8(aligned_img)
         h, w = target_gray.shape
         ah, aw = aligned_gray.shape
 

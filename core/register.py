@@ -402,6 +402,8 @@ class Register(QThread):
         best_registered = source
         itk_transf = None
         for key in moving_points:
+            if key not in fixed_points:
+                continue
             if len(moving_points[key]) < 4 or len(fixed_points[key]) < 4:
                 continue
             moving_points[key] = moving_points[key][: self.max_points]
