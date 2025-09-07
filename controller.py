@@ -7,7 +7,7 @@ import uuid
 
 import numpy as np
 from PIL import Image
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
@@ -345,6 +345,7 @@ class SignalConnectionManager:
             self.c.view.small_view.display
         )
         self.c.model_canvas.update_canvas.connect(self.c.view.canvas.update_canvas)
+        self.c.model_canvas.update_sidebar.connect(self.c.view.images_tab.set_channel_icon)
         self.c.view.view_tab.change_pix.connect(self.c.view.canvas.update_canvas)
         # self.c.model_canvas.canvas_updated.connect(self.c.view.canvas.update_canvas)
         self.c.model_canvas.update_manager.connect(self.c.handle_new_image)
@@ -389,13 +390,25 @@ class SignalConnectionManager:
 
         # Gaussian blur
         self.c.view.gaussian_blur.confirm.clicked.connect(
-            lambda: self.c.model_canvas.blur_layer(0, confirm=True)
+            lambda: self.c.model_canvas.blur_layer(
+                self.c.view.gaussian_blur.slider.value(), confirm=True
+            )
         )
         self.c.view.gaussian_blur.slider.doubleValueChanged.connect(
             self.c.view.gaussian_blur.update_slider_label
         )
+        self.blur_timer = QTimer()
+        self.blur_timer.setSingleShot(True)
+        self.blur_timer.setInterval(300)  # ms of inactivity before applying
+
+        # Connect the timer timeout to the actual blur update
+        self.blur_timer.timeout.connect(
+            lambda: self.c.model_canvas.blur_layer(
+                self.c.view.gaussian_blur.slider.value()
+            )
+        )
         self.c.view.gaussian_blur.slider.doubleValueChanged.connect(
-            self.c.model_canvas.blur_layer
+            lambda _: self.blur_timer.start()
         )
 
     def _setup_stardist_connections(self):

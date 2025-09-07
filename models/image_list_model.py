@@ -35,10 +35,10 @@ class ImageTreeItem(QStandardItem):
                     | Qt.ItemFlag.ItemIsSelectable
                     | Qt.ItemFlag.ItemIsEditable
                 )
-                metadata_text = image_dict.get("metadata",None)
+                metadata_text = image_dict.get("metadata", None)
                 if metadata_text is not None:
-                    self.setData(metadata_text,Qt.ItemDataRole.ToolTipRole)
-                
+                    self.setData(metadata_text, Qt.ItemDataRole.ToolTipRole)
+
             else:
                 thumbnail = QPixmap(icon).scaled(
                     30, 30, Qt.AspectRatioMode.KeepAspectRatio
@@ -51,12 +51,19 @@ class ImageTreeItem(QStandardItem):
         self.setText(text)
         self.setData(uuid, Qt.ItemDataRole.UserRole)
         self.setData(channel, Qt.ItemDataRole.WhatsThisRole)
-        
 
-
-    def set_icon(self):
+    def set_icon(self, data=None):
         """Set the icon for the item. Always a child"""
-        data = self.storage.get_data(self.data(Qt.ItemDataRole.UserRole))['data']
+        print(
+            f"Setting icon for {self.data(Qt.ItemDataRole.UserRole)} - {self.channel}"
+        )
+        if data is None:
+            image_dict = self.storage.get_data(self.data(Qt.ItemDataRole.UserRole))
+            if image_dict is None:
+                raise ValueError(
+                    f"No image data found for UUID: {self.data(Qt.ItemDataRole.UserRole)}"
+                )
+            data = image_dict.get("data", {})
         if not data:
             raise ValueError(
                 f"No image data found for UUID: {self.data(Qt.ItemDataRole.UserRole)}"
@@ -65,15 +72,15 @@ class ImageTreeItem(QStandardItem):
         if channel_data is None:
             raise ValueError(f"No data found for channel: {self.channel}")
         icon = numpy_to_qimage(channel_data.data)
-        if icon is None:
-            raise ValueError("Failed to convert image data to QImage")
-        icon = QPixmap(icon).scaled(30, 30, Qt.AspectRatioMode.KeepAspectRatio)
-        if not icon.isNull():
-            icon = QIcon(icon)
+        if self.useItemName:
+            thumbnail = QPixmap(icon).scaled(50, 50, Qt.AspectRatioMode.KeepAspectRatio)
+            self.setData(QSize(0, 60), Qt.ItemDataRole.SizeHintRole)
         else:
-            raise ValueError("Failed to create QIcon from QPixmap")
-        self.setData(QSize(0, 40), Qt.ItemDataRole.SizeHintRole)
-        self.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+            thumbnail = QPixmap(icon).scaled(30, 30, Qt.AspectRatioMode.KeepAspectRatio)
+            self.setData(QSize(0, 40), Qt.ItemDataRole.SizeHintRole)
+        if thumbnail is None:
+            raise ValueError("Failed to create thumbnail from image data")
+        icon = QIcon(thumbnail)
         self.setIcon(icon)
 
     def onTextEdited(self, new_text):

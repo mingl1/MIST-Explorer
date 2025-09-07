@@ -1,6 +1,7 @@
 import os
 import uuid
 from calendar import c
+from email.mime import image
 from uuid import UUID
 
 import numpy as np
@@ -68,18 +69,38 @@ class Manager(QWidget):
     def set_channel_icon(self, uuid, channel):
         """Set the icon for the channel item"""
         assert self.root_node is not None, "Root node is not initialized"
-        main_item = self.root_node.child(uuid)
+        main_item = None
+        image_data = self.storage.get_data(uuid)
+        if image_data is None:
+            raise ValueError(f"No image data found for UUID: {uuid}")
+        image_data = image_data.get("data", {})
+        if channel not in image_data:
+            raise ValueError(
+                f"Channel {channel} not found in image data for UUID: {uuid}"
+            )
+        model = self.image_tree_model
+        for i in range(model.rowCount()):
+            item = model.item(i)
+            if item is None:
+                continue
+            if item.data(Qt.ItemDataRole.UserRole) == uuid:
+                main_item = item
+                break
         if main_item is None:
             raise ValueError(f"No main item found for UUID: {uuid}")
-        channel_item = main_item.child(channel)
-        assert isinstance(
-            channel_item, ImageTreeItem
-        ), "Channel item is not an instance of ImageTreeItem"
-        if channel_item is None:
-            raise ValueError(
-                f"No channel item found for UUID: {uuid} and channel: {channel}"
-            )
-        channel_item.set_icon()
+        channel_item = None
+        if main_item.data(Qt.ItemDataRole.WhatsThisRole) == channel:
+            if isinstance(main_item, ImageTreeItem):
+                main_item.set_icon(image_data)
+        for i in range(main_item.rowCount()):
+            child = main_item.child(i)
+            if child is None:
+                continue
+            if child.data(Qt.ItemDataRole.WhatsThisRole) == channel:
+                channel_item = child
+                break
+        if isinstance(channel_item, ImageTreeItem):
+            channel_item.set_icon(image_data)
 
     def add_to_storage(self, uuid, obj):
         print(f"adding {uuid} to storage")
@@ -134,7 +155,7 @@ class ImageTreeWidget(QTreeView):
 
     def show_on_canvas(self, item):
         assert self.model_canvas is not None, "model_canvas is not set"
-        print('show on canvas')
+        print("show on canvas")
         model_canvas = self.model_canvas
         name, my_uuid = self._name_and_uuid_from_item(item, tooltip=True)
         different = str(my_uuid) != str(model_canvas.uuid)
