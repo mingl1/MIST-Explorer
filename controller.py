@@ -345,7 +345,9 @@ class SignalConnectionManager:
             self.c.view.small_view.display
         )
         self.c.model_canvas.update_canvas.connect(self.c.view.canvas.update_canvas)
-        self.c.model_canvas.update_sidebar.connect(self.c.view.images_tab.set_channel_icon)
+        self.c.model_canvas.update_sidebar.connect(
+            self.c.view.images_tab.set_channel_icon
+        )
         self.c.view.view_tab.change_pix.connect(self.c.view.canvas.update_canvas)
         # self.c.model_canvas.canvas_updated.connect(self.c.view.canvas.update_canvas)
         self.c.model_canvas.update_manager.connect(self.c.handle_new_image)

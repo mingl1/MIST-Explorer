@@ -385,12 +385,13 @@ class CellLayerAlignmentUI(QWidget):
         # For now, we'll just update the button text
         # self.register_button.setText(f"{message} ({value}%)")
         self.progress.emit(value, message)
+        if value >= 100:
+            self._handle_finished()
 
     def _handle_error(self, error_message):
         """Handle error messages from the aligner thread"""
         QMessageBox.critical(self, "Alignment Error", error_message)
-        self.register_button.setEnabled(True)
-        self.register_button.setText("Register Images")
+        self.progress.emit(100, "Error occurred during alignment.")
 
         # Reset the image status colors to indicate failure
         if self.target_image is not None:
@@ -405,20 +406,4 @@ class CellLayerAlignmentUI(QWidget):
     def _handle_finished(self):
         """Handle when the alignment thread finishes"""
         self.register_button.setEnabled(True)
-        self.register_button.setText("Register Images")
-
-        # Show a success message if there was no error
-        if hasattr(self.aligner, "result") and self.aligner.result is not None:
-            # Set colors to indicate success
-            self.image1_status.setStyleSheet(
-                "font-weight: bold; color: #007700;"
-            )  # Green to indicate success
-            self.image2_status.setStyleSheet(
-                "font-weight: bold; color: #007700;"
-            )  # Green to indicate success
-
-            QMessageBox.information(
-                self,
-                "Alignment Complete",
-                f"Successfully aligned {self.unaligned_name} to {self.target_name}",
-            )
+        self.manually_align_button.setEnabled(True)

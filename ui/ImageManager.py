@@ -106,11 +106,6 @@ class Manager(QWidget):
         print(f"adding {uuid} to storage")
         self.storage.add_data(uuid, obj)
 
-    # def update_item_layer(self, uuid, new_data, layer_name):
-    #     self.storage.update_data(uuid, new_data, layer_name)
-
-    # !TODO: move elsewhere
-
 
 class ImageTreeWidget(QTreeView):
     tissue_target_selected = pyqtSignal(UUID, bool, int)
