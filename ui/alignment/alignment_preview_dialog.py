@@ -216,6 +216,16 @@ class AlignmentPreviewDialog(QDialog):
         scale_layout = QHBoxLayout()
         self.scale_input = QLineEdit()
         self.scale_input.setPlaceholderText("1.0")
+        self.scale_input.setValidator(QDoubleValidator(0.0001, 10000, 2))
+        self.scale_button = QPushButton("Apply")
+        scale_layout.addWidget(self.scale_input)
+        scale_layout.addWidget(self.scale_button)
+        scale_group.setLayout(scale_layout)
+
+        scale_group = QGroupBox("Scale")
+        scale_layout = QHBoxLayout()
+        self.scale_input = QLineEdit()
+        self.scale_input.setPlaceholderText("1.0")
         self.scale_input.setValidator(QDoubleValidator(0.000001, 10000, 6))
         self.scale_button = QPushButton("Apply")
         scale_layout.addWidget(self.scale_input)
@@ -318,6 +328,29 @@ class AlignmentPreviewDialog(QDialog):
                 self, "Invalid Input", "Please enter a valid scale factor."
             )
 
+    def apply_scale(self):
+        if not self.scale_input.text():
+            return
+        try:
+            scale = float(self.scale_input.text())
+            if scale < 1.0:
+                self.downscaled = True
+            self.transformations[-1].append("x" + str(scale))
+
+            transform = self.image_view.moving_item.transform()
+            center = self.image_view.moving_item.boundingRect().center()
+            t = QTransform()
+            t.translate(center.x(), center.y())
+            t.scale(scale, scale)
+            t.translate(-center.x(), -center.y())
+
+            self.image_view.moving_item.setTransform(transform * t)
+            self.update_offset_label()
+        except ValueError:
+            QMessageBox.warning(
+                self, "Invalid Input", "Please enter a valid scale factor."
+            )
+
     def move_aligned_image(self, dx, dy):
         self.offset_x += dx
         self.offset_y += dy
@@ -351,8 +384,9 @@ class AlignmentPreviewDialog(QDialog):
         self.result_accepted = True
         final_transformation = self.image_view.moving_item.transform()
         transf_matrix = transform_to_matrix(final_transformation)
+        h, w = self.target_image.shape[:2]
         final_image = cv2.warpAffine(
-            self.original_aligned_image, transf_matrix, self.target_image.shape[::-1]
+            self.original_aligned_image, transf_matrix, (w, h)
         )
         self.moving_image_changed.emit(final_image)
         self.accept()
@@ -377,8 +411,16 @@ class AlignmentPreviewDialog(QDialog):
             super().keyPressEvent(event)
 
     def create_direct_overlay(self):
-        target_gray = self.to_uint8(self.target_image)
-        aligned_gray = self.to_uint8(self.aligned_image)
+        target_img = self.target_image
+        if self.target_image.ndim == 3:
+            target_img = cv2.cvtColor(self.target_image, cv2.COLOR_RGB2GRAY)
+
+        aligned_img = self.aligned_image
+        if self.aligned_image.ndim == 3:
+            aligned_img = cv2.cvtColor(self.aligned_image, cv2.COLOR_RGB2GRAY)
+
+        target_gray = self.to_uint8(target_img)
+        aligned_gray = self.to_uint8(aligned_img)
         h, w = target_gray.shape
         ah, aw = aligned_gray.shape
 

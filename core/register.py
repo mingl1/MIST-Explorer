@@ -302,7 +302,8 @@ class Register(QThread):
         assert moving_uuid is not None, "No canvas UUID found"
         moving_uuid = moving_uuid["value"]
         result["uuid"] = moving_uuid
-
+        if self._handle_cancel():
+            return
         self.alignment_complete.emit(
             result,
             aligned_protein_signal[self.params["alignment_layer"]][
@@ -310,8 +311,7 @@ class Register(QThread):
             ],
             alignment_layer[: self.params["max_size"], : self.params["max_size"]],
         )
-        if self._handle_cancel():
-            return
+
         self.progress.emit(100, "Alignment Done")
 
     def find_points(self, image, min_circularity=0.5, top_k=500):
@@ -403,6 +403,8 @@ class Register(QThread):
         best_registered = source
         itk_transf = None
         for key in moving_points:
+            if key not in fixed_points:
+                continue
             if len(moving_points[key]) < 4 or len(fixed_points[key]) < 4:
                 continue
             moving_points[key] = moving_points[key][: self.max_points]

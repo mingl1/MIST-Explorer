@@ -2,7 +2,6 @@ import os
 
 import cv2 as cv
 import numpy as np
-
 from csbdeep.utils import normalize
 from matplotlib import colormaps
 from PIL import Image
@@ -18,16 +17,17 @@ os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 
 class StarDist(QThread):
     stardist_done = pyqtSignal(ImageWrapper, bool, str)
-    # sendGrayScale = pyqtSignal(np.ndarray)
+    cell_image_set = pyqtSignal(str, str)
     progress = pyqtSignal(int, str)
     error_signal = pyqtSignal(str)
+    cell_channel = pyqtSignal(str)
 
     def __init__(self):
         super().__init__()
         self.protein_channels = None
         self.np_image = None
         self.params = {
-            "channel": "Channel 2",
+            "channel": "Channel 1",
             "model": "2D_versatile_fluo",
             "percentile_low": 3,
             "percentile_high": 99.80,
@@ -103,8 +103,8 @@ class StarDist(QThread):
                 self.progress.emit(100, "Cancelled")
                 return
             stardist_labels = labels  # last one is full image
-            pct = 10 + int(80 * max(0, (i - 2) / total_tiles))
-            self.progress.emit(pct, f"Processing tile {i+1}/{total_tiles}")
+            pct = 10 + int(70 * max(0, (i - 2) / total_tiles))
+            self.progress.emit(pct, f"Processing tile {max(0, i-2)}/{total_tiles}")
 
         if stardist_labels is None:
             self._fatal_error_message("No labels produced")
@@ -165,8 +165,10 @@ class StarDist(QThread):
         self.np_image = None
         self.protein_channels = protein_channels
 
-    def set_protein_image(self, protein_channels):
+    def set_protein_image(self, protein_channels, channel="Channel 1", name=None):
         self.protein_channels = protein_channels
+        self.params["channel"] = channel
+        self.cell_image_set.emit(name, channel)
         self.np_image = None
 
     def set_image_to_process(self, np_image):

@@ -114,13 +114,15 @@ class StarDistUI(QWidget):
         self.cancel_button = QPushButton(self.stardist_groupbox)
         self.stardist_components_vlayout.addWidget(self.cancel_button)
         # save button
-        self.save_button = QPushButton(self.stardist_groupbox)
-        self.stardist_components_vlayout.addWidget(self.save_button)
         self.horizontalLayout_4.addLayout(self.stardist_components_vlayout)
         containing_layout.addWidget(self.stardist_groupbox)
 
         self.__retranslate_UI()
         QMetaObject.connectSlotsByName(self)
+
+    def set_groupbox_title(self, name, channel):
+        self.stardist_groupbox.setTitle(f"StarDist Cell Segmentation - {name}")
+        self.stardist_channel_selector.setCurrentText(channel)
 
     def updateChannelSelector(self, channels: dict):
         self.clearChannelSelector()
@@ -128,6 +130,7 @@ class StarDistUI(QWidget):
             channels.keys(), key=lambda x: int(x.replace("Channel ", ""))
         )
         self.stardist_channel_selector.addItems(channel_keys)
+        self.__retranslate_UI()
 
     def clearChannelSelector(self):
         self.stardist_channel_selector.clear()
@@ -135,7 +138,9 @@ class StarDistUI(QWidget):
     def __retranslate_UI(self):
         _translate = QCoreApplication.translate
         self.stardist_groupbox.setTitle(
-            _translate("MainWindow", "StarDist Cell Segmentation")
+            _translate(
+                "MainWindow", "StarDist Cell Segmentation - Current Canvas Image"
+            )
         )
         self.stardist_label1.setText(_translate("MainWindow", "Pre-trained 2D Model"))
         self.stardist_label2.setText(_translate("MainWindow", "Percentile Low"))
@@ -147,5 +152,4 @@ class StarDistUI(QWidget):
         self.stardist_label6.setText(_translate("MainWindow", "Number of Tiles"))
         self.stardist_label7.setText(_translate("MainWindow", "Radius"))
         self.stardist_run_button.setText(_translate("MainWindow", "Run"))
-        self.save_button.setText(_translate("MainWindow", "Save"))
         self.cancel_button.setText(_translate("MainWindow", "Cancel"))

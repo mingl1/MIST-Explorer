@@ -7,7 +7,7 @@ import uuid
 
 import numpy as np
 from PIL import Image
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
@@ -345,6 +345,9 @@ class SignalConnectionManager:
             self.c.view.small_view.display
         )
         self.c.model_canvas.update_canvas.connect(self.c.view.canvas.update_canvas)
+        self.c.model_canvas.update_sidebar.connect(
+            self.c.view.images_tab.set_channel_icon
+        )
         self.c.view.view_tab.change_pix.connect(self.c.view.canvas.update_canvas)
         # self.c.model_canvas.canvas_updated.connect(self.c.view.canvas.update_canvas)
         self.c.model_canvas.update_manager.connect(self.c.handle_new_image)
@@ -389,13 +392,25 @@ class SignalConnectionManager:
 
         # Gaussian blur
         self.c.view.gaussian_blur.confirm.clicked.connect(
-            lambda: self.c.model_canvas.blur_layer(0, confirm=True)
+            lambda: self.c.model_canvas.blur_layer(
+                self.c.view.gaussian_blur.slider.value(), confirm=True
+            )
         )
         self.c.view.gaussian_blur.slider.doubleValueChanged.connect(
             self.c.view.gaussian_blur.update_slider_label
         )
+        self.blur_timer = QTimer()
+        self.blur_timer.setSingleShot(True)
+        self.blur_timer.setInterval(300)  # ms of inactivity before applying
+
+        # Connect the timer timeout to the actual blur update
+        self.blur_timer.timeout.connect(
+            lambda: self.c.model_canvas.blur_layer(
+                self.c.view.gaussian_blur.slider.value()
+            )
+        )
         self.c.view.gaussian_blur.slider.doubleValueChanged.connect(
-            self.c.model_canvas.blur_layer
+            lambda _: self.blur_timer.start()
         )
 
     def _setup_stardist_connections(self):
@@ -403,6 +418,12 @@ class SignalConnectionManager:
         # Parameter connections
         self.c.view.stardist_groupbox.stardist_channel_selector.currentTextChanged.connect(
             self.c.model_stardist.set_channel
+        )
+        self.c.model_stardist.cell_image_set.connect(
+            self.c.view.stardist_groupbox.set_groupbox_title
+        )
+        self.c.model_stardist.cell_channel.connect(
+            self.c.view.stardist_groupbox.stardist_channel_selector.setCurrentText
         )
         self.c.view.stardist_groupbox.stardist_pretrained_models.currentTextChanged.connect(
             self.c.model_stardist.set_model
@@ -431,17 +452,12 @@ class SignalConnectionManager:
             self.c.model_stardist.start
         )
         self.c.model_stardist.stardist_done.connect(self.c.model_canvas.add_to_canvas)
-        # self.c.model_stardist.stardist_done.connect(
-        #     lambda x, y, z: self.c.model_canvas.load_stardist_labels(x)
-        # )
+
         self.c.model_stardist.stardist_done.connect(
             lambda x, y, z: self.c.model_cell_intensity.load_stardist_labels(x)
         )
         self.c.model_stardist.error_signal.connect(self.c.handle_error)
         self.c.model_stardist.progress.connect(self.c.view.update_progress_bar)
-        self.c.view.stardist_groupbox.save_button.clicked.connect(
-            self.c.model_stardist.save_image
-        )
         self.c.view.stardist_groupbox.cancel_button.clicked.connect(
             self.c.model_stardist.cancel
         )
@@ -530,10 +546,10 @@ class SignalConnectionManager:
 
         image_signal = self.c.model_canvas.image_signal
         image_signal.connect(self.c.view.toolBarUI.updateChannelSelector)
-        image_signal.connect(self.c.view.stardist_groupbox.updateChannelSelector)
         image_signal.connect(self.c.view.register_groupbox.updateChannelSelector)
         image_signal.connect(self.c.view.canvas.loadChannels)
         image_signal.connect(self.c.model_stardist.update_channels)
+        image_signal.connect(self.c.view.stardist_groupbox.updateChannelSelector)
         image_signal.connect(self.c.view.gaussian_blur.updateChannelSelector)
         image_signal.connect(self.c.model_register.update_moving_image)
 
