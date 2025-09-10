@@ -166,7 +166,7 @@ class Register(QThread):
                 transforms, ymin, xmin, radius, x, y, best_ncc = result
                 self.progress.emit(
                     progress_update,
-                    str(f"aligning tile {tile_n+1}/{len(inputs)} - NCC: {best_ncc}"),
+                    str(f"aligning tile {tile_n+1}/{len(inputs)} - NCC: {best_ncc:.2f}"),
                 )
                 if result is None:
                     continue
