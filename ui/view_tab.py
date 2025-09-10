@@ -5,13 +5,11 @@ import numpy as np
 import pandas as pd
 import tifffile as tiff
 from numpy.typing import NDArray
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import QEvent, QTimer
 
 from controller import Controller
 from core.canvas import ImageWrapper
-from utils import create_lut
-from PyQt6.QtCore import QEvent
-
+from utils import auto_contrast_helper
 
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 import os
@@ -152,7 +150,9 @@ def tint_grayscale_image(grayscale_image, color):
     )
 
     # Apply the color tint
-    tinted_image = (grayscale_image_normalized[..., None] * np.array(color)).astype(np.uint8)
+    tinted_image = (grayscale_image_normalized[..., None] * np.array(color)).astype(
+        np.uint8
+    )
 
     return tinted_image
 
@@ -170,6 +170,7 @@ from PyQt6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QPushButton,
@@ -178,7 +179,6 @@ from PyQt6.QtWidgets import (
     QSlider,
     QVBoxLayout,
     QWidget,
-    QLineEdit,
 )
 
 
@@ -339,7 +339,6 @@ class ImageOverlay(QWidget):
         self.contrast_timer.setInterval(300)  # 300 ms of no movement triggers update
         self.contrast_timer.setSingleShot(True)
 
-
     def load_stardist_image(self):
         if self.im_path is None:
             raise ValueError("im_path is None")
@@ -361,7 +360,7 @@ class ImageOverlay(QWidget):
             interpolation=cv2.INTER_NEAREST_EXACT,
         )
         return reduced_cell_img
-    
+
     def load_df(self):
         if self.req_df() == "":
             raise ValueError("Need to load protein data first.")
@@ -391,7 +390,7 @@ class ImageOverlay(QWidget):
         start = time.perf_counter()
         if self.reduced_cell_img.size == 0:
             raise ValueError("Please load an image first.")
-        
+
         if self.df is None:
             self.load_df()
             print("Automatically loaded df from", self.df_path)
@@ -812,7 +811,6 @@ class ImageOverlay(QWidget):
             return  # Don't restart while still moving
         self.contrast_timer.start()
 
-
     def add_layer_controls(self, c):
         idx = len(self.controls) - 1
 
@@ -837,22 +835,19 @@ class ImageOverlay(QWidget):
         )
         group_layout.addRow("Opacity:", opacity_slider)
 
-                # --- Existing Contrast Slider ---
-        contrast_slider = qtrangeslider.QLabeledDoubleRangeSlider(Qt.Orientation.Horizontal)
-        contrast_slider.valueChanged.connect(
-            lambda _: self.restart_contrast_timer()
+        # --- Existing Contrast Slider ---
+        contrast_slider = qtrangeslider.QLabeledDoubleRangeSlider(
+            Qt.Orientation.Horizontal
         )
+        contrast_slider.valueChanged.connect(lambda _: self.restart_contrast_timer())
 
-        self.contrast_timer.timeout.connect(
-            lambda: self.set_contrast_from_slider(idx)
-        )
+        self.contrast_timer.timeout.connect(lambda: self.set_contrast_from_slider(idx))
 
         contrast_slider.setMaximum(255)
         contrast_slider.setValue((0, 255))
         contrast_slider.setDecimals(0)
         self.contrast_sliders.append(contrast_slider)
         contrast_slider.installEventFilter(self)
-
 
         group_layout.addRow("Contrast:", contrast_slider)
 
@@ -937,8 +932,6 @@ class ImageOverlay(QWidget):
                         break
         return super().eventFilter(source, event)
 
-
-
     def update_opacity(self, value, idx):
         self.controls[idx].current_opacity = value / 100.0
 
@@ -951,17 +944,10 @@ class ImageOverlay(QWidget):
         self.controls[idx].current_contrast = value
         self.process_images()
 
-
     def auto_contrast(self, idx, lower=0.1, upper=0.9):
         img = self.controls[idx].image
         assert isinstance(img, np.ndarray)
-        print(img.dtype)
-        flat_img = img.flatten()
-        hist, _ = np.histogram(flat_img, bins=256, range=(0, 255))
-        total_pixels = flat_img.size
-        cumulative_hist = np.cumsum(hist) / total_pixels
-        new_min = np.argmax(cumulative_hist > lower)
-        new_max = np.argmax(cumulative_hist > upper)
+        new_min, new_max = auto_contrast_helper(img, lower, upper)
         self.contrast_sliders[idx].setValue((int(new_min), int(new_max)))
         self.update_contrast([new_min, new_max], idx)
 
@@ -977,7 +963,6 @@ class ImageOverlay(QWidget):
             img = np.stack((img,) * 3, axis=-1)
         factor = np.array(color.getRgb()[:3]) / 255.0
         return (img * factor).astype(np.uint8)
-
 
     def adjust_contrast(self, img, min=5, max=100):
         # pixvals = np.array(img)

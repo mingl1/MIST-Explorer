@@ -9,7 +9,6 @@ from numpy.typing import NDArray
 from PyQt6.QtCore import QThread, pyqtSignal
 from pystackreg import StackReg
 from pystackreg.util import to_uint16
-from pytools import P
 from scipy.ndimage import binary_fill_holes, rotate, zoom
 
 from utils import (
@@ -103,8 +102,8 @@ class CellLayerAligner(QThread):
         self.progress.emit(100, "Manual alignment set")
         self.aligned_image_signal.emit(
             {
-                "uuid": self.target_uuid,
-                "layer": self.target_channel,
+                "uuid": self.unaligned_uuid,
+                "layer": self.unaligned_channel,
                 "replace": self.replace,
                 "data": aligned_image,
             },
@@ -183,12 +182,12 @@ class CellLayerAligner(QThread):
             self.coarse_target, self.coarse_moving = self._prepare_images(
                 self.target_image, self.unaligned_image, self.coarse_scale
             )
-            self._emit_snapshot(
-                "After coarse preprocessing",
-                initial_metadata,
-                self.coarse_moving,
-                self.coarse_target,
-            )
+            # self._emit_snapshot(
+            #     "After coarse preprocessing",
+            #     initial_metadata,
+            #     self.coarse_moving,
+            #     self.coarse_target,
+            # )
             coarse_transform = np.eye(3)
 
             # Perform coarse alignment
@@ -223,7 +222,7 @@ class CellLayerAligner(QThread):
             print(
                 f"Fine target shape: {fine_target_image.shape}, Fine moving shape: {fine_moving.shape}"
             )
-            self._emit_snapshot("itk", itk_metadata, fine_moving, fine_target_image)
+            # self._emit_snapshot("itk", itk_metadata, fine_moving, fine_target_image)
 
             # Perform fine alignment
             self.progress.emit(60, "Fine alignment (pystackreg)")
@@ -245,9 +244,9 @@ class CellLayerAligner(QThread):
             # --- 3. PYSTACKREG (FINAL) SNAPSHOT ---
             assert aligned_preview is not None, "Aligned preview should not be None"
             pystackreg_metadata = {"transform_type": self.stackreg_type}
-            self._emit_snapshot(
-                "pystackreg", pystackreg_metadata, aligned_preview, fine_target_image
-            )
+            # self._emit_snapshot(
+            #     "pystackreg", pystackreg_metadata, aligned_preview, fine_target_image
+            # )
 
             gradient_transform = None
             if self.need_gradient_descent:
@@ -258,12 +257,12 @@ class CellLayerAligner(QThread):
                 gradient_metadata = {
                     "matrix": gradient_transform,
                 }
-                self._emit_snapshot(
-                    "gradient descent",
-                    gradient_metadata,
-                    gradient_aligned,
-                    fine_target_image,
-                )
+                # self._emit_snapshot(
+                #     "gradient descent",
+                #     gradient_metadata,
+                #     gradient_aligned,
+                #     fine_target_image,
+                # )
             # Apply final transformation
             self.progress.emit(80, "Applying final transformation")
             full_coarse_matrix = self._scale_transform_matrix(
@@ -335,6 +334,7 @@ class CellLayerAligner(QThread):
             params, angle, flip, moving.shape
         )
         t = transform_info["combined_matrix"]
+        print(t.shape)
         if t.shape == (2, 3):
             t = np.vstack([t, [0, 0, 1]])
         inverted = np.linalg.inv(t)

@@ -101,6 +101,7 @@ class Register(QThread):
         reference_image_file = self.tifs[0]
         self.progress.emit(0, "preparing alignment")  # update progress bar
         channel_wrappers = reference_image_file["image_dict"]
+        assert channel_wrappers is not None, "channel wrappers are empty"
         reference_tif_index = self.params["alignment_layer"]
         alignment_layer = channel_wrappers[f"Channel {reference_tif_index  + 1}"].data
 
@@ -155,17 +156,18 @@ class Register(QThread):
                 if self._handle_cancel():
                     return
                 progress_update = int(((tile_n + 1) / len(inputs)) * 100)
-                self.progress.emit(
-                    progress_update,
-                    str(f"aligning tile {tile_n+1}/{len(inputs)}"),
-                )
+                
 
                 if tif_n == 0:
                     outputs.append(self.on_skip(tile_set))
                     continue
 
                 result = self.align_two_img_robust(*tile_set)  # align
-
+                transforms, ymin, xmin, radius, x, y, best_ncc = result
+                self.progress.emit(
+                    progress_update,
+                    str(f"aligning tile {tile_n+1}/{len(inputs)} - NCC: {best_ncc:.2f}"),
+                )
                 if result is None:
                     continue
                 outputs.append(result)
@@ -300,7 +302,8 @@ class Register(QThread):
         assert moving_uuid is not None, "No canvas UUID found"
         moving_uuid = moving_uuid["value"]
         result["uuid"] = moving_uuid
-
+        if self._handle_cancel():
+            return
         self.alignment_complete.emit(
             result,
             aligned_protein_signal[self.params["alignment_layer"]][
@@ -308,8 +311,7 @@ class Register(QThread):
             ],
             alignment_layer[: self.params["max_size"], : self.params["max_size"]],
         )
-        if self._handle_cancel():
-            return
+
         self.progress.emit(100, "Alignment Done")
 
     def find_points(self, image, min_circularity=0.5, top_k=500):
@@ -401,6 +403,8 @@ class Register(QThread):
         best_registered = source
         itk_transf = None
         for key in moving_points:
+            if key not in fixed_points:
+                continue
             if len(moving_points[key]) < 4 or len(fixed_points[key]) < 4:
                 continue
             moving_points[key] = moving_points[key][: self.max_points]
@@ -631,7 +635,6 @@ class Register(QThread):
             number = int(match.group())
             result = number - 1  # 0 index
             self.params["alignment_layer"] = result
-            print("alignment layer is: ", self.params["alignment_layer"])
 
     def set_cell_layer(self, channel):
         match = re.search(r"\d+", channel)
@@ -639,7 +642,6 @@ class Register(QThread):
             number = int(match.group())
             result = number - 1  # 0 index
             self.params["cell_layer"] = result
-            print("cell layer is: ", self.params["cell_layer"])
 
     def set_protein_detection_layer(self, channel):
         match = re.search(r"\d+", channel)
@@ -647,7 +649,6 @@ class Register(QThread):
             number = int(match.group())
             result = number - 1  # 0 index
             self.params["protein_detection_layer"] = result
-        print("protein_detection_layer is: ", self.params["protein_detection_layer"])
 
     def set_max_size(self, value):
         self.params["max_size"] = value

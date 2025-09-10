@@ -1,11 +1,10 @@
 import os
 import uuid
 from calendar import c
+from email.mime import image
 from uuid import UUID
 
 import numpy as np
-import stardist
-from pyexpat import model
 from PyQt6.QtCore import QModelIndex, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QActionGroup
 from PyQt6.QtWidgets import (
@@ -70,26 +69,42 @@ class Manager(QWidget):
     def set_channel_icon(self, uuid, channel):
         """Set the icon for the channel item"""
         assert self.root_node is not None, "Root node is not initialized"
-        main_item = self.root_node.child(uuid)
+        main_item = None
+        image_data = self.storage.get_data(uuid)
+        if image_data is None:
+            raise ValueError(f"No image data found for UUID: {uuid}")
+        image_data = image_data.get("data", {})
+        if channel not in image_data:
+            raise ValueError(
+                f"Channel {channel} not found in image data for UUID: {uuid}"
+            )
+        model = self.image_tree_model
+        for i in range(model.rowCount()):
+            item = model.item(i)
+            if item is None:
+                continue
+            if item.data(Qt.ItemDataRole.UserRole) == uuid:
+                main_item = item
+                break
         if main_item is None:
             raise ValueError(f"No main item found for UUID: {uuid}")
-        channel_item = main_item.child(channel)
-        assert isinstance(
-            channel_item, ImageTreeItem
-        ), "Channel item is not an instance of ImageTreeItem"
-        if channel_item is None:
-            raise ValueError(
-                f"No channel item found for UUID: {uuid} and channel: {channel}"
-            )
-        channel_item.set_icon()
+        channel_item = None
+        if main_item.data(Qt.ItemDataRole.WhatsThisRole) == channel:
+            if isinstance(main_item, ImageTreeItem):
+                main_item.set_icon(image_data)
+        for i in range(main_item.rowCount()):
+            child = main_item.child(i)
+            if child is None:
+                continue
+            if child.data(Qt.ItemDataRole.WhatsThisRole) == channel:
+                channel_item = child
+                break
+        if isinstance(channel_item, ImageTreeItem):
+            channel_item.set_icon(image_data)
 
     def add_to_storage(self, uuid, obj):
+        print(f"adding {uuid} to storage")
         self.storage.add_data(uuid, obj)
-
-    def update_item_layer(self, uuid, new_data, layer_name):
-        self.storage.update_data(uuid, new_data, layer_name)
-
-    # !TODO: move elsewhere
 
 
 class ImageTreeWidget(QTreeView):
@@ -135,15 +150,17 @@ class ImageTreeWidget(QTreeView):
 
     def show_on_canvas(self, item):
         assert self.model_canvas is not None, "model_canvas is not set"
+        print("show on canvas")
         model_canvas = self.model_canvas
-        channel, my_uuid = self._name_and_uuid_from_item(item, tooltip=True)
+        name, my_uuid = self._name_and_uuid_from_item(item, tooltip=True)
         different = str(my_uuid) != str(model_canvas.uuid)
         if not different:
             channel = self._get_channel_from_item(item)
             model_canvas.swap_channel(channel)
         else:
+            channel = self._get_channel_from_item(item, as_int=False)
             model_canvas.add_to_canvas(
-                my_uuid, as_new_image=False, target_channel=channel
+                my_uuid, as_new_image=False, target_channel=str(channel)
             )
 
     def show_on_reference_canvas(self, uuid: UUID, channel: int):
@@ -158,7 +175,7 @@ class ImageTreeWidget(QTreeView):
         item = self.indexAt(event.pos())
         if item:
             _, uuid = self._name_and_uuid_from_item(item)
-            channel = self._get_channel_from_item(item)
+            channel = int(self._get_channel_from_item(item))
             is_leaf = self._is_leaf(item)
             set_reference = QAction("Reference")
             set_cell_image = QAction("Cell Image (Stardist)")
@@ -197,9 +214,13 @@ class ImageTreeWidget(QTreeView):
                 set_menu = QMenu("Set as...", self)
                 menu.addMenu(set_menu)
                 set_menu.addAction(set_reference)
-                set_menu.addAction(set_cell_image)
-                set_menu.addAction(set_tissue_target_image)
-                set_menu.addAction(set_tissue_unaligned_image)
+
+                stardist_menu = set_menu.addMenu("Stardist")
+                stardist_menu.addAction(set_cell_image)
+
+                tissue_menu = set_menu.addMenu("Tissue")
+                tissue_menu.addAction(set_tissue_target_image)
+                tissue_menu.addAction(set_tissue_unaligned_image)
 
                 set_default_channel = QMenu("Set Default Channel as", self)
                 channel_group = QActionGroup(self)
@@ -207,7 +228,7 @@ class ImageTreeWidget(QTreeView):
 
                 current_default = model.itemFromIndex(item)
                 assert current_default is not None, "Current default item is None"
-                current_default = current_default.data(Qt.ItemDataRole.ToolTipRole)
+                current_default = current_default.data(Qt.ItemDataRole.WhatsThisRole)
                 if current_default is None:
                     current_default = "Channel 1"
                 children = model.itemFromIndex(item)
@@ -215,14 +236,14 @@ class ImageTreeWidget(QTreeView):
                 for i in range(children.rowCount()):
                     child_item = children.child(i)
                     assert child_item is not None, "Child item is None"
-                    channel_name = child_item.data(Qt.ItemDataRole.ToolTipRole)
+                    channel_name = child_item.data(Qt.ItemDataRole.WhatsThisRole)
                     action = QAction(channel_name, self)
                     action.setCheckable(True)
                     action.setChecked(channel_name == current_default)
                     action.triggered.connect(
                         lambda _, channel_name=channel_name: (
                             model.setData(
-                                item, channel_name, Qt.ItemDataRole.ToolTipRole
+                                item, channel_name, Qt.ItemDataRole.WhatsThisRole
                             )
                         )
                     )
@@ -236,10 +257,15 @@ class ImageTreeWidget(QTreeView):
                 set_tissue_unaligned_image.setText("Set as Tissue Unaligned Image")
                 set_stardist_label.setText("Set as StarDist Label")
                 menu.addAction(set_reference)
-                menu.addAction(set_cell_image)
                 menu.addAction(set_protein_data_image)
-                menu.addAction(set_tissue_target_image)
-                menu.addAction(set_tissue_unaligned_image)
+
+                stardist_menu = menu.addMenu("Stardist")
+                stardist_menu.addAction(set_cell_image)
+                stardist_menu.addAction(set_stardist_label)
+
+                tissue_menu = menu.addMenu("Tissue")
+                tissue_menu.addAction(set_tissue_target_image)
+                tissue_menu.addAction(set_tissue_unaligned_image)
             model_item = model.itemFromIndex(item)
             assert model_item is not None, "Item is None"
             # only add delete & save as tiff action if the item is a root item
@@ -256,11 +282,11 @@ class ImageTreeWidget(QTreeView):
 
     def set_for_stardist(self, item):
         assert isinstance(self.model_stardist, StarDist), "model_stardist is not set"
-        _, uuid = self._name_and_uuid_from_item(item)
+        name, uuid = self._name_and_uuid_from_item(item)
         item = self.storage.get_data(uuid)
         assert item is not None, f"No data found for UUID: {uuid}"
         data = item["data"]
-        self.model_stardist.set_protein_image(data)
+        self.model_stardist.set_protein_image(data, name=name)
 
     def show_message(self, message):
         QMessageBox.information(self, "Selection", message)
@@ -280,21 +306,24 @@ class ImageTreeWidget(QTreeView):
         if tooltip is False:
             name = item.text()
         else:
-            name = item.data(Qt.ItemDataRole.ToolTipRole)
+            name = item.data(Qt.ItemDataRole.WhatsThisRole)
         item_uuid = uuid.UUID(item.data(Qt.ItemDataRole.UserRole))
         if not item_uuid:
             raise ValueError("Item does not have a valid UUID.")
 
         return name, item_uuid
 
-    def _get_channel_from_item(self, item):
+    def _get_channel_from_item(self, item, as_int=True):
         model = self.model()
         assert isinstance(model, ImageTreeModel), "Model is not set"
         item = model.itemFromIndex(item)
         assert item is not None, "Item is None"
-        channel = item.data(Qt.ItemDataRole.ToolTipRole)
+        channel = item.data(Qt.ItemDataRole.WhatsThisRole)
+        if as_int is False:
+            return str(channel)
         try:
             channel = int(channel.replace("Channel ", "")) - 1
+            print(channel)
         except ValueError:
             raise ValueError("Invalid default channel format.")
         return channel

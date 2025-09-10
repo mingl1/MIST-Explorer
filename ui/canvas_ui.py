@@ -13,7 +13,7 @@ from PyQt6.QtCore import (
     QRectF,
     QSize,
     Qt,
-    pyqtSignal
+    pyqtSignal,
 )
 from PyQt6.QtGui import (
     QAction,
@@ -27,7 +27,7 @@ from PyQt6.QtGui import (
     QMouseEvent,
     QPen,
     QPixmap,
-    QFont
+    QFont,
 )
 from PyQt6.QtWidgets import (
     QApplication,
@@ -408,7 +408,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.reference_view = None
 
         # Setup interaction
-        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        # self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setMouseTracking(True)
         self.view_pixmap_item = QGraphicsPixmapItem()
 
@@ -463,7 +463,8 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.setSceneRect(0, 0, 800, 600)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
-        self.setContentsMargins(1000,1000,1000,1000)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setContentsMargins(1000, 1000, 1000, 1000)
 
         # Create floating selection buttons
         if self.show_buttons:
@@ -567,6 +568,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.begin_crop = True
         self.select = False
         self.current_polygon = None
+        self.setFocus()
 
         # Clear any existing crop rectangle
         if self.active_crop_rect:
@@ -613,11 +615,11 @@ class ImageGraphicsViewUI(QGraphicsView):
             self.pixmap_item if self.pixmap_item.isVisible() else self.view_pixmap_item
         )
         item_rect = pixmap_item.boundingRect()
-        item_rect =QRectF(
-            item_rect.x()-item_rect.width()//2,
-            item_rect.y()-item_rect.height()//2,
-            item_rect.width()*2,
-            item_rect.height()*2,
+        item_rect = QRectF(
+            item_rect.x() - item_rect.width() // 2,
+            item_rect.y() - item_rect.height() // 2,
+            item_rect.width() * 2,
+            item_rect.height() * 2,
         )
         self.setSceneRect(item_rect)
         self.fitInView(pixmap_item, Qt.AspectRatioMode.KeepAspectRatio)
@@ -659,7 +661,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         #     return
         # if self.reference_view:
         #     self.reference_view.wheelEvent(event)
-        if self.zoom<=0.1 and zooming_out:
+        if self.zoom <= 0.1 and zooming_out:
             return
         zoom_factor = 0.9 if zooming_out else 1.1
         self.zoom *= zoom_factor
@@ -796,6 +798,7 @@ class ImageGraphicsViewUI(QGraphicsView):
             and self.crop_mode
             and self.active_crop_rect
         ):
+            print("confirming")
             self.confirm_crop()
             return
 
@@ -1114,7 +1117,9 @@ class ResizableRect(QGraphicsRectItem):
         self.text_item = QGraphicsSimpleTextItem(self)
         self.text_item.setBrush(QColor("yellow"))
         self.text_item.setFont(QFont("Arial", 10))
-        self.text_item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
+        self.text_item.setFlag(
+            QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True
+        )
         self.update_text()
         # ⬆ ensures text doesn’t scale with zoom
 
@@ -1123,25 +1128,26 @@ class ResizableRect(QGraphicsRectItem):
         x, y, w, h = rect.x(), rect.y(), rect.width(), rect.height()
 
         positions = [
-            QPointF(x, y),              # top-left
-            QPointF(x + w / 2, y),      # top-center
-            QPointF(x + w, y),          # top-right
+            QPointF(x, y),  # top-left
+            QPointF(x + w / 2, y),  # top-center
+            QPointF(x + w, y),  # top-right
             QPointF(x + w, y + h / 2),  # mid-right
-            QPointF(x + w, y + h),      # bottom-right
+            QPointF(x + w, y + h),  # bottom-right
             QPointF(x + w / 2, y + h),  # bottom-center
-            QPointF(x, y + h),          # bottom-left
-            QPointF(x, y + h / 2),      # mid-left
+            QPointF(x, y + h),  # bottom-left
+            QPointF(x, y + h / 2),  # mid-left
         ]
         HANDLE_SIZE = 16
         for handle, pos in zip(self.handles, positions):
             handle.setPos(pos)
 
             # fixed-size rect centered at (0,0)
-            handle.setRect(-HANDLE_SIZE / 2, -HANDLE_SIZE / 2,
-                        HANDLE_SIZE, HANDLE_SIZE)
+            handle.setRect(-HANDLE_SIZE / 2, -HANDLE_SIZE / 2, HANDLE_SIZE, HANDLE_SIZE)
 
             # ensure handle doesn't scale with zoom
-            handle.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
+            handle.setFlag(
+                QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True
+            )
 
     def setRect(self, *args, **kwargs):
         if len(args) == 1 and hasattr(args[0], "x"):
@@ -1198,11 +1204,11 @@ class ResizableRect(QGraphicsRectItem):
             self.setRect(new_rect)
         else:
             super().mouseMoveEvent(event)
-     #
 
+    #
 
     def update_text(self):
-        MARGIN= 360
+        MARGIN = 360
         rect = self.rect()
         w = int(rect.width())
         h = int(rect.height())
@@ -1280,10 +1286,12 @@ class ResizeHandle(QGraphicsRectItem):
         super().mouseMoveEvent(event)
         # Update the parent rectangle's position if needed
         self.parent.mouseMoveEvent(event)
+
+
 class CropRectItem(QGraphicsRectItem):
-    def __init__(self,  parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        
+
         # Rectangle style
         self.setPen(QPen(QColor("red"), 2, Qt.PenStyle.DashLine))
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
@@ -1294,9 +1302,10 @@ class CropRectItem(QGraphicsRectItem):
         self.text_item = QGraphicsSimpleTextItem(self)
         self.text_item.setBrush(QColor("yellow"))
         self.text_item.setFont(QFont("Arial", 10))
-        self.text_item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)  
+        self.text_item.setFlag(
+            QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True
+        )
         # ⬆ ensures text doesn’t scale with zoom
-
 
     def update_text(self):
         rect = self.rect()

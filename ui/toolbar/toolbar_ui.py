@@ -1,15 +1,19 @@
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import ListedColormap
 from PyQt6.QtCore import QCoreApplication, QSize, Qt, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QIcon, QImage, QPixmap
+from PyQt6.QtGui import QAction, QIcon, QImage, QPixmap
 from PyQt6.QtWidgets import (
+    QApplication,
     QButtonGroup,
     QComboBox,
+    QHBoxLayout,
     QLabel,
     QPushButton,
     QSizePolicy,
     QToolBar,
     QToolButton,
+    QWidget,
 )
 from qtrangeslider import QRangeSlider
 
@@ -27,7 +31,7 @@ class ToolBarUI(QToolBar):
         super().__init__(parent=parent)
         self._init_tab_buttons()
         self._init_actions(parent)
-        self._init_channel_selector(parent)
+        # self._init_channel_selector(parent)
         self._init_status_line()
         self._init_cmap_selector(parent)
         self._init_contrast_slider()
@@ -38,7 +42,7 @@ class ToolBarUI(QToolBar):
 
     def _init_tab_buttons(self):
         self.tab_buttons = []
-        tab_names = ["Images", "Data Processing", "View", "Analysis", "Details"]
+        tab_names = ["Images", "Data Processing", "View", "Analysis"]
         for name in tab_names:
             button = QToolButton()
             button.setText(name)
@@ -64,7 +68,7 @@ class ToolBarUI(QToolBar):
                 font-size: 12px;
             }
             QToolButton:hover {
-                background: rgba(0, 0, 0, 0.1);
+                background: rgba(0, 0, 0, 0.3);
             }
             QToolButton:checked {
                 border-bottom: 2px solid #007AFF;
@@ -75,19 +79,19 @@ class ToolBarUI(QToolBar):
     @pyqtSlot(int)
     def onTabButtonClicked(self, index):
         self.tabChanged.emit(index)
-        if index == 2:  # View tab
+        if index != 0 and index != 1:  # View tab
             # hide all actions
             self.actionReset.setVisible(False)
-            self.channelSelector.setDisabled(True)
-            self.cmapSelector.setDisabled(True)
-            self.auto_contrast_button.setDisabled(True)
-            self.contrastSlider.setDisabled(True)
+            # self.channelSelector.setDisabled(True)
+            self.cmap_action.setVisible(False)
+            self.auto_contrast_button_action.setVisible(False)
+            self.contrast_slider_action.setVisible(False)
+
         else:
             self.actionReset.setVisible(True)
-            self.channelSelector.setDisabled(False)
-            self.cmapSelector.setDisabled(False)
-            self.auto_contrast_button.setDisabled(False)
-            self.contrastSlider.setDisabled(False)
+            self.cmap_action.setVisible(True)
+            self.auto_contrast_button_action.setVisible(True)
+            self.contrast_slider_action.setVisible(True)
 
     def _init_actions(self, parent):
         self.actionRotate = Action(
@@ -108,18 +112,23 @@ class ToolBarUI(QToolBar):
         )
 
     def updateChannelSelector(self, channels: dict, clear=False):
-        if clear:
-            self.clearChannelSelector()
-        channel_keys = sorted(
-            channels.keys(), key=lambda x: int(x.replace("Channel ", ""))
-        )
-        self.channelSelector.addItems(channel_keys)
+        # self.initialized = False
+        # # if clear:
+        # #     self.clearChannelSelector()
+        # channel_keys = sorted(
+        #     channels.keys(), key=lambda x: int(x.replace("Channel ", ""))
+        # )
+        # self.channelSelector.addItems(channel_keys)
+        return
 
     def clearChannelSelector(self):
-        self.channelSelector.clear()
+        # self.channelSelector.clear()
+        return
 
     @pyqtSlot(int)
     def on_channelSelector_currentIndexChanged(self, index):
+        if self.initialized is False:
+            self.initialized = True
         if self.channelSelector.count() > 0:
             self.channelChanged.emit(index)
 
@@ -152,19 +161,64 @@ class ToolBarUI(QToolBar):
         self.cmapSelector.setCurrentText(cmap_value)
 
     def _generate_cmap_thumbnails(self):
-        self.cmap_names = ["gray", "viridis", "plasma", "inferno", "magma", "cividis"]
+        self.cmap_names = [
+            "gray",
+            "viridis",
+            "plasma",
+            "inferno",
+            "magma",
+            "cividis",
+            "label_image",
+        ]
         thumbnails = []
         for cmap_name in self.cmap_names:
-            gradient = np.linspace(0, 1, 256)
-            gradient = np.vstack((gradient, gradient))
-            fig, ax = plt.subplots(figsize=(4, 1))
-            ax.imshow(gradient, aspect="auto", cmap=cmap_name)
-            ax.set_xticks([])
-            ax.set_yticks([])
-            fig.tight_layout(pad=0)
-            fig.canvas.draw()
-            thumbnails.append(np.array(fig.canvas.renderer.buffer_rgba()))
-            plt.close()
+            if cmap_name == "label_image":
+                # Make a thumbnail with discrete colors (like skimage.label2rgb default)
+                from skimage.color import color_dict
+
+                # Get a list of default categorical colors
+                colors = [
+                    "red",  # (1, 0, 0)
+                    "blue",  # (0, 0, 1)
+                    "green",  # (0, 0.502, 0)
+                    "gold",  # (1, 0.843, 0)
+                    "purple",  # (0.502, 0, 0.502)
+                    "orange",  # (1, 0.647, 0)
+                    "cyan",  # (0, 1, 1)
+                    "magenta",  # (1, 0, 1)
+                    "brown",  # (0.647, 0.165, 0.165)
+                    "lime",  # (0, 1, 0)
+                ]
+
+                colors = [
+                    color_dict[i] for i in colors
+                ]  # take first N colors (e.g. 10)
+                n = len(colors)
+
+                # Make an array of shape (1, n) with categorical colors
+                gradient = np.arange(n).reshape(1, -1)
+
+                fig, ax = plt.subplots(figsize=(4, 1))
+                cmap = ListedColormap(colors)
+                ax.imshow(gradient, aspect="auto", cmap=cmap)
+                ax.set_xticks([])
+                ax.set_yticks([])
+                fig.tight_layout(pad=0)
+                fig.canvas.draw()
+                thumbnails.append(np.array(fig.canvas.renderer.buffer_rgba()))
+                plt.close()
+            else:
+                # Continuous cmap preview
+                gradient = np.linspace(0, 1, 256)
+                gradient = np.vstack((gradient, gradient))
+                fig, ax = plt.subplots(figsize=(4, 1))
+                ax.imshow(gradient, aspect="auto", cmap=cmap_name)
+                ax.set_xticks([])
+                ax.set_yticks([])
+                fig.tight_layout(pad=0)
+                fig.canvas.draw()
+                thumbnails.append(np.array(fig.canvas.renderer.buffer_rgba()))
+                plt.close()
         return thumbnails
 
     def _numpy_to_QIcon(self, array: np.ndarray):
@@ -173,35 +227,59 @@ class ToolBarUI(QToolBar):
         return QIcon(QPixmap.fromImage(image))
 
     def _init_contrast_slider(self):
-        self.auto_contrast_button = QPushButton("Auto Contrast")
-        self.contrastSlider = QRangeSlider()
-        self.contrastSlider.setOrientation(Qt.Orientation.Horizontal)
-        self.contrastSlider.setRange(0, 255)
-        self.contrastSlider.setMaximumWidth(200)
+        self.auto_contrast_button = QPushButton("Auto Contrast", self)
+        self.contrast_slider = QRangeSlider(parent=self)
+        self.contrast_slider.setOrientation(Qt.Orientation.Horizontal)
+        self.contrast_slider.setRange(0, 255)
+        self.contrast_slider.setMaximumWidth(200)
 
     def update_contrast_slider(self, values):
-        self.contrastSlider.blockSignals(True)
-        self.contrastSlider.setValue(values)
-        self.contrastSlider.blockSignals(False)
+        self.contrast_slider.blockSignals(True)
+        self.contrast_slider.setValue(values)
+        self.contrast_slider.blockSignals(False)
+
+    def _create_tab_button_bar(self, fixed_width=400):
+        container = QWidget()
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(8, 0, 0, 0)
+        layout.setSpacing(0)
+
+        for btn in self.tab_buttons:
+            btn.setSizePolicy(
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+            )
+            layout.addWidget(btn)
+
+        container.setFixedWidth(fixed_width)
+
+        return container
 
     def _populate_toolbar(self):
-        # Tabs first
-        for button in self.tab_buttons:
-            self.addWidget(button)
+        tab_bar = self._create_tab_button_bar(fixed_width=488)
+        self.addWidget(tab_bar)
 
         self.addSeparator()
-
-        # Actions & widgets
         self.addAction(self.actionReset)
-        self.addWidget(self.channelSelector)
-        self.addWidget(self.cmapSelector)
+        self.cmap_action = self.addWidget(self.cmapSelector)
         self.addWidget(self.statusLine)
-        self.addWidget(self.auto_contrast_button)
-        self.addWidget(self.contrastSlider)
+        self.auto_contrast_button_action = self.addWidget(self.auto_contrast_button)
+        self.contrast_slider_action = self.addWidget(self.contrast_slider)
+        self.disable_actions()
+
+    def enable_actions(self):
+        self.actionReset.setEnabled(True)
+        self.cmap_action.setEnabled(True)
+        self.auto_contrast_button_action.setEnabled(True)
+        self.contrast_slider_action.setEnabled(True)
+
+    def disable_actions(self):
+        self.actionReset.setEnabled(False)
+        self.cmap_action.setEnabled(False)
+        self.auto_contrast_button_action.setEnabled(False)
+        self.contrast_slider_action.setEnabled(False)
 
     def _retranslateUI(self):
         _translate = QCoreApplication.translate
         self.setWindowTitle(_translate("MainWindow", "toolBar"))
         self.actionReset.setText(_translate("MainWindow", "Reset"))
         self.actionReset.setToolTip(_translate("MainWindow", "Reset Image"))
-        self.channelSelector.setToolTip(_translate("MainWindow", "Select a channel"))
