@@ -6,6 +6,7 @@ import typing
 import uuid
 
 import numpy as np
+import cv2
 from PIL import Image
 from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QPixmap
@@ -198,7 +199,7 @@ class Controller:
         }
         is_align_arrays = isinstance(aligned_data["layer"], list)
 
-        def handle_accepted_image(moving_image):
+        def handle_accepted_image(moving_image, is_manual=False):
             """Handle the moving image change in the preview dialog"""
             aligned_image = moving_image
             item_uuid = aligned_data["uuid"]
@@ -206,6 +207,19 @@ class Controller:
             item = self.storage.get_data(item_uuid)
             assert item is not None, "Aligned image data not found in storage"
             data = copy.deepcopy(item["data"])
+            if is_manual:
+                layer = list(data.keys())
+                aligned_data["data"] = {}
+                # treat moving_image as transformation matrix
+                transf_matrix = moving_image
+                # print(transf_matrix)
+                for L in layer:
+                    # print(L)
+                    h, w = data[L].data.shape[-2:]
+                    # print(h,w)
+                    aligned_data["data"][L] = cv2.warpAffine(
+                        item["data"][L].data, transf_matrix, (w, h)
+                    )
             filename = item["name"]
             if isinstance(layer, list):
                 assert len(aligned_data["data"].keys()) == len(
@@ -214,17 +228,21 @@ class Controller:
                 data = {}
                 for L in layer:
                     wrapped_image = ImageWrapper(aligned_data["data"][L], L)
+                    # data[L].data = aligned_data["data"][L]
                     data[L] = wrapped_image
                 aligned_name = "Registered_" + filename
             else:
                 wrapped_image = ImageWrapper(aligned_image, layer)
                 aligned_name = f"Aligned_{filename}"
-                data[layer] = wrapped_image
+                data[layer].data = aligned_image
+            if is_manual:
+                aligned_name = "Manual_" + filename
+        
             self.model_canvas.add_to_canvas(data, True, aligned_name)
 
         # manual alignment
         if not np.any(aligned_small) and not np.any(target_small):
-            handle_accepted_image(aligned_data["data"])
+            handle_accepted_image(aligned_data["data"], True)
         else:
             if is_align_arrays:
                 preview_dialog = AlignmentPreviewDialog(
@@ -322,7 +340,7 @@ class SignalConnectionManager:
         self.c.view.toolBarUI.actionReset.triggered.connect(
             self.c.model_canvas.reset_image
         )
-        # self.c.view.toolBarUI.channelChanged.connect(self.c.model_canvas.swap_channel)
+        self.c.view.toolBarUI.channelChanged.connect(self.c.model_canvas.swap_channel)
         self.c.view.toolBarUI.contrast_slider.valueChanged.connect(
             self.c.model_canvas.update_contrast
         )
@@ -345,6 +363,8 @@ class SignalConnectionManager:
             self.c.view.small_view.display
         )
         self.c.model_canvas.update_canvas.connect(self.c.view.canvas.update_canvas)
+        self.c.model_canvas.update_channel.connect(self.c.view.toolBarUI.setChannelSelector)
+
         self.c.model_canvas.update_sidebar.connect(
             self.c.view.images_tab.set_channel_icon
         )

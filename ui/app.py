@@ -73,7 +73,7 @@ class Ui_MainWindow(QMainWindow):
         """Setup main window properties"""
         if sys.platform == "win32":
             self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
-        self.resize(1280, 800)
+        self.resize(1440, 1000)
         self.setMinimumSize(1200, 800)
 
     def toggle_maximize(self):
