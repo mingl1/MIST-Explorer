@@ -35,6 +35,7 @@ class ToolBarUI(QToolBar):
         self._init_status_line()
         self._init_cmap_selector(parent)
         self._init_contrast_slider()
+        self._init_channel_selector(parent)
 
         self._populate_toolbar()
 
@@ -79,16 +80,17 @@ class ToolBarUI(QToolBar):
     @pyqtSlot(int)
     def onTabButtonClicked(self, index):
         self.tabChanged.emit(index)
-        if index != 0 and index != 1:  # View tab
+        if index==2 or index==3:  # View or Analysis tab
             # hide all actions
             self.actionReset.setVisible(False)
-            # self.channelSelector.setDisabled(True)
+            self.channel_selector_action.setVisible(True)
             self.cmap_action.setVisible(False)
             self.auto_contrast_button_action.setVisible(False)
             self.contrast_slider_action.setVisible(False)
 
         else:
             self.actionReset.setVisible(True)
+            self.channel_selector_action.setVisible(True)
             self.cmap_action.setVisible(True)
             self.auto_contrast_button_action.setVisible(True)
             self.contrast_slider_action.setVisible(True)
@@ -112,17 +114,21 @@ class ToolBarUI(QToolBar):
         )
 
     def updateChannelSelector(self, channels: dict, clear=False):
-        # self.initialized = False
-        # # if clear:
-        # #     self.clearChannelSelector()
-        # channel_keys = sorted(
-        #     channels.keys(), key=lambda x: int(x.replace("Channel ", ""))
-        # )
-        # self.channelSelector.addItems(channel_keys)
+        self.initialized = False
+        if clear:
+            self.clearChannelSelector()
+        channel_keys = sorted(
+            channels.keys(), key=lambda x: int(x.replace("Channel ", ""))
+        )
+        self.channelSelector.addItems(channel_keys)
         return
+    def setChannelSelector(self, channel:int):
+        self.channelSelector.blockSignals(True)
+        self.channelSelector.setCurrentIndex(channel)
+        self.channelSelector.blockSignals(False)
 
     def clearChannelSelector(self):
-        # self.channelSelector.clear()
+        self.channelSelector.clear()
         return
 
     @pyqtSlot(int)
@@ -135,22 +141,23 @@ class ToolBarUI(QToolBar):
     def _init_status_line(self):
         self.statusLine = QLabel("Welcome! Please load an image to get started.")
         self.statusLine.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
         )
         self.statusLine.setAlignment(
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+            Qt.AlignmentFlag.AlignLeft
         )
         self.statusLine.setStyleSheet("margin: 10px;")
 
     def _init_cmap_selector(self, parent):
         self.cmapSelector = QComboBox(parent)
-        self.cmapSelector.setMinimumSize(QSize(100, 20))
+        self.cmapSelector.setMinimumSize(QSize(200, 20))
+        self.cmapSelector.setMaximumWidth(200)
         self.cmapSelector.currentTextChanged.connect(self.on_cmapTextChanged)
 
         thumbnails = self._generate_cmap_thumbnails()
         for index, thumbnail in enumerate(thumbnails):
             icon = self._numpy_to_QIcon(thumbnail)
-            self.cmapSelector.setIconSize(QSize(100, 20))
+            self.cmapSelector.setIconSize(QSize(80, 20))
             self.cmapSelector.addItem(icon, self.cmap_names[index])
 
     @pyqtSlot(str)
@@ -232,6 +239,7 @@ class ToolBarUI(QToolBar):
         self.contrast_slider.setOrientation(Qt.Orientation.Horizontal)
         self.contrast_slider.setRange(0, 255)
         self.contrast_slider.setMaximumWidth(200)
+        self.contrast_slider.setMinimumWidth(100)
 
     def update_contrast_slider(self, values):
         self.contrast_slider.blockSignals(True)
@@ -257,22 +265,31 @@ class ToolBarUI(QToolBar):
     def _populate_toolbar(self):
         tab_bar = self._create_tab_button_bar(fixed_width=488)
         self.addWidget(tab_bar)
-
         self.addSeparator()
         self.addAction(self.actionReset)
         self.cmap_action = self.addWidget(self.cmapSelector)
-        self.addWidget(self.statusLine)
+        self.channel_selector_action = self.addWidget(self.channelSelector)
         self.auto_contrast_button_action = self.addWidget(self.auto_contrast_button)
         self.contrast_slider_action = self.addWidget(self.contrast_slider)
+        self.addWidget(self.statusLine)
+
         self.disable_actions()
 
     def enable_actions(self):
+        assert self.cmap_action is not None
+        assert self.channel_selector_action is not None
+        assert self.auto_contrast_button_action is not None
+        assert self.contrast_slider_action is not None
         self.actionReset.setEnabled(True)
         self.cmap_action.setEnabled(True)
         self.auto_contrast_button_action.setEnabled(True)
         self.contrast_slider_action.setEnabled(True)
 
     def disable_actions(self):
+        assert self.cmap_action is not None
+        assert self.channel_selector_action is not None
+        assert self.auto_contrast_button_action is not None
+        assert self.contrast_slider_action is not None
         self.actionReset.setEnabled(False)
         self.cmap_action.setEnabled(False)
         self.auto_contrast_button_action.setEnabled(False)

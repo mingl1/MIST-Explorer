@@ -867,6 +867,7 @@ class ImageGraphicsView(BaseGraphicsView):
     change_slider = pyqtSignal(tuple)
     update_cmap = pyqtSignal(str)
     crop_signal = pyqtSignal(bool)
+    update_channel = pyqtSignal(int)
 
     def __init__(self, controller: "Controller"):
         super().__init__()
@@ -1159,6 +1160,7 @@ class ImageGraphicsView(BaseGraphicsView):
         qimage = numpy_to_qimage(image)
         pixmap = QPixmap(qimage)
         # print("setting pixmap")
+        self.update_channel.emit(self.current_channel)
         self.update_canvas.emit(pixmap)  # emit uint16, change to uint8 in canvas_ui
 
     def reset_image(self):

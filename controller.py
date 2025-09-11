@@ -340,7 +340,7 @@ class SignalConnectionManager:
         self.c.view.toolBarUI.actionReset.triggered.connect(
             self.c.model_canvas.reset_image
         )
-        # self.c.view.toolBarUI.channelChanged.connect(self.c.model_canvas.swap_channel)
+        self.c.view.toolBarUI.channelChanged.connect(self.c.model_canvas.swap_channel)
         self.c.view.toolBarUI.contrast_slider.valueChanged.connect(
             self.c.model_canvas.update_contrast
         )
@@ -363,6 +363,8 @@ class SignalConnectionManager:
             self.c.view.small_view.display
         )
         self.c.model_canvas.update_canvas.connect(self.c.view.canvas.update_canvas)
+        self.c.model_canvas.update_channel.connect(self.c.view.toolBarUI.setChannelSelector)
+
         self.c.model_canvas.update_sidebar.connect(
             self.c.view.images_tab.set_channel_icon
         )
