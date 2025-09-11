@@ -95,7 +95,7 @@ class CellLayerAligner(QThread):
         """
         self.need_gradient_descent = not skip
 
-    def manually_align(self, aligned_image: np.ndarray):
+    def manually_align(self, transf_matrix = None):
         """
         Emit manually aligned image
         """
@@ -105,7 +105,7 @@ class CellLayerAligner(QThread):
                 "uuid": self.unaligned_uuid,
                 "layer": self.unaligned_channel,
                 "replace": self.replace,
-                "data": aligned_image,
+                "data": transf_matrix,
             },
             np.array(0),
             np.array(0),

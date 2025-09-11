@@ -297,6 +297,8 @@ class ImageWrapper:
     def copy(self):
         arr = copy.copy(self.data)
         return ImageWrapper(data=arr, name=self.name, cmap=self.cmap)
+    def __copy__(self):
+        return self.copy()
 
     def get_uint8_data(self):
         if self.data.dtype == np.uint8:
