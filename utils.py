@@ -287,7 +287,7 @@ def scale_adjust(arr: np.ndarray) -> NDArray[np.uint8]:
     if arr.dtype == np.uint16:
         return cv2.convertScaleAbs(arr, alpha=(255.0 / 65535.0))
     elif arr.dtype == np.uint8:
-        return np.clip(arr,0,255)
+        return np.clip(arr, 0, 255)
     elif arr.dtype == np.uint32:
         max_val = arr.max()
         if max_val == 0:
@@ -363,6 +363,49 @@ def adjust_contrast(
     img_adjusted = (img_adjusted - minval) / (maxval - minval)
 
     return img_adjusted  # stays float64, values in [0.0, 1.0]
+
+
+from skimage.filters import threshold_otsu
+
+
+def background_subtraction_with_histogram(image: np.ndarray) -> np.ndarray:
+    """
+    Implements the described method:
+    1. Otsu threshold to extract background.
+    2. Compute histogram of background pixels.
+    3. Use the peak of background histogram as refined threshold.
+    4. Subtract refined threshold from original image.
+
+    https://www.nature.com/articles/s44303-025-00088-w#MOESM1
+    """
+
+    # Ensure float64 for precision
+    original_dtype = image.dtype
+    img = image.astype(np.float64)
+
+    # Step 1: Otsu's threshold
+    otsu_thresh = threshold_otsu(img)
+    background_mask = img <= otsu_thresh  # background region
+
+    # Step 2: Histogram of background pixels
+    background_pixels = img[background_mask]
+    hist, bin_edges = np.histogram(background_pixels, bins=256, range=(0, img.max()))
+
+    # Step 3: Find peak of histogram
+    peak_idx = np.argmax(hist)
+    refined_threshold = bin_edges[peak_idx]
+
+    # Step 4: Subtract refined threshold
+    result = img - refined_threshold
+    result[result < 0] = 0  # clip negatives
+
+    # Convert back to original dtype if possible
+    if original_dtype == np.uint16:
+        result = result.astype(np.uint16)
+    elif original_dtype == np.uint8:
+        result = result.astype(np.uint8)
+
+    return result, otsu_thresh, refined_threshold, hist, bin_edges
 
 
 def pad_to_shape(image, target_shape):
