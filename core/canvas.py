@@ -297,8 +297,17 @@ class ImageWrapper:
     def copy(self):
         arr = copy.copy(self.data)
         return ImageWrapper(data=arr, name=self.name, cmap=self.cmap)
+    
     def __copy__(self):
         return self.copy()
+
+    def __deepcopy__(self, memo):
+        # Deep copy should also create a new numpy array
+        new_data = self.data.copy()
+        new_obj = ImageWrapper(new_data, name=self.name, cmap=self.cmap)
+        new_obj.contrast_min = self.contrast_min
+        new_obj.contrast_max = self.contrast_max
+        return new_obj
 
     def get_uint8_data(self):
         if self.data.dtype == np.uint8:
