@@ -9,6 +9,7 @@ import diplib as dip
 import numpy as np
 import pystackreg.util
 import SimpleITK as sitk
+import tifffile
 from PIL import Image
 from PyQt6.QtCore import QThread, pyqtSignal
 
@@ -105,8 +106,10 @@ class Register(QThread):
         reference_tif_index = self.params["alignment_layer"]
         alignment_layer = channel_wrappers[f"Channel {reference_tif_index  + 1}"].data
 
-        if alignment_layer.dtype != np.uint16:
-            raise ValueError("data type is not uint16. stopping alignment")
+        # if alignment_layer.dtype != np.uint16:
+        #     raise ValueError(
+        #         f"data type is not uint16. stopping alignment, datatype is {alignment_layer.dtype}"
+        #     )
 
         alignment_layer = self.adjust_contrast(alignment_layer, 50, 99)
         alignment_layer = alignment_layer[0:m, 0:m]  # resize to maximum allowed size
@@ -156,7 +159,6 @@ class Register(QThread):
                 if self._handle_cancel():
                     return
                 progress_update = int(((tile_n + 1) / len(inputs)) * 100)
-                
 
                 if tif_n == 0:
                     outputs.append(self.on_skip(tile_set))
@@ -166,7 +168,9 @@ class Register(QThread):
                 transforms, ymin, xmin, radius, x, y, best_ncc = result
                 self.progress.emit(
                     progress_update,
-                    str(f"aligning tile {tile_n+1}/{len(inputs)} - NCC: {best_ncc:.2f}"),
+                    str(
+                        f"aligning tile {tile_n+1}/{len(inputs)} - NCC: {best_ncc:.2f}"
+                    ),
                 )
                 if result is None:
                     continue
@@ -190,6 +194,7 @@ class Register(QThread):
                 continue
 
             file = tif["image_dict"]
+            print(file.keys())
             n_frames = len(file)  # 4
             print("n frames", n_frames)
             new_registered_tif = []
@@ -203,11 +208,8 @@ class Register(QThread):
                 )
 
                 bf = file[f"Channel {layer_number + 1}"].data  # channels are index 1
-                reference_brightfield = reference_image_file["image_dict"][
-                    f"Channel {layer_number + 1}"
-                ].data  # channels are index 1 # this is the basis
 
-                bf = bf[0:m, 0:m]
+                bf = bf[:m, :m]
 
                 dest = Image.fromarray(
                     np.zeros((m, m), dtype="float")
@@ -269,23 +271,21 @@ class Register(QThread):
             new_registered_tif = [x.astype("uint16") for x in new_registered_tif]
             new_registered_tif = np.stack(new_registered_tif)
 
-            print(new_registered_tif.shape)
             aligned_protein_signal = new_registered_tif
 
             ##alignment done
         assert aligned_protein_signal is not None, "aligned_protein_signal is None"
-        print(aligned_protein_signal.shape)
-        ms = self.params['max_size']
-        self.protein_signal_array = aligned_protein_signal[self.params["protein_detection_layer"], :ms, :ms]  # -> use to generate cell intensity table
+        self.protein_signal_array = aligned_protein_signal[
+            self.params["protein_detection_layer"], :m, :m
+        ]  # -> use to generate cell intensity table
         # self.protein_signal_array = aligned_protein_signal[self.params['protein_detection_layer'], :, :]
-        cell_image = aligned_protein_signal[self.params["cell_layer"], :ms, :ms] # -> stardist
+        cell_image = aligned_protein_signal[
+            self.params["cell_layer"], :m, :m
+        ]  # -> stardist
 
-        self.protein_signal_arr_signal.emit(self.protein_signal_array)
-
-        self.cell_image_signal.emit(cell_image)  # -> stardist
         data = {}
         for i in range(len(aligned_protein_signal)):
-            layer = aligned_protein_signal[i, :ms, :ms]
+            layer = aligned_protein_signal[i, :m, :m].copy()
             data[f"Channel {i+1}"] = layer
         result = {}
         result["data"] = data
@@ -300,12 +300,13 @@ class Register(QThread):
             return
         self.alignment_complete.emit(
             result,
-            aligned_protein_signal[self.params["alignment_layer"]][
-                : self.params["max_size"], : self.params["max_size"]
-            ],
-            alignment_layer[: self.params["max_size"], : self.params["max_size"]],
+            aligned_protein_signal[self.params["alignment_layer"]][:m, :m],
+            alignment_layer[:m, :m],
         )
-
+        self.protein_signal_arr_signal.emit(
+            self.protein_signal_array
+        )  # emit protein signal for cell intensity
+        self.cell_image_signal.emit(cell_image)  # emit cell image for stardist
         self.progress.emit(100, "Alignment Done")
 
     def find_points(self, image, min_circularity=0.5, top_k=500):
