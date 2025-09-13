@@ -227,7 +227,8 @@ class Controller:
                 ), "Aligned data keys do not match the expected layers"
                 data = {}
                 for L in layer:
-                    wrapped_image = ImageWrapper(aligned_data["data"][L], L)
+                    d = aligned_data["data"][L] if aligned_data["data"][L] is not None else item['data'][L]
+                    wrapped_image = ImageWrapper(d, L)
                     # data[L].data = aligned_data["data"][L]
                     data[L] = wrapped_image
                 aligned_name = "Registered_" + filename
