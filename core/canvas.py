@@ -297,7 +297,7 @@ class ImageWrapper:
     def copy(self):
         arr = copy.copy(self.data)
         return ImageWrapper(data=arr, name=self.name, cmap=self.cmap)
-    
+
     def __copy__(self):
         return self.copy()
 
@@ -465,29 +465,31 @@ class BaseGraphicsView(QWidget):
         channel_one_image = np.array(0)
         working_channels = {}
         # Process pages one at a time using generator
-        for image, channel_num in self._read_tiff_pages(file_name):
-            channel_name = f"Channel {channel_num}"
-            image_adjusted = self._apply_contrast_adjustment(image, adjust_contrast)
-            working_channels[channel_name] = ImageWrapper(image_adjusted, channel_name)
-            self._update_progress(channel_num, self.num_channels)
         with self.queue_lock:
-            # print("File queue:", self.file_queue, "Current file:", file_name)
-            if self.file_queue and self.file_queue[-1] == file_name:
-                # print("here 3")
-                for channel_name, image_adjusted in working_channels.items():
-                    display_image = self._prepare_display_image(
-                        image_adjusted.data, subsample_for_emit, max_display_size
-                    )
-                    emit_data[channel_name] = display_image
-                    if channel_name == "Channel 1":
-                        channel_one_image = display_image
-                self.working_channels = working_channels
-                self._update_number_of_channels(emit_data, subsample_for_emit)
-                self.reset_working_channels = working_channels.copy()
+            for image, channel_num in self._read_tiff_pages(file_name):
+                channel_name = f"Channel {channel_num}"
+                image_adjusted = self._apply_contrast_adjustment(image, adjust_contrast)
+                working_channels[channel_name] = ImageWrapper(
+                    image_adjusted, channel_name
+                )
+                self._update_progress(channel_num, self.num_channels)
+                # print("File queue:", self.file_queue, "Current file:", file_name)
+                if self.file_queue and self.file_queue[-1] == file_name:
+                    # print("here 3")
+                    for channel_name, image_adjusted in working_channels.items():
+                        display_image = self._prepare_display_image(
+                            image_adjusted.data, subsample_for_emit, max_display_size
+                        )
+                        emit_data[channel_name] = display_image
+                        if channel_name == "Channel 1":
+                            channel_one_image = display_image
+                    self.working_channels = copy.deepcopy(working_channels)
+                    self._update_number_of_channels(emit_data, subsample_for_emit)
+                    self.reset_working_channels = working_channels.copy()
 
-                self._schedule_caching_task(self.working_channels, self.uuid)
+                    self._schedule_caching_task(self.working_channels, self.uuid)
 
-                self.file_queue.clear()
+                    self.file_queue.clear()
 
             # # Store first channel for return value
             # if channel_num == 1:
