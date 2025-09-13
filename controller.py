@@ -222,12 +222,13 @@ class Controller:
                     )
             filename = item["name"]
             if isinstance(layer, list):
+                # handles register.py
                 assert len(aligned_data["data"].keys()) == len(
                     layer
                 ), "Aligned data keys do not match the expected layers"
                 data = {}
                 for L in layer:
-                    d = aligned_data["data"][L] if aligned_data["data"][L] is not None else item['data'][L]
+                    d = aligned_data["data"][L] if aligned_data["data"][L] is not None else moving_image
                     wrapped_image = ImageWrapper(d, L)
                     # data[L].data = aligned_data["data"][L]
                     data[L] = wrapped_image

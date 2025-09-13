@@ -274,24 +274,18 @@ class Register(QThread):
 
             ##alignment done
         assert aligned_protein_signal is not None, "aligned_protein_signal is None"
-        self.protein_signal_array = aligned_protein_signal[
-            self.params["protein_detection_layer"], :, :
-        ][
-            0 : self.params["max_size"], 0 : self.params["max_size"]
-        ]  # -> use to generate cell intensity table
+        print(aligned_protein_signal.shape)
+        ms = self.params['max_size']
+        self.protein_signal_array = aligned_protein_signal[self.params["protein_detection_layer"], :ms, :ms]  # -> use to generate cell intensity table
         # self.protein_signal_array = aligned_protein_signal[self.params['protein_detection_layer'], :, :]
-        cell_image = aligned_protein_signal[self.params["cell_layer"], :, :][
-            0 : self.params["max_size"], 0 : self.params["max_size"]
-        ]  # -> stardist
+        cell_image = aligned_protein_signal[self.params["cell_layer"], :ms, :ms] # -> stardist
 
         self.protein_signal_arr_signal.emit(self.protein_signal_array)
 
         self.cell_image_signal.emit(cell_image)  # -> stardist
         data = {}
         for i in range(len(aligned_protein_signal)):
-            layer = aligned_protein_signal[i, :, :][
-                0 : self.params["max_size"], 0 : self.params["max_size"]
-            ]
+            layer = aligned_protein_signal[i, :ms, :ms]
             data[f"Channel {i+1}"] = layer
         result = {}
         result["data"] = data
