@@ -5,8 +5,8 @@ import os
 import typing
 import uuid
 
-import numpy as np
 import cv2
+import numpy as np
 from PIL import Image
 from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QPixmap
@@ -228,8 +228,13 @@ class Controller:
                 ), "Aligned data keys do not match the expected layers"
                 data = {}
                 for L in layer:
-                    d = aligned_data["data"][L] if aligned_data["data"][L] is not None else moving_image
-                    if L == "Channel 1":
+                    d = (
+                        aligned_data["data"][L]
+                        if aligned_data["data"][L] is not None
+                        else moving_image
+                    )
+                    if L == "Channel 1" and not is_manual:
+                        # use the moving image for channel 1 if aligning arrays, there seems to be a bug that makes channel 1 blank otherwise...
                         d = moving_image
                         print("set to moving image for channel 1")
                     wrapped_image = ImageWrapper(d, L)
@@ -242,7 +247,7 @@ class Controller:
                 data[layer].data = aligned_image
             if is_manual:
                 aligned_name = "Manual_" + filename
-        
+
             self.model_canvas.add_to_canvas(data, True, aligned_name)
 
         # manual alignment
@@ -368,7 +373,9 @@ class SignalConnectionManager:
             self.c.view.small_view.display
         )
         self.c.model_canvas.update_canvas.connect(self.c.view.canvas.update_canvas)
-        self.c.model_canvas.update_channel.connect(self.c.view.toolBarUI.setChannelSelector)
+        self.c.model_canvas.update_channel.connect(
+            self.c.view.toolBarUI.setChannelSelector
+        )
 
         self.c.model_canvas.update_sidebar.connect(
             self.c.view.images_tab.set_channel_icon
