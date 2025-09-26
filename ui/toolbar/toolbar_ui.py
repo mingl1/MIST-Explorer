@@ -43,7 +43,7 @@ class ToolBarUI(QToolBar):
 
     def _init_tab_buttons(self):
         self.tab_buttons = []
-        tab_names = ["Images", "Data Processing", "View", "Analysis"]
+        tab_names = ["Extract", "View", "Analyze"]
         for name in tab_names:
             button = QToolButton()
             button.setText(name)

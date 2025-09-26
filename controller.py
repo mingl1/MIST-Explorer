@@ -546,13 +546,11 @@ class SignalConnectionManager:
         self.c.view.cellIntensity_groupbox.bead_data.clicked.connect(
             self.c.view.cellIntensity_groupbox.loadBeadData
         )
-        self.c.view.cellIntensity_groupbox.color_code.clicked.connect(
-            self.c.view.cellIntensity_groupbox.loadColorCode
-        )
+
         self.c.view.cellIntensity_groupbox.emitBeadData.connect(
             self.c.model_cell_intensity.get_bead_data
         )
-        self.c.view.cellIntensity_groupbox.emitColorCode.connect(
+        self.c.view.cellIntensity_groupbox.emitColorCodes.connect(
             self.c.model_cell_intensity.get_color_code
         )
         self.c.view.cellIntensity_groupbox.radius_fg.valueChanged.connect(
@@ -584,6 +582,7 @@ class SignalConnectionManager:
         image_signal.connect(self.c.view.stardist_groupbox.updateChannelSelector)
         image_signal.connect(self.c.view.gaussian_blur.updateChannelSelector)
         image_signal.connect(self.c.model_register.update_moving_image)
+        image_signal.connect(self.c.view.cellIntensity_groupbox.update_channels)
 
         ref_image = self.c.model_reference_canvas.image_signal
         ref_image.connect(self.c.model_register.update_reference_channels)

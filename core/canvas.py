@@ -474,22 +474,22 @@ class BaseGraphicsView(QWidget):
                 )
                 self._update_progress(channel_num, self.num_channels)
                 # print("File queue:", self.file_queue, "Current file:", file_name)
-                if self.file_queue and self.file_queue[-1] == file_name:
-                    # print("here 3")
-                    for channel_name, image_adjusted in working_channels.items():
-                        display_image = self._prepare_display_image(
-                            image_adjusted.data, subsample_for_emit, max_display_size
-                        )
-                        emit_data[channel_name] = display_image
-                        if channel_name == "Channel 1":
-                            channel_one_image = display_image
-                    self.working_channels = copy.deepcopy(working_channels)
-                    self._update_number_of_channels(emit_data, subsample_for_emit)
-                    self.reset_working_channels = working_channels.copy()
+            if self.file_queue and self.file_queue[-1] == file_name:
+                # print("here 3")
+                for channel_name, image_adjusted in working_channels.items():
+                    display_image = self._prepare_display_image(
+                        image_adjusted.data, subsample_for_emit, max_display_size
+                    )
+                    emit_data[channel_name] = display_image
+                    if channel_name == "Channel 1":
+                        channel_one_image = display_image
+                self.working_channels = copy.deepcopy(working_channels)
+                self._update_number_of_channels(emit_data, subsample_for_emit)
+                self.reset_working_channels = working_channels.copy()
 
-                    self._schedule_caching_task(self.working_channels, self.uuid)
+                self._schedule_caching_task(self.working_channels, self.uuid)
 
-                    self.file_queue.clear()
+                self.file_queue.clear()
 
             # # Store first channel for return value
             # if channel_num == 1:
