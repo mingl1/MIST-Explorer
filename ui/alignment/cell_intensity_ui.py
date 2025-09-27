@@ -20,11 +20,12 @@ class CellIntensityUI(QWidget):
     errorSignal = pyqtSignal(str)
     emitBeadData = pyqtSignal(np.ndarray)
     emitColorCodes = pyqtSignal(dict)
+    generate_cell_data = pyqtSignal()
 
     def __init__(self, parent=None, containing_layout: QVBoxLayout = None):
         super().__init__(parent)
         self.channel_rows = []
-        self.color_codes = {}
+        self.channel_to_color_code = {}
         self.available_channels = []
         self.setupUI(parent, containing_layout)
 
@@ -49,8 +50,8 @@ class CellIntensityUI(QWidget):
         # Container widget for all components
         self.components_widget = QWidget()
         self.cellintensity_components_vlayout = QVBoxLayout(self.components_widget)
-        self.cellintensity_components_vlayout.setSpacing(6)  # Better spacing
-        self.cellintensity_components_vlayout.setContentsMargins(5, 5, 5, 5)
+        # self.cellintensity_components_vlayout.setSpacing(6)  # Better spacing
+        # self.cellintensity_components_vlayout.setContentsMargins(5, 5, 5, 5)
         # self.components_widget.setMaximumWidth(400)
 
         # bead data
@@ -92,6 +93,7 @@ class CellIntensityUI(QWidget):
 
         # run button
         self.run_button = QPushButton(self.cell_intensity_groupbox)
+        self.run_button.clicked.connect(self._handle_generate_cell_data)
         self.cellintensity_components_vlayout.addWidget(self.run_button)
 
         # cancel button
@@ -110,6 +112,9 @@ class CellIntensityUI(QWidget):
 
         # Setup UI text and connections
         self.__retranslate_UI()
+    def _handle_generate_cell_data(self):
+        self.emitBeadData.emit(self.bead_data_file)
+        self.emitColorCodes.emit(self.channel_to_color_code)
 
     def add_channel_row(self):
         row_widget = QWidget(self)
@@ -144,8 +149,8 @@ class CellIntensityUI(QWidget):
         channel_combo = row_widget.findChild(QComboBox)
         if channel_combo:
             channel_name = channel_combo.currentText()
-            if channel_name in self.color_codes:
-                del self.color_codes[channel_name]
+            if channel_name in self.channel_to_color_code:
+                del self.channel_to_color_code[channel_name]
 
         if row_widget in self.channel_rows:
             self.channel_rows.remove(row_widget)
@@ -170,7 +175,7 @@ class CellIntensityUI(QWidget):
                     color_code = pd.read_csv(file_name)
                 else:
                     color_code = pd.read_excel(file_name)
-                self.color_codes[channel_name] = color_code
+                self.channel_to_color_code[channel_name] = color_code
 
                 base_name = os.path.basename(file_name)
                 stem, ext = os.path.splitext(base_name)
@@ -188,10 +193,9 @@ class CellIntensityUI(QWidget):
         )
         if file_name:
             try:
-                bead_data = (
+                self.bead_data_file = (
                     pd.read_csv(file_name).to_numpy().astype("uint16")
                 )  # this is the output from the registration->decoding program
-                self.emitBeadData.emit(bead_data)
                 self.bead_data_label.setText(os.path.basename(file_name))
             except UnicodeDecodeError:
                 self.errorSignal.emit("Please select a valid file type")

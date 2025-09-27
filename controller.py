@@ -548,10 +548,10 @@ class SignalConnectionManager:
         )
 
         self.c.view.cellIntensity_groupbox.emitBeadData.connect(
-            self.c.model_cell_intensity.get_bead_data
+            self.c.model_cell_intensity.set_bead_data
         )
         self.c.view.cellIntensity_groupbox.emitColorCodes.connect(
-            self.c.model_cell_intensity.get_color_code
+            self.c.model_cell_intensity.set_color_codes
         )
         self.c.view.cellIntensity_groupbox.radius_fg.valueChanged.connect(
             self.c.model_cell_intensity.set_radius_fg
@@ -559,7 +559,7 @@ class SignalConnectionManager:
         self.c.view.cellIntensity_groupbox.radius_bg.valueChanged.connect(
             self.c.model_cell_intensity.set_radius_bg
         )
-        self.c.view.cellIntensity_groupbox.run_button.clicked.connect(
+        self.c.view.cellIntensity_groupbox.generate_cell_data.connect(
             self.c.model_cell_intensity.generate_cell_intensity_table
         )
         self.c.model_cell_intensity.error_signal.connect(self.c.handle_error)

@@ -369,6 +369,7 @@ class BaseGraphicsView(QWidget):
 
     def set_uuid(self, uuid):
         self.uuid = uuid
+        self.storage.add_data("current_uuid",uuid)
 
     @property
     def is_layered(self):
