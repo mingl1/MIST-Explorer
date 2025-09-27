@@ -115,6 +115,7 @@ class CellIntensityUI(QWidget):
     def _handle_generate_cell_data(self):
         self.emitBeadData.emit(self.bead_data_file)
         self.emitColorCodes.emit(self.channel_to_color_code)
+        self.generate_cell_data.emit()
 
     def add_channel_row(self):
         row_widget = QWidget(self)

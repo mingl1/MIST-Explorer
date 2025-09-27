@@ -34,9 +34,10 @@ class CellIntensity(QThread):
 
     def load_protein_signal_array_from_storage(self, uuid, channel):
         if uuid is None:
-            uuid = self.storage.get_data("current_uuid")
+            uuid = self.storage.get_data("canvas_uuid")
             if uuid is None:
                 raise ValueError("Protein Image not found in storage.")
+            uuid = uuid["value"]
         c = "Channel " + str(channel + 1)
         item = self.storage.get_data(uuid)
         assert item is not None, "item not found in storage"
@@ -107,9 +108,10 @@ class CellIntensity(QThread):
         
         # need the aligned and segmented cell image, bead_data, and color_code
         
-        for channel, color_code in self.channel_to_color_code:
+        for channel, color_code in self.channel_to_color_code.items():
             self.color_code = color_code
             channel = int(channel.split(" ")[-1])-1
+            print(f"generating channel {channel}")
             # this func expects channel to be zero-indexed integer.
             self.load_protein_signal_array_from_storage(None, channel)
             if (
@@ -128,6 +130,7 @@ class CellIntensity(QThread):
                 if self.protein_signal_array is None:
                     err_msg += "protein signal array, "
                 err_msg = err_msg.rstrip(", ")  # remove trailing comma
+                print(err_msg)
                 self.critical_error(err_msg)
                 return
             else:
@@ -379,8 +382,7 @@ class CellIntensity(QThread):
                         save_this, columns=header
                     ) 
                     self.df_cell_data = self.df_cell_data.merge(curr_cell_data, on=["Global X", "Global Y"])
-            self.progress.emit(100, "Cell Data is Generated")
-            return
+        self.progress.emit(100, "Cell Data is Generated")
 
     # !TODO: need to implement checking if self.isInterruptionRequested() inside run()
     def cancel(self):
