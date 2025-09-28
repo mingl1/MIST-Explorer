@@ -1507,6 +1507,7 @@ class ImageGraphicsView(BaseGraphicsView):
             return True
         else:
             return False
+    
 
 
 class MetaData(QWidget):

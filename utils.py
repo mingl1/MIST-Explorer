@@ -281,6 +281,30 @@ def adjustContrast(img, alpha=5, beta=15):
 
 
 # uint16 to uint8
+import numpy as np
+
+def grayscale_to_agrb(img_2d: np.ndarray) -> np.ndarray:
+    """
+    Convert a 2D grayscale image (0-255) to an ARGB image.
+    
+    - Alpha channel is img_2d normalized to [0, 1].
+    - RGB channels are always [255, 255, 255].
+    
+    Returns: float32 array of shape (H, W, 4).
+    """
+    # Normalize alpha (0-1)
+    alpha = img_2d.astype(np.float32) / 255.0
+    alpha[alpha==0] = np.nan
+    alpha[alpha!=np.nan] = 0.5
+    
+    # Create RGB channels (all 255)
+    h, w = img_2d.shape
+    # rgb = np.ones((h, w, 3), dtype=np.float32) * alpha*255.0
+    rgb = np.stack((img_2d,) * 3, axis=-1,dtype=np.float32)
+    
+    # Stack into ARGB: (H, W, 4)
+    argb = np.dstack([rgb, alpha])
+    return argb
 
 
 def scale_adjust(arr: np.ndarray) -> NDArray[np.uint8]:

@@ -15,6 +15,7 @@ from PyQt6.QtCore import (
     Qt,
     pyqtSignal,
 )
+
 from PyQt6.QtGui import (
     QAction,
     QBrush,
@@ -28,6 +29,7 @@ from PyQt6.QtGui import (
     QPen,
     QPixmap,
     QFont,
+    QImage, QPainter
 )
 from PyQt6.QtWidgets import (
     QApplication,
@@ -45,7 +47,7 @@ from PyQt6.QtWidgets import (
     QToolTip,
     QWidget,
 )
-
+import pyqtgraph as pg
 import utils
 from ui.lassos.CircleLasso import CircleLasso
 from ui.lassos.PolyLasso import PolyLasso
@@ -55,6 +57,10 @@ from utils import resource_path
 if typing.TYPE_CHECKING:
     from ui.app import Ui_MainWindow
 
+pg.setConfigOption("imageAxisOrder",'row-major')
+pg.setConfigOption("useOpenGL",True)
+pg.setConfigOption("useCupy",True)
+pg.setConfigOption("useNumba",True)
 
 class ArrowItem(QGraphicsItemGroup):
     """Arrow with hover effect"""
@@ -144,7 +150,7 @@ class ReferenceGraphicsViewUI(QGraphicsView):
             QPointF(15, 150),
             self.prev_slide,  # Action to perform on click
         )
-        self.pixmap_item = QGraphicsPixmapItem()
+        self.pixmap_item:QGraphicsPixmapItem = QGraphicsPixmapItem()
         self.current_index = 1
         self.np_channels = {}
         self.pixmap = None
@@ -386,7 +392,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.show_buttons = show_buttons
         self.setupUI()
 
-        self.pixmap_item: QGraphicsPixmapItem = QGraphicsPixmapItem()
+        self.pixmap_item = QGraphicsPixmapItem(QPixmap())
         self.rubberBand = None
         self.rubberBands = []
         self.rubberBandColors = []
@@ -410,20 +416,24 @@ class ImageGraphicsViewUI(QGraphicsView):
         # Setup interaction
         # self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setMouseTracking(True)
-        self.view_pixmap_item = QGraphicsPixmapItem()
+        self.view_pixmaps = []
+        # self.view_pixmap_item = QGraphicsPixmapItem()
 
-        self.get_scene().addItem(self.view_pixmap_item)
+        # self.get_scene().addItem(self.view_pixmap_item)
+        self.view_mode = False
         self.get_scene().addItem(self.pixmap_item)
-        self.view_pixmap_item.hide()
-        self.pixmap_item.hide()
+        # self.view_pixmap_item.hide()
+        self.pixmap_item.show()
 
     def _show_view_tab_image(self):
         self.pixmap_item.hide()
-        self.view_pixmap_item.show()
+        for pixmap in self.view_pixmaps:
+            pixmap.show()
 
     def _show_images_tab_image(self):
         self.pixmap_item.show()
-        self.view_pixmap_item.hide()
+        for pixmap in self.view_pixmaps:
+            pixmap.hide()
 
     def get_scene(self):
         s = self.scene()
@@ -456,7 +466,8 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.setMinimumSize(QSize(600, 600))
         self.setObjectName("canvas")
         self.setAcceptDrops(True)
-        self.setScene(QGraphicsScene())
+        self.setScene(pg.GraphicsScene())
+        self.get_scene().setBackgroundBrush(QBrush(QColor("black")))  # black background
         self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
         self.setRenderHint(self.renderHints() | self.renderHints().Antialiasing)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
@@ -596,23 +607,52 @@ class ImageGraphicsViewUI(QGraphicsView):
         if not self.isEmpty():
             self.__centerImage()
 
-    def update_canvas(self, pixmap: QPixmap, is_view=False, crop=False):
+    def update_canvas(self, pixmap: QPixmap):
         """Updates canvas when current image is operated on"""
-
         if self.pixmap_item:
             prev_pixmap_shape = self.pixmap_item.boundingRect()
-            if is_view:
-                self._show_view_tab_image()
-                self.view_pixmap_item.setPixmap(pixmap)
-            else:
-                self._show_images_tab_image()
-                self.pixmap_item.setPixmap(pixmap)
+            self.pixmap_item.setPixmap(pixmap)
             if self.zoom == 1 or self.pixmap_item.boundingRect() != prev_pixmap_shape:
                 self.__centerImage()
+    
+    def update_layer_levels(self, layer_idx, value):
+        self.view_pixmaps[layer_idx].setLevels(value, True)
+
+    def update_layer_cmap(self, layer_idx, cmap):
+        layer = self.view_pixmaps[layer_idx]
+        assert isinstance(layer, pg.ImageItem)
+        layer.setLookupTable(cmap)
+
+    def update_view_tab_canvas(self, pixmap, layer_idx):
+        self._show_view_tab_image()
+        if layer_idx>(len(self.view_pixmaps)-1):
+            new_layer = pg.ImageItem(pixmap,levels=None)
+            new_layer.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
+            new_layer.setZValue(2)
+            self.view_pixmaps.append(new_layer)
+            self.get_scene().addItem(new_layer)
+            self.__center_view_tab_image(layer_idx)
+        else:
+            self.view_pixmaps[layer_idx].setImage(pixmap)
+            
+    def __center_view_tab_image(self, layer_idx):
+        pixmap_item = self.view_pixmaps[layer_idx]
+        item_rect = pixmap_item.boundingRect()
+        item_rect = QRectF(
+            item_rect.x() - item_rect.width() // 2,
+            item_rect.y() - item_rect.height() // 2,
+            item_rect.width() * 2,
+            item_rect.height() * 2,
+        )
+        self.setSceneRect(item_rect)
+        self.fitInView(pixmap_item, Qt.AspectRatioMode.KeepAspectRatio)
+        self.centerOn(pixmap_item)
+        
+    
 
     def __centerImage(self):
         pixmap_item = (
-            self.pixmap_item if self.pixmap_item.isVisible() else self.view_pixmap_item
+            self.pixmap_item if self.pixmap_item.isVisible() else self.view_pixmaps[0]
         )
         item_rect = pixmap_item.boundingRect()
         item_rect = QRectF(
@@ -883,11 +923,25 @@ class ImageGraphicsViewUI(QGraphicsView):
 
             x = int(image_pos.x())
             y = int(image_pos.y())
-            if self.view_pixmap_item.isVisible():
-                img = self.view_pixmap_item.pixmap().toImage()
-            else:
-                img = self.pixmap_item.pixmap().toImage()
+                # Get the bounding rectangle of the entire scene
+            scene = self.get_scene()
+            scene_rect = scene.sceneRect()
 
+            # Create a QImage to render the scene onto
+            # Use ARGB32_Premultiplied for transparency support
+            img = QImage(scene_rect.size().toSize(), QImage.Format.Format_ARGB32_Premultiplied)
+            img.fill(Qt.GlobalColor.transparent) # Fill with transparent background
+
+            # Create a QPainter to draw on the QImage
+            painter = QPainter(img)
+
+            # Render the scene onto the QImage
+            # The first QRectF is the target rect on the image,
+            # the second QRectF is the source rect from the scene.
+            scene.render(painter, QRectF(img.rect()), scene_rect)
+
+            # End the painter
+            painter.end()
             # Show pixel info in tooltip
             if 0 <= x < img.width() and 0 <= y < img.height():
                 color = QColor(img.pixel(x, y))
@@ -897,7 +951,7 @@ class ImageGraphicsViewUI(QGraphicsView):
                 QToolTip.showText(global_pos, f"", self)
 
                 # Get layer values if available
-                if self.enc and self.enc.toolBarUI.tabButtonGroup.checkedId() == 2:
+                if self.enc and self.enc.toolBarUI.tabButtonGroup.checkedId() == 1:
                     layers = self.enc.view_tab.get_layer_values_at(x, y)
                 else:
                     layers = None
@@ -905,7 +959,8 @@ class ImageGraphicsViewUI(QGraphicsView):
                 combined_layers = None  # added this so we don't get reference error
 
                 if layers:
-                    layers = [f"{layer}: {value[0]}\n" for layer, value in layers]
+                    print(layers)
+                    layers = [f"{layer}: {value}\n" for layer, value in layers]
                     combined_layers = "".join(layers)[:-1]
                     QToolTip.showText(global_pos, combined_layers, self)
                 else:

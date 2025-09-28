@@ -9,7 +9,7 @@ from PyQt6.QtCore import QEvent, QTimer
 
 from controller import Controller
 from core.canvas import ImageWrapper
-from utils import auto_contrast_helper
+from utils import auto_contrast_helper, scale_adjust, create_lut, grayscale_to_agrb
 
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 import os
@@ -58,14 +58,33 @@ color_dict = {
 }
 
 
+def create_contrast_lut(min_val, max_val):
+    """Creates a Look-Up Table for contrast adjustment."""
+    if min_val >= max_val:
+        return np.zeros(256, dtype=np.uint8)
+
+    lut = np.zeros(256, dtype=np.uint8)
+    lut[min_val : max_val + 1] = np.linspace(
+        start=0,
+        stop=255,
+        num=(max_val - min_val + 1),
+        endpoint=True,
+        dtype=np.uint8,
+    )
+    lut[max_val + 1 :] = 255
+    return lut
+
+
 class ControlsBox:
     def __init__(self):
         self.name = ""
         self.image = np.array([[]])
         self.q_image = None
+        self.cell_image = np.array([[]])
+        self.contrast_cache = {}
 
         self.current_opacity = 1.0
-        self.current_contrast = 1.0
+        self.current_contrast = [0, 255]
         self.current_visibility = True
         self.current_tint = QColor(255, 255, 255)
 
@@ -83,78 +102,82 @@ class ControlsBox:
 import time
 
 
+# def write_protein(protein_data, reduced_cell_img):
+#     t = time.time()
+#     print(protein_data)
+#     cnv = write_protein_sub(protein_data, reduced_cell_img)
+#     print(time.time() - t)
+
+#     return cnv
+
+
+# @njit(cache=True)
+# def write_protein_sub(protein_data=np.array([]), reduced_cell_img=np.array([[]])):
+#     # Copy the image
+#     cnv = reduced_cell_img.copy()
+
+#     # Extract protein data, winsorize, and rescale
+#     protein_1 = protein_data
+#     lower, upper = np.percentile(protein_1, [0, 100])
+#     protein_1 = np.clip(protein_1, lower, upper)
+#     # protein_1 = 60 + (protein_1 - lower) * (255 - 60) / (upper - lower)
+
+#     for i in range(cnv.shape[0]):
+#         for j in range(cnv.shape[1]):
+#             id = reduced_cell_img[i, j]
+#             if id > 0 and id <= len(protein_1):
+#                 cnv[i, j] = protein_1[id - 1]
+
+    # return cnv
 def write_protein(protein_data, reduced_cell_img):
-    t = time.time()
-    print(protein_data)
-    cnv = write_protein_sub(protein_data, reduced_cell_img)
-    print(time.time() - t)
-
-    return cnv
-
-
-@njit(cache=True)
-def write_protein_sub(protein_data=np.array([]), reduced_cell_img=np.array([[]])):
-    # Copy the image
-    cnv = reduced_cell_img.copy()
-
-    # Extract protein data, winsorize, and rescale
-    protein_1 = protein_data
-    lower, upper = np.percentile(protein_1, [0, 100])
-    protein_1 = np.clip(protein_1, lower, upper)
-    # protein_1 = 60 + (protein_1 - lower) * (255 - 60) / (upper - lower)
-
-    for i in range(cnv.shape[0]):
-        for j in range(cnv.shape[1]):
-            id = reduced_cell_img[i, j]
-            if id > 0 and id <= len(protein_1):
-                cnv[i, j] = protein_1[id - 1]
-
-    return cnv
-
-
-def precompile_jit():
-    """Precompile the function in the background."""
-
-    # Dummy protein data: Random values between 0 and 255
-    dummy_protein_data = np.random.randint(0, 256, size=100, dtype=np.uint8)
-
-    # Dummy reduced cell image: A 10x10 grid with random cell IDs
-    dummy_reduced_cell_img = np.random.randint(0, 101, size=(10, 10), dtype=np.uint8)
-
-    write_protein(dummy_protein_data, dummy_reduced_cell_img)
-
-
-def tint_grayscale_image(grayscale_image, color):
     """
-    Tint a grayscale image with an arbitrary color.
+    Generates a protein intensity image using vectorized numpy indexing.
+    Intensity is scaled absolutely based on a 16-bit range (0-65535).
 
-    Parameters:
-    grayscale_image (numpy array): The input grayscale image array with shape (height, width).
-    color (tuple): The RGB color to use for tinting (R, G, B).
+    Args:
+        protein_data (np.ndarray): 1D array of intensity values for each cell.
+        reduced_cell_img (np.ndarray): 2D array where pixel values are cell IDs (integers).
 
     Returns:
-    numpy array: The tinted image with shape (height, width, 3).
+        np.ndarray: 2D array representing the protein intensity image.
     """
-    # Ensure the grayscale image is a 2D array
-    if len(grayscale_image.shape) != 2:
-        raise ValueError(
-            "Input image must be a 2D array representing a grayscale image."
-        )
+    # Ensure protein_data is a numpy array
+    if not isinstance(protein_data, np.ndarray):
+        protein_data = np.array(protein_data, dtype=np.float32)
+    else:
+        # Ensure float for division
+        protein_data = protein_data.astype(np.float32)
 
-    # Normalize the grayscale image to the range [0, 1]
-    grayscale_image_normalized = grayscale_image / 255.0
+    # Scale data relative to the max value of uint16 (65535).
+    # This provides a consistent, absolute scaling across all proteins.
+    scaled_data = (protein_data /65535.0*255.0).astype(np.float32)
 
-    # Create an empty array with shape (height, width, 3) for the colored image
-    tinted_image = np.zeros(
-        (grayscale_image.shape[0], grayscale_image.shape[1], 3), dtype=np.uint8
-    )
+    # Replace any NaN or inf values before casting to integer type.
+    # NaNs are converted to 0, which is appropriate for missing data.
+    safe_data = np.nan_to_num(scaled_data)
 
-    # Apply the color tint
-    tinted_image = (grayscale_image_normalized[..., None] * np.array(color)).astype(
-        np.uint8
-    )
+    # Clip values to ensure they are in the 0-65535 range and convert to uint8
+    normalized_data = np.clip(safe_data, 0, 255).astype(np.uint8)
+    # normalized_data[normalized_data==0] = np.nan
 
-    return tinted_image
+    # Create a lookup table (LUT) for protein intensities.
+    # The +1 is for the background (cell ID 0), which will have an intensity of 0.
+    num_cells = len(normalized_data)
+    intensity_lut = np.zeros(num_cells + 1, dtype=np.uint8)
+    cell_data_image = np.zeros(num_cells + 1, dtype=np.uint16)
+    # intensity_lut.fill(np.nan)
+
+    # Cell ID 1 maps to index 0 in protein_data, so it goes into index 1 of our LUT.
+    intensity_lut[1:] = normalized_data
+    cell_data_image[1:] = protein_data
+
+    # Use the cell ID image to index into the LUT to create the final image.
+    protein_image = intensity_lut[reduced_cell_img]
+    cell_image = cell_data_image[reduced_cell_img]
+    
+    # protein_image[protein_image==0] = np.nan
+
+    return protein_image,cell_image
 
 
 import os
@@ -279,26 +302,28 @@ class ColorDialog(QDialog):
 
 
 # changes made
-def adjust_contrast(img, min=5, max=100):
-    # pixvals = np.array(img)
-    minval = np.percentile(img, min)  # room for experimentation
-    maxval = np.percentile(img, max)  # room for experimentation
-    img = np.clip(img, minval, maxval)
-    img = ((img - minval) / (maxval - minval)) * 255
-    return img.astype(np.uint8)
+def adjust_contrast(image, min=5, max=100):
+    t0 = time.perf_counter()
 
+    image = scale_adjust(image)
+    t1 = time.perf_counter()
+    print(f"Time for scale_adjust: {t1 - t0:.6f} sec")
 
-from PyQt6.QtWidgets import (
-    QGraphicsItem,
-    QGraphicsPixmapItem,
-    QGraphicsScene,
-    QGraphicsView,
-    QRubberBand,
-)
+    lut = create_lut(min, max)
+    t2 = time.perf_counter()
+    print(f"Time for create_lut: {t2 - t1:.6f} sec")
 
+    res = np.clip(cv2.LUT(image, lut), 0, 254, dtype=np.uint8)
+    t3 = time.perf_counter()
+    print(f"Time for LUT application: {t3 - t2:.6f} sec")
+
+    print(f"Total adjust_contrast time: {t3 - t0:.6f} sec")
+    return res
 
 class ImageOverlay(QWidget):
-    change_pix = pyqtSignal(QPixmap, bool)
+    update_contrast_sig = pyqtSignal(int, tuple)
+    update_layer_cmap_sig = pyqtSignal(int, np.ndarray)
+    change_pix = pyqtSignal(np.ndarray, int)
     progress = pyqtSignal(int, str)
 
     def __init__(self, pixmap_label, enc):
@@ -326,17 +351,14 @@ class ImageOverlay(QWidget):
         o_timer.setInterval(300)
         o_timer.setSingleShot(True)
         self.opacity_timer = o_timer
-        c_timer = QTimer()
-        c_timer.setInterval(300)
-        c_timer.setSingleShot(True)
-        self.contrast_timer = c_timer
         self.contrast_sliders = []
+        self.tint_lut_cache = {}
         # Connect timer to the actual work
         self.grayscale = True
         self.initUI()
         self.pending_contrast_idx = 0
         self.contrast_timer = QTimer()
-        self.contrast_timer.setInterval(300)  # 300 ms of no movement triggers update
+        self.contrast_timer.setInterval(10)  # 300 ms of no movement triggers update
         self.contrast_timer.setSingleShot(True)
 
     def load_stardist_image(self):
@@ -381,40 +403,41 @@ class ImageOverlay(QWidget):
         return df
 
     def generate_image(self, index):
-
-        # protein_name = self.df.columns[3 + index]
-        # im = write_protein(np.array(self.df[protein_name]), np.array(self.reduced_cell_img))
-        # im = adjust_contrast(im)
-        # return tint_grayscale_image(im, [255, 255, 255])
-
-        start = time.perf_counter()
         if self.reduced_cell_img.size == 0:
             raise ValueError("Please load an image first.")
-
         if self.df is None:
-            self.load_df()
-            print("Automatically loaded df from", self.df_path)
-        assert self.df is not None
+            raise ValueError("Dataframe not processed. Please click 'Apply' first.")
 
-        protein_name = self.df.columns[3 + index]
-        print(
-            f"Time after fetching protein name: {time.perf_counter() - start:.6f} sec"
-        )
+        # Get the name of the protein to generate from the layers list
+        protein_name = self.layers[index]["name"]
 
-        im = write_protein(
-            np.array(self.df[protein_name]), np.array(self.reduced_cell_img)
-        )
-        print(f"Time after writing protein: {time.perf_counter() - start:.6f} sec")
+        # The dataframe is now indexed by CellID.
+        # We need to construct a 1D array that can be used as a LUT for write_protein.
+        # The LUT must be indexed from 0 to max_cell_id.
+        max_id_in_image = self.reduced_cell_img.max()
 
-        im = adjust_contrast(im)
-        print(f"Time after adjusting contrast: {time.perf_counter() - start:.6f} sec")
+        # Get the sparse series of intensities for the current protein
+        protein_series = self.df[protein_name]
 
-        result = tint_grayscale_image(im, [255, 255, 255])
-        print(
-            f"Time after tinting grayscale image: {time.perf_counter() - start:.6f} sec"
-        )
+        # Create a dense array for the LUT, with 0 for cells not in the data
+        # The +1 is because cell IDs are 1-based.
+        lut_data = np.zeros(max_id_in_image + 1)
 
-        return result
+        # Place the protein intensities at the correct index (cell ID)
+        # This handles cases where the df doesn't contain all cell IDs present in the image
+        valid_indices = protein_series.index[protein_series.index <= max_id_in_image]
+        lut_data[valid_indices] = protein_series.loc[valid_indices].values
+
+        # The vectorized write_protein function expects a simple 0-indexed array
+        # corresponding to cell IDs 1, 2, 3...
+        # So we pass the LUT data, but skip the 0th element.
+        im,cell_data = write_protein(lut_data[1:], self.reduced_cell_img)
+
+        # The call to adjust_contrast is removed to show the absolute scaled intensity initially.
+        # User can adjust contrast manually with the layer slider.
+        # result = tint_grayscale_image(im, [255, 255, 255])
+
+        return im, cell_data
 
     def build_all(self):
         if not self.controller:
@@ -423,7 +446,6 @@ class ImageOverlay(QWidget):
         import time
 
         if not hasattr(self, "im_path"):
-
             import ui.app
 
             QMessageBox.critical(
@@ -432,7 +454,6 @@ class ImageOverlay(QWidget):
             return
 
         if not hasattr(self, "df_path"):
-
             import ui.app
 
             QMessageBox.critical(
@@ -440,64 +461,73 @@ class ImageOverlay(QWidget):
             )
             return
 
-        # Start compilation in a background thread
-
         start = time.time()
-        self.progress.emit(15, "Compiling `write_protein`function...")
+        self.progress.emit(10, "Loading images and data...")
 
-        threading.Thread(target=precompile_jit, daemon=True).start()
-
-        reduced_cell_img = (self.load_stardist_image()).astype(np.uint16)
-        self.reduced_cell_img = reduced_cell_img
+        self.reduced_cell_img = self.load_stardist_image()
 
         df = self.loaded_df
         if df is None:
+            # This should have been loaded by the user action before build_all is called
             return
-        self.df = df
+
+        self.progress.emit(30, "Associating cells with data...")
+        # --- NEW: Associate DF with Cell IDs ---
+        if "CellID" not in df.columns:  # Perform this expensive operation only once
+            scale_factor = 1 / self.scale_down.value()
+
+            # Vectorized coordinate scaling
+            scaled_x = (df["Global X"] * scale_factor).astype(int)
+            scaled_y = (df["Global Y"] * scale_factor).astype(int)
+
+            # Clip coordinates to be within image bounds
+            h, w = self.reduced_cell_img.shape
+            scaled_x = np.clip(scaled_x, 0, w - 1)
+            scaled_y = np.clip(scaled_y, 0, h - 1)
+
+            # Look up all cell IDs at once using vectorized indexing
+            cell_ids = self.reduced_cell_img[scaled_y, scaled_x]
+            df["CellID"] = cell_ids
+
+        # Filter out rows that are in the background (don't map to a cell)
+        df = df[df["CellID"] > 0].copy()
+
+        # Set CellID as the index for fast lookups later
+        self.df = df.set_index("CellID")
+        # --- END NEW ---
+
+        self.progress.emit(70, "Preparing layers...")
+
+        # Get protein names (assuming they are all columns after the first few)
+        protein_columns = self.loaded_df.columns.drop(
+            ["Global X", "Global Y", "CellID"], errors="ignore"
+        )
+        protein_names = [col for col in protein_columns if col in self.df.columns]
+
+        # Prepare layer structure, but don't generate images yet (on-demand is fast now)
+        self.ims = [None for _ in protein_names]
+        self.layers = [{"name": name, "image": None} for name in protein_names]
+
         end = time.time()
-
-        print("TOTAL TIME ", end - start)
-        # self.progress.emit(35, "Loaded Stardist image")
-        print(" df loaded")
-        # self.progress.emit(75, "Loaded Dataframe")
-
-        ims = [None for i in range(len(df.columns[3:]))]
-
-        # self.progress.emit(70, "Images generated")
-        layer_names = list(df.columns[3:])
-
-        self.progress.emit(96, "Almost complete...")
-
-        print("df", df)
-
-        self.ims = ims  # List of images as np.arrays
-        self.color_dict = color_dict  # Dictionary of color names to RGB values
-
-        self.layers = [
-            {"name": layer_names[i], "image": ims[i]} for i in range(len(ims))
-        ]
+        print(f"Build time: {end - start:.2f} seconds")
         self.progress.emit(100, "Done")
 
+        # Update UI
         self.scroll_area.setVisible(True)
-
         self.add_layer_button.setVisible(True)
         self.add_other_image_button.setVisible(True)
         self.open_image.setVisible(False)
         self.open_image_label.setVisible(False)
         self.open_df.setVisible(False)
         self.open_df_label.setVisible(False)
-
         self.scale_down_label.setVisible(False)
         self.scale_down.setVisible(False)
-
-        # self.todo_label.setVisible(False)
-
         self.apply_button.setVisible(False)
         self.cancel_reset.setVisible(True)
         self.export_tif_button.setVisible(True)
         self.export_png_button.setVisible(True)
 
-        return (ims, layer_names)
+        return (self.ims, protein_names)
 
     def get_layer_values_at(self, x, y):
         if len(self.controls) == 0:
@@ -505,7 +535,7 @@ class ImageOverlay(QWidget):
 
         layer_values = []
         for c in self.controls:
-            value = c.image[y, x]
+            value = c.cell_image[y, x]
             layer_values.append((c.name, value))
 
         return layer_values
@@ -752,31 +782,39 @@ class ImageOverlay(QWidget):
 
                 try:
                     if self.layers[selected_index]["image"] == None:
-                        self.layers[selected_index]["image"] = self.generate_image(
+                        self.layers[selected_index]["image"],self.layers[selected_index]["cell_data"] = self.generate_image(
                             selected_index
                         )
                 except:
                     pass
-
-                c.image = self.layers[selected_index]["image"]
+                reduced_cell_img = np.array(self.layers[selected_index]["image"])
+                print(reduced_cell_img.min(),reduced_cell_img.max(),reduced_cell_img.dtype)
+                # reduced_cellImg = reduced_cell_img/255.0
+                c.image = reduced_cell_img
+                c.cell_image =  np.array(self.layers[selected_index]["cell_data"])
                 c.name = self.layers[selected_index]["name"]
 
                 self.add_layer(c)
 
     def show_color_dialog(self, idx):
-        dialog = ColorDialog(self.color_dict, self)
+        dialog = ColorDialog(color_dict, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             selected_color_name = dialog.get_selected_color_name()
             if selected_color_name:
-                selected_color = self.color_dict[selected_color_name]
-                self.controls[idx].current_tint = QColor(*selected_color)
+                selected_color = color_dict[selected_color_name]
+                selected_color = QColor(*selected_color)
                 self.controls[idx].tint_label.setText(selected_color_name)
-                self.process_images()
+                self.update_layer_cmap_sig.emit(idx, np.array(self.get_lut(selected_color)))
 
     def add_layer(self, c):
         self.controls.append(c)
+        # Initialize the display image
+        # contrasted = self.contrasted_image(c.image, c.current_contrast)
+        # c.display_image = c.image
         self.add_layer_controls(c)
-        self.process_images()
+        self.change_pix.emit(c.image,len(self.controls)-1)
+        # self.update_layer_display(len(self.controls)-1)
+        # self.process_images()
 
     def update_current_image(self, image):
         last_index = len(self.controls) - 1
@@ -804,7 +842,7 @@ class ImageOverlay(QWidget):
                 combined_image.tobytes(), width, height, QImage.Format.Format_RGB888
             )  # interesting image.tobytes() works well, maybe you don't need to do
             q_pixmap = QPixmap(q_image)
-            self.change_pix.emit(q_pixmap, True)
+            self.change_pix.emit(np.ndarray(0), 0)
 
     def restart_contrast_timer(self):
         if self.contrast_timer.isActive():
@@ -839,6 +877,8 @@ class ImageOverlay(QWidget):
         contrast_slider = qtrangeslider.QLabeledDoubleRangeSlider(
             Qt.Orientation.Horizontal
         )
+        contrast_slider.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        contrast_slider.setMinimumWidth(300)
         contrast_slider.valueChanged.connect(lambda _: self.restart_contrast_timer())
 
         self.contrast_timer.timeout.connect(lambda: self.set_contrast_from_slider(idx))
@@ -849,7 +889,9 @@ class ImageOverlay(QWidget):
         self.contrast_sliders.append(contrast_slider)
         contrast_slider.installEventFilter(self)
 
-        group_layout.addRow("Contrast:", contrast_slider)
+        contrast_label = QLabel("Contrast:")
+        contrast_label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        group_layout.addRow(contrast_label, contrast_slider)
 
         # --- New: Numeric Inputs for Min/Max ---
         min_input = QLineEdit()
@@ -935,13 +977,22 @@ class ImageOverlay(QWidget):
     def update_opacity(self, value, idx):
         self.controls[idx].current_opacity = value / 100.0
 
-        # self.current_opacities[idx] = value / 100.0
-
         self.process_images()
+
+    def update_layer_display(self, idx):
+        # t0 = time.perf_counter()
+        print(f"Updating contrast for: {idx}")
+        c = self.controls[idx]
+        contrast_key = tuple(c.current_contrast)
+        min,max = contrast_key
+        min /= 255.0
+        max /= 255.0
+        self.update_contrast_sig.emit(idx,contrast_key)
 
     def update_contrast(self, value, idx):
         value = [int(value[0]), int(value[1])]
         self.controls[idx].current_contrast = value
+        self.update_layer_display(idx)
         self.process_images()
 
     def auto_contrast(self, idx, lower=0.1, upper=0.9):
@@ -956,64 +1007,73 @@ class ImageOverlay(QWidget):
         self.controls[idx].current_visibility = checked
         self.process_images()
 
-    def apply_tint(self, img, color):
-        if color is None:
-            return img
-        if len(img.shape) == 2:
-            img = np.stack((img,) * 3, axis=-1)
-        factor = np.array(color.getRgb()[:3]) / 255.0
-        return (img * factor).astype(np.uint8)
+    import numpy as np
+
+    def get_lut(self, color: QColor):
+        color_name = color.name()
+        if color_name in self.tint_lut_cache:
+            return self.tint_lut_cache[color_name]
+
+        # Ramp from 0..255 normalized to [0,1]
+        ramp = np.linspace(0, 1, 256)[:, None]  # shape (256, 1)
+
+        # Extract RGB values
+        r, g, b, _ = color.getRgb()  # returns (r,g,b,a)
+        rgb = np.array([r, g, b], dtype=np.float32)  # shape (3,)
+
+        # Multiply ramp with RGB to create LUT
+        lut = (ramp * rgb).astype(np.uint8)  # shape (256, 3)
+
+        # Cache and return
+        self.tint_lut_cache[color_name] = lut
+        return lut
+
 
     def adjust_contrast(self, img, min=5, max=100):
         # pixvals = np.array(img)
-        minval = np.percentile(img, min)  # room for experimentation
-        maxval = np.percentile(img, max)  # room for experimentation
-        img = np.clip(img, minval, maxval)
-        img = ((img - minval) / (maxval - minval)) * 255
-        return img.astype(np.uint8)
+        image = scale_adjust(img)
+        lut = create_lut(min,max)
+        res = np.clip(cv2.LUT(image, lut), 0, 254, dtype=np.uint8)
+        return res
 
     def contrasted_image(self, img, contrast):
         min_val, max_val = contrast
 
-        # Skip if contrast is full range
-        if min_val <= 0 and max_val >= 255:
-            return img.astype(np.float32)
-
-        if max_val == min_val:
-            return np.zeros_like(img, dtype=np.float32)  # avoid division by 0
-
-        img = np.clip(img, min_val, max_val)
-        img = ((img - min_val) / (max_val - min_val)) * 255
-        return img.astype(np.float32)
+        return adjust_contrast(img, min_val, max_val)
 
     def process_images(self, display=True):
-        if len(self.controls) == 0:
+        return
+        if not self.controls:
             return
-        combined_image = np.zeros_like(self.controls[0].image, dtype=np.float32)
-        for c in self.controls:
-            visible = c.current_visibility
-            if visible:
-                img = c.image
-                opacity = c.current_opacity
-                contrast = c.current_contrast
-                tint = c.current_tint
-                adjusted_img = img
-                # adjusted_img = winsorize_array(adjusted_img, 0, 255)
-                if isinstance(contrast, list) and contrast != [0, 255]:
-                    adjusted_img = self.contrasted_image(adjusted_img, contrast)
-                if c.tint_yn and c.current_tint is not None:
-                    adjusted_img = self.apply_tint(adjusted_img, tint)
-                combined_image += adjusted_img * opacity
-        combined_image = np.clip(combined_image, 0, 255).astype(np.uint8)
 
-        # height, width, _ = combined_image.shape
-        # bytes_per_line = 3
+        # Find the first visible layer to determine the shape of the combined image
+        first_visible_img = None
+        for c in self.controls:
+            if c.current_visibility and c.display_image.size > 0:
+                first_visible_img = c.display_image
+                break
+
+        if first_visible_img is None:
+            return
+
+        combined_image = np.zeros_like(first_visible_img, dtype=np.float32)
+        for c in self.controls:
+            if c.current_visibility:
+                display_img = c.display_image
+                opacity = c.current_opacity
+
+                # Ensure display_img is float for multiplication
+                if display_img.dtype != np.float32:
+                    display_img = display_img.astype(np.float32)
+
+                combined_image += display_img * opacity
+
+        combined_image = np.clip(combined_image, 0, 255).astype(np.uint8)
 
         q_image = numpy_to_qimage(combined_image)
         q_pixmap = QPixmap(q_image)
-        # commented out
         if display:
-            self.change_pix.emit(q_pixmap, True)
+            self.change_pix.emit(combined_image, 0)
         return combined_image
 
     def export_to_png(self):
