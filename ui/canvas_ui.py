@@ -4,6 +4,7 @@ import typing
 
 import numpy as np
 import pandas as pd
+import pyqtgraph as pg
 from PyQt6.QtCore import (
     QEasingCurve,
     QPoint,
@@ -15,7 +16,6 @@ from PyQt6.QtCore import (
     Qt,
     pyqtSignal,
 )
-
 from PyQt6.QtGui import (
     QAction,
     QBrush,
@@ -24,12 +24,13 @@ from PyQt6.QtGui import (
     QDragEnterEvent,
     QDragMoveEvent,
     QDropEvent,
+    QFont,
     QIcon,
+    QImage,
     QMouseEvent,
+    QPainter,
     QPen,
     QPixmap,
-    QFont,
-    QImage, QPainter
 )
 from PyQt6.QtWidgets import (
     QApplication,
@@ -37,9 +38,9 @@ from PyQt6.QtWidgets import (
     QGraphicsItemGroup,
     QGraphicsOpacityEffect,
     QGraphicsPixmapItem,
-    QGraphicsSimpleTextItem,
     QGraphicsRectItem,
     QGraphicsScene,
+    QGraphicsSimpleTextItem,
     QGraphicsView,
     QHBoxLayout,
     QLabel,
@@ -47,7 +48,7 @@ from PyQt6.QtWidgets import (
     QToolTip,
     QWidget,
 )
-import pyqtgraph as pg
+
 import utils
 from ui.lassos.CircleLasso import CircleLasso
 from ui.lassos.PolyLasso import PolyLasso
@@ -57,10 +58,11 @@ from utils import resource_path
 if typing.TYPE_CHECKING:
     from ui.app import Ui_MainWindow
 
-pg.setConfigOption("imageAxisOrder",'row-major')
-pg.setConfigOption("useOpenGL",True)
-pg.setConfigOption("useCupy",True)
-pg.setConfigOption("useNumba",True)
+pg.setConfigOption("imageAxisOrder", "row-major")
+pg.setConfigOption("useOpenGL", True)
+pg.setConfigOption("useCupy", True)
+pg.setConfigOption("useNumba", True)
+
 
 class ArrowItem(QGraphicsItemGroup):
     """Arrow with hover effect"""
@@ -150,7 +152,7 @@ class ReferenceGraphicsViewUI(QGraphicsView):
             QPointF(15, 150),
             self.prev_slide,  # Action to perform on click
         )
-        self.pixmap_item:QGraphicsPixmapItem = QGraphicsPixmapItem()
+        self.pixmap_item: QGraphicsPixmapItem = QGraphicsPixmapItem()
         self.current_index = 1
         self.np_channels = {}
         self.pixmap = None
@@ -440,6 +442,14 @@ class ImageGraphicsViewUI(QGraphicsView):
         assert s is not None, "Scene should be initialized"
         return s
 
+    def reset_view_tab(self):
+        """Reset the view tab by clearing all additional layers"""
+        for pixmap in self.view_pixmaps:
+            self.get_scene().removeItem(pixmap)
+        self.view_pixmaps = []
+        self._show_images_tab_image()
+        self.__centerImage()
+
     def flip_horizontal(self):
         """Flip the image horizontally"""
         if self.pixmap_item:
@@ -475,7 +485,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.setSceneRect(0, 0, 800, 600)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setContentsMargins(1000, 1000, 1000, 1000)
+        # self.setContentsMargins(1000, 1000, 1000, 1000)
 
         # Create floating selection buttons
         if self.show_buttons:
@@ -614,7 +624,7 @@ class ImageGraphicsViewUI(QGraphicsView):
             self.pixmap_item.setPixmap(pixmap)
             if self.zoom == 1 or self.pixmap_item.boundingRect() != prev_pixmap_shape:
                 self.__centerImage()
-    
+
     def update_layer_levels(self, layer_idx, value):
         self.view_pixmaps[layer_idx].setLevels(value, True)
 
@@ -623,18 +633,34 @@ class ImageGraphicsViewUI(QGraphicsView):
         assert isinstance(layer, pg.ImageItem)
         layer.setLookupTable(cmap)
 
-    def update_view_tab_canvas(self, pixmap, layer_idx):
+    def update_layer_opacity(self, layer_idx, opacity):
+        layer = self.view_pixmaps[layer_idx]
+        assert isinstance(layer, pg.ImageItem)
+        layer.setOpacity(opacity)
+
+    def update_layer_visibility(self, layer_idx, visible):
+        layer = self.view_pixmaps[layer_idx]
+        assert isinstance(layer, pg.ImageItem)
+        layer.setVisible(visible)
+
+    def update_view_tab_canvas(self, pixmap: np.ndarray, layer_idx):
         self._show_view_tab_image()
-        if layer_idx>(len(self.view_pixmaps)-1):
-            new_layer = pg.ImageItem(pixmap,levels=None)
+        if layer_idx > (len(self.view_pixmaps) - 1):
+            new_layer = pg.ImageItem(pixmap, levels=None)
             new_layer.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
             new_layer.setZValue(2)
             self.view_pixmaps.append(new_layer)
             self.get_scene().addItem(new_layer)
             self.__center_view_tab_image(layer_idx)
         else:
-            self.view_pixmaps[layer_idx].setImage(pixmap)
-            
+            print(f"layer {layer_idx}")
+            print(f"pixmap shape {pixmap.shape}")
+            if pixmap.shape == (0,):
+                removed_item = self.view_pixmaps.pop(layer_idx)
+                self.get_scene().removeItem(removed_item)
+            else:
+                self.view_pixmaps[layer_idx].setImage(pixmap)
+
     def __center_view_tab_image(self, layer_idx):
         pixmap_item = self.view_pixmaps[layer_idx]
         item_rect = pixmap_item.boundingRect()
@@ -647,8 +673,6 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.setSceneRect(item_rect)
         self.fitInView(pixmap_item, Qt.AspectRatioMode.KeepAspectRatio)
         self.centerOn(pixmap_item)
-        
-    
 
     def __centerImage(self):
         pixmap_item = (
@@ -923,14 +947,16 @@ class ImageGraphicsViewUI(QGraphicsView):
 
             x = int(image_pos.x())
             y = int(image_pos.y())
-                # Get the bounding rectangle of the entire scene
+            # Get the bounding rectangle of the entire scene
             scene = self.get_scene()
             scene_rect = scene.sceneRect()
 
             # Create a QImage to render the scene onto
             # Use ARGB32_Premultiplied for transparency support
-            img = QImage(scene_rect.size().toSize(), QImage.Format.Format_ARGB32_Premultiplied)
-            img.fill(Qt.GlobalColor.transparent) # Fill with transparent background
+            img = QImage(
+                scene_rect.size().toSize(), QImage.Format.Format_ARGB32_Premultiplied
+            )
+            img.fill(Qt.GlobalColor.transparent)  # Fill with transparent background
 
             # Create a QPainter to draw on the QImage
             painter = QPainter(img)

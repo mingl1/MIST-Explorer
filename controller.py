@@ -279,7 +279,7 @@ class Controller:
         return result == 1 and preview_dialog.result_accepted
 
     def need_canvas_change(self, new_index):
-        if self.prev_tab_index != 0 and new_index==0:
+        if self.prev_tab_index != 0 and new_index == 0:
             self.view.canvas.pixmap_item.show()
             if self.model_canvas.uuid:
                 print("swapping channel")
@@ -376,9 +376,23 @@ class SignalConnectionManager:
         self.c.model_canvas.update_sidebar.connect(
             self.c.view.images_tab.set_channel_icon
         )
-        self.c.view.view_tab.change_pix.connect(self.c.view.canvas.update_view_tab_canvas)
-        self.c.view.view_tab.update_contrast_sig.connect(self.c.view.canvas.update_layer_levels)
-        self.c.view.view_tab.update_layer_cmap_sig.connect(self.c.view.canvas.update_layer_cmap)
+        self.c.view.view_tab.change_pix.connect(
+            self.c.view.canvas.update_view_tab_canvas
+        )
+        self.c.view.view_tab.update_contrast_sig.connect(
+            self.c.view.canvas.update_layer_levels
+        )
+        self.c.view.view_tab.update_layer_cmap_sig.connect(
+            self.c.view.canvas.update_layer_cmap
+        )
+
+        self.c.view.view_tab.update_layer_opacity_sig.connect(
+            self.c.view.canvas.update_layer_opacity
+        )
+        self.c.view.view_tab.update_layer_visible_sig.connect(
+            self.c.view.canvas.update_layer_visibility
+        )
+        self.c.view.view_tab.reset_view_tab.connect(self.c.view.canvas.reset_view_tab)
         # self.c.model_canvas.canvas_updated.connect(self.c.view.canvas.update_canvas)
         self.c.model_canvas.update_manager.connect(self.c.handle_new_image)
         self.c.model_reference_canvas.update_manager.connect(
@@ -594,5 +608,7 @@ class SignalConnectionManager:
         """Miscellaneous connections"""
         self.c.view.view_tab.progress.connect(self.c.view.update_progress_bar)
         self.c.view.stackedWidget.currentChanged.connect(
-            lambda x: self.c.view.small_view.setVisible(x == 0 and not self.c.view.small_view.is_empty())
+            lambda x: self.c.view.small_view.setVisible(
+                x == 0 and not self.c.view.small_view.is_empty()
+            )
         )

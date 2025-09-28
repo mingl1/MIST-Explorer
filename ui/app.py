@@ -136,17 +136,16 @@ class Ui_MainWindow(QMainWindow):
         """Setup the collapsible side panel"""
 
         self.sidePanelContainer = QHBoxLayout()
-        self.sidePanelContainer.setContentsMargins(0, 0, 0, 0)
-        self.sidePanelContainer.setSpacing(0)
+        # self.sidePanelContainer.setContentsMargins(10, 5, 10, 5)
+        self.sidePanelContainer.setSpacing(10)
 
         self.sidePanel = QWidget(self.centralWidget())
         self.sidePanelLayout = QVBoxLayout(self.sidePanel)
-        self.sidePanelLayout.setContentsMargins(10, 5, 10, 5)
-        self.sidePanelLayout.setSpacing(10)
+        # self.sidePanelLayout.setSpacing(10)
         self.sidePanel.setMinimumWidth(400)
         self.sidePanel.setMaximumWidth(500)
         self.sidePanel.setSizePolicy(
-            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding
         )
 
         self.toggleButton = QPushButton("◀", self.sidePanel)
@@ -184,19 +183,19 @@ class Ui_MainWindow(QMainWindow):
         images_scroll = self._create_scroll_area()
 
         # The main widget for the "Images" tab, containing the manager and the processing tabs
-        self.images_tab_container = QWidget()
+        self.images_tab_container = QWidget(self.sidePanel)
         images_tab_layout = QVBoxLayout(self.images_tab_container)
-        images_tab_layout.setContentsMargins(0, 0, 0, 0)
 
         # Image Manager (the file tree)
         self.images_tab = Manager(self.canvas)
-        
-        # Processing Tabs
-        self.processing_tabs = QTabWidget()
 
+        # Processing Tabs
+        self.processing_tabs = QTabWidget(self.sidePanel)
+        processing_tab_layout = QVBoxLayout(self.processing_tabs)
         # Create a splitter to allow resizing of the image manager and processing tabs
-        splitter = QSplitter(Qt.Orientation.Vertical)
+        splitter = QSplitter(Qt.Orientation.Vertical, self.sidePanel)
         splitter.addWidget(self.images_tab)
+        splitter.setStretchFactor(0, 1)
         splitter.addWidget(self.processing_tabs)
 
         # Add splitter to layout
@@ -283,7 +282,9 @@ class Ui_MainWindow(QMainWindow):
         quantification_layout = QVBoxLayout(quantification_tab)
         quantification_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        self.cellIntensity_groupbox = CellIntensityUI(quantification_tab, quantification_layout)
+        self.cellIntensity_groupbox = CellIntensityUI(
+            quantification_tab, quantification_layout
+        )
 
         self.processing_tabs.addTab(quantification_tab, "Generation")
 

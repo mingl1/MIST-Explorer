@@ -9,7 +9,7 @@ from PyQt6.QtCore import QEvent, QTimer
 
 from controller import Controller
 from core.canvas import ImageWrapper
-from utils import auto_contrast_helper, scale_adjust, create_lut, grayscale_to_agrb
+from utils import auto_contrast_helper, create_lut, grayscale_to_agrb, scale_adjust
 
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 import os
@@ -101,7 +101,6 @@ class ControlsBox:
 
 import time
 
-
 # def write_protein(protein_data, reduced_cell_img):
 #     t = time.time()
 #     print(protein_data)
@@ -128,7 +127,8 @@ import time
 #             if id > 0 and id <= len(protein_1):
 #                 cnv[i, j] = protein_1[id - 1]
 
-    # return cnv
+
+# return cnv
 def write_protein(protein_data, reduced_cell_img):
     """
     Generates a protein intensity image using vectorized numpy indexing.
@@ -150,7 +150,7 @@ def write_protein(protein_data, reduced_cell_img):
 
     # Scale data relative to the max value of uint16 (65535).
     # This provides a consistent, absolute scaling across all proteins.
-    scaled_data = (protein_data /65535.0*255.0).astype(np.float32)
+    scaled_data = (protein_data / 65535.0 * 255.0).astype(np.float32)
 
     # Replace any NaN or inf values before casting to integer type.
     # NaNs are converted to 0, which is appropriate for missing data.
@@ -174,10 +174,10 @@ def write_protein(protein_data, reduced_cell_img):
     # Use the cell ID image to index into the LUT to create the final image.
     protein_image = intensity_lut[reduced_cell_img]
     cell_image = cell_data_image[reduced_cell_img]
-    
+
     # protein_image[protein_image==0] = np.nan
 
-    return protein_image,cell_image
+    return protein_image, cell_image
 
 
 import os
@@ -200,6 +200,7 @@ from PyQt6.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QSlider,
+    QSplitter,
     QVBoxLayout,
     QWidget,
 )
@@ -320,11 +321,15 @@ def adjust_contrast(image, min=5, max=100):
     print(f"Total adjust_contrast time: {t3 - t0:.6f} sec")
     return res
 
+
 class ImageOverlay(QWidget):
     update_contrast_sig = pyqtSignal(int, tuple)
     update_layer_cmap_sig = pyqtSignal(int, np.ndarray)
+    update_layer_opacity_sig = pyqtSignal(int, float)
+    update_layer_visible_sig = pyqtSignal(int, bool)
     change_pix = pyqtSignal(np.ndarray, int)
     progress = pyqtSignal(int, str)
+    reset_view_tab = pyqtSignal()
 
     def __init__(self, pixmap_label, enc):
         super().__init__()
@@ -431,7 +436,7 @@ class ImageOverlay(QWidget):
         # The vectorized write_protein function expects a simple 0-indexed array
         # corresponding to cell IDs 1, 2, 3...
         # So we pass the LUT data, but skip the 0th element.
-        im,cell_data = write_protein(lut_data[1:], self.reduced_cell_img)
+        im, cell_data = write_protein(lut_data[1:], self.reduced_cell_img)
 
         # The call to adjust_contrast is removed to show the absolute scaled intensity initially.
         # User can adjust contrast manually with the layer slider.
@@ -526,15 +531,21 @@ class ImageOverlay(QWidget):
         self.cancel_reset.setVisible(True)
         self.export_tif_button.setVisible(True)
         self.export_png_button.setVisible(True)
+        self.splitter.setStretchFactor(0, 1)  # Give more space to the layer list
+        self.splitter.setStretchFactor(1, 0)  # Give more space to the layer list
 
         return (self.ims, protein_names)
 
+    # can probably be optimized by having just one array with all names and values, and then filtering out invisible ones
+    # avoids looping through self.controls
     def get_layer_values_at(self, x, y):
         if len(self.controls) == 0:
             return None
 
         layer_values = []
         for c in self.controls:
+            if c.current_visibility == False:
+                continue
             value = c.cell_image[y, x]
             layer_values.append((c.name, value))
 
@@ -577,6 +588,7 @@ class ImageOverlay(QWidget):
             self.add_other_image_button.setVisible(False)
             self.export_tif_button.setVisible(False)
             self.export_png_button.setVisible(False)
+        self.reset_view_tab.emit()
 
     def initUI(self):
         main_layout = QVBoxLayout()
@@ -603,43 +615,59 @@ class ImageOverlay(QWidget):
         self.scroll_content.setLayout(self.scroll_layout)
         self.scroll_area.setWidget(self.scroll_content)
 
-        main_layout.addWidget(self.scroll_area)
-        main_layout.setStretch(0, 1)  # Make the scroll area take up available space
+        # Create a splitter to separate layers from controls
+        self.splitter = QSplitter(Qt.Orientation.Vertical)
+        self.splitter.addWidget(self.scroll_area)
 
+        # Create a container for the bottom controls
+        bottom_controls_widget = QWidget()
+        bottom_controls_layout = QVBoxLayout(bottom_controls_widget)
+
+        self.splitter.addWidget(bottom_controls_widget)
+
+        # Add splitter to the main layout
+        main_layout.addWidget(self.splitter)
+
+        # Set initial sizes for the splitter (optional, but good for default view)
+        # This gives more space to the layer list initially
+        self.splitter.setStretchFactor(0, 1)
+        self.splitter.setStretchFactor(1, 1)
+
+        # --- Add all controls to the bottom layout ---
         self.add_layer_button = QPushButton("Add Layer")
         self.add_layer_button.clicked.connect(self.show_layer_dialog)
-        main_layout.addWidget(self.add_layer_button)
+        bottom_controls_layout.addWidget(self.add_layer_button)
         self.add_layer_button.setVisible(False)
 
         self.add_other_image_button = QPushButton("Add Other Image")
         self.add_other_image_button.clicked.connect(self.open_other_image)
-        main_layout.addWidget(self.add_other_image_button)
+        bottom_controls_layout.addWidget(self.add_other_image_button)
         self.add_other_image_button.setVisible(False)
 
         self.cancel_reset = QPushButton("Cancel And Upload New")
         self.cancel_reset.clicked.connect(self.cancel_reset_first)
-        main_layout.addWidget(self.cancel_reset)
+        bottom_controls_layout.addWidget(self.cancel_reset)
         self.cancel_reset.setVisible(False)
 
         self.open_image = QPushButton("Open Image")
         self.open_image.clicked.connect(self.load_image)
-        main_layout.addWidget(self.open_image)
+        bottom_controls_layout.addWidget(self.open_image)
 
         self.open_image_label = QLabel("Path: ")
         self.open_image_label.setVisible(False)
-        main_layout.addWidget(self.open_image_label)
+        bottom_controls_layout.addWidget(self.open_image_label)
 
         self.open_df = QPushButton("Open Cell Data")
         self.open_df.clicked.connect(self.load_df)
-        main_layout.addWidget(self.open_df)
+        bottom_controls_layout.addWidget(self.open_df)
 
         self.open_df_label = QLabel("Path: ")
         self.open_df_label.setVisible(False)
-        main_layout.addWidget(self.open_df_label)
+        bottom_controls_layout.addWidget(self.open_df_label)
 
         ### scale slider
         self.scale_down_label = QLabel("Scale Down Factor: ")
-        main_layout.addWidget(self.scale_down_label)
+        bottom_controls_layout.addWidget(self.scale_down_label)
 
         self.scale_down = QSlider(Qt.Orientation.Horizontal)
         self.scale_down.setTickPosition(QSlider.TickPosition.TicksAbove)
@@ -648,25 +676,27 @@ class ImageOverlay(QWidget):
         self.scale_down.setRange(1, 10)
         self.scale_down.setValue(4)
 
-        main_layout.addWidget(self.scale_down)
+        bottom_controls_layout.addWidget(self.scale_down)
         ### scale slider
 
         self.apply_button = QPushButton("Apply")
         self.apply_button.clicked.connect(self.start_build_all_worker)
-        main_layout.addWidget(self.apply_button)
+        bottom_controls_layout.addWidget(self.apply_button)
 
         self.export_tif_button = QPushButton("Export to TIF")
         self.export_tif_button.clicked.connect(self.export_to_tif)
         self.export_tif_button.setVisible(False)
-        main_layout.addWidget(self.export_tif_button)
+        bottom_controls_layout.addWidget(self.export_tif_button)
 
         self.export_png_button = QPushButton("Export to PNG")
         self.export_png_button.clicked.connect(self.export_to_png)
         self.export_png_button.setVisible(False)
-        main_layout.addWidget(self.export_png_button)
+        bottom_controls_layout.addWidget(self.export_png_button)
 
         # Add a spacer to ensure content can scroll all the way down
-        main_layout.addStretch(1)  # Add stretch at the end to push content up
+        bottom_controls_layout.addStretch(
+            1
+        )  # Add stretch at the end to push content up
 
         self.setLayout(main_layout)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -724,8 +754,6 @@ class ImageOverlay(QWidget):
         return string
 
     def load_image(self):
-        # print("Yo")
-
         file_name, _ = QFileDialog.getOpenFileName(
             None,
             "Open Image File",
@@ -782,16 +810,21 @@ class ImageOverlay(QWidget):
 
                 try:
                     if self.layers[selected_index]["image"] == None:
-                        self.layers[selected_index]["image"],self.layers[selected_index]["cell_data"] = self.generate_image(
-                            selected_index
-                        )
+                        (
+                            self.layers[selected_index]["image"],
+                            self.layers[selected_index]["cell_data"],
+                        ) = self.generate_image(selected_index)
                 except:
                     pass
                 reduced_cell_img = np.array(self.layers[selected_index]["image"])
-                print(reduced_cell_img.min(),reduced_cell_img.max(),reduced_cell_img.dtype)
+                print(
+                    reduced_cell_img.min(),
+                    reduced_cell_img.max(),
+                    reduced_cell_img.dtype,
+                )
                 # reduced_cellImg = reduced_cell_img/255.0
                 c.image = reduced_cell_img
-                c.cell_image =  np.array(self.layers[selected_index]["cell_data"])
+                c.cell_image = np.array(self.layers[selected_index]["cell_data"])
                 c.name = self.layers[selected_index]["name"]
 
                 self.add_layer(c)
@@ -804,17 +837,14 @@ class ImageOverlay(QWidget):
                 selected_color = color_dict[selected_color_name]
                 selected_color = QColor(*selected_color)
                 self.controls[idx].tint_label.setText(selected_color_name)
-                self.update_layer_cmap_sig.emit(idx, np.array(self.get_lut(selected_color)))
+                self.update_layer_cmap_sig.emit(
+                    idx, np.array(self.get_lut(selected_color))
+                )
 
     def add_layer(self, c):
         self.controls.append(c)
-        # Initialize the display image
-        # contrasted = self.contrasted_image(c.image, c.current_contrast)
-        # c.display_image = c.image
         self.add_layer_controls(c)
-        self.change_pix.emit(c.image,len(self.controls)-1)
-        # self.update_layer_display(len(self.controls)-1)
-        # self.process_images()
+        self.change_pix.emit(c.image, len(self.controls) - 1)
 
     def update_current_image(self, image):
         last_index = len(self.controls) - 1
@@ -831,18 +861,7 @@ class ImageOverlay(QWidget):
         layer = None
 
         self.process_images()
-
-        if len(self.controls) == 0:
-            combined_image = np.zeros((10, 10, 10))
-
-            height, width, _ = combined_image.shape
-            bytes_per_line = 3
-
-            q_image = QImage(
-                combined_image.tobytes(), width, height, QImage.Format.Format_RGB888
-            )  # interesting image.tobytes() works well, maybe you don't need to do
-            q_pixmap = QPixmap(q_image)
-            self.change_pix.emit(np.ndarray(0), 0)
+        self.change_pix.emit(np.ndarray(0), index)
 
     def restart_contrast_timer(self):
         if self.contrast_timer.isActive():
@@ -856,6 +875,7 @@ class ImageOverlay(QWidget):
         group_box.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
         )
+        group_box.setAlignment(Qt.AlignmentFlag.AlignBaseline)
 
         group_layout = QFormLayout()
         group_layout.setSpacing(8)  # Add spacing between form rows
@@ -877,7 +897,9 @@ class ImageOverlay(QWidget):
         contrast_slider = qtrangeslider.QLabeledDoubleRangeSlider(
             Qt.Orientation.Horizontal
         )
-        contrast_slider.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        contrast_slider.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
         contrast_slider.setMinimumWidth(300)
         contrast_slider.valueChanged.connect(lambda _: self.restart_contrast_timer())
 
@@ -949,7 +971,7 @@ class ImageOverlay(QWidget):
         group_layout.addRow("Tint Color:", color_layout)
 
         delete_button = QPushButton("Delete Layer")
-        delete_button.clicked.connect(lambda: self.delete_layer(len(self.controls) - 1))
+        delete_button.clicked.connect(lambda: self.delete_layer(idx))
         # self.visibility_buttons.append(delete_button)
         group_layout.addRow("", delete_button)
 
@@ -976,18 +998,17 @@ class ImageOverlay(QWidget):
 
     def update_opacity(self, value, idx):
         self.controls[idx].current_opacity = value / 100.0
-
-        self.process_images()
+        self.update_layer_opacity_sig.emit(idx, self.controls[idx].current_opacity)
 
     def update_layer_display(self, idx):
         # t0 = time.perf_counter()
         print(f"Updating contrast for: {idx}")
         c = self.controls[idx]
         contrast_key = tuple(c.current_contrast)
-        min,max = contrast_key
+        min, max = contrast_key
         min /= 255.0
         max /= 255.0
-        self.update_contrast_sig.emit(idx,contrast_key)
+        self.update_contrast_sig.emit(idx, contrast_key)
 
     def update_contrast(self, value, idx):
         value = [int(value[0]), int(value[1])]
@@ -1003,11 +1024,8 @@ class ImageOverlay(QWidget):
         self.update_contrast([new_min, new_max], idx)
 
     def update_visibility(self, checked, idx):
-
         self.controls[idx].current_visibility = checked
-        self.process_images()
-
-    import numpy as np
+        self.update_layer_visible_sig.emit(idx, checked)
 
     def get_lut(self, color: QColor):
         color_name = color.name()
@@ -1028,11 +1046,10 @@ class ImageOverlay(QWidget):
         self.tint_lut_cache[color_name] = lut
         return lut
 
-
     def adjust_contrast(self, img, min=5, max=100):
         # pixvals = np.array(img)
         image = scale_adjust(img)
-        lut = create_lut(min,max)
+        lut = create_lut(min, max)
         res = np.clip(cv2.LUT(image, lut), 0, 254, dtype=np.uint8)
         return res
 
@@ -1042,39 +1059,7 @@ class ImageOverlay(QWidget):
         return adjust_contrast(img, min_val, max_val)
 
     def process_images(self, display=True):
-        return
-        if not self.controls:
-            return
-
-        # Find the first visible layer to determine the shape of the combined image
-        first_visible_img = None
-        for c in self.controls:
-            if c.current_visibility and c.display_image.size > 0:
-                first_visible_img = c.display_image
-                break
-
-        if first_visible_img is None:
-            return
-
-        combined_image = np.zeros_like(first_visible_img, dtype=np.float32)
-        for c in self.controls:
-            if c.current_visibility:
-                display_img = c.display_image
-                opacity = c.current_opacity
-
-                # Ensure display_img is float for multiplication
-                if display_img.dtype != np.float32:
-                    display_img = display_img.astype(np.float32)
-
-                combined_image += display_img * opacity
-
-        combined_image = np.clip(combined_image, 0, 255).astype(np.uint8)
-
-        q_image = numpy_to_qimage(combined_image)
-        q_pixmap = QPixmap(q_image)
-        if display:
-            self.change_pix.emit(combined_image, 0)
-        return combined_image
+        pass
 
     def export_to_png(self):
         combined_image = self.process_images(False)
