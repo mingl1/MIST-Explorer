@@ -324,6 +324,8 @@ def adjust_contrast(image, min=5, max=100):
 
 class ImageOverlay(QWidget):
     update_contrast_sig = pyqtSignal(int, tuple)
+    export_png_sig = pyqtSignal(int)
+    export_tif_sig = pyqtSignal(int)
     update_layer_cmap_sig = pyqtSignal(int, np.ndarray)
     update_layer_opacity_sig = pyqtSignal(int, float)
     update_layer_visible_sig = pyqtSignal(int, bool)
@@ -1062,92 +1064,90 @@ class ImageOverlay(QWidget):
         pass
 
     def export_to_png(self):
-        combined_image = self.process_images(False)
-        if combined_image is None:
-            return
-        file_name, _ = QFileDialog.getSaveFileName(
-            None, "Save PNG File", "protein_layers.png", "*.png;;All Files (*)"
-        )
-        if not file_name:
-            return
-        img = Image.fromarray(combined_image)
-        img.save(file_name)
+        self.export_png_sig.emit(len(self.controls))
+        # combined_image = self.process_images(False)
+        # if combined_image is None:
+        # return
+
+        # img = Image.fromarray(combined_image)
+        # img.save(file_name)
 
     def export_to_tif(self):
-        if len(self.controls) == 0:
-            QMessageBox.warning(None, "Warning", "No layers to export")
-            return
+        self.export_tif_sig.emit(len(self.controls))
+        # if len(self.controls) == 0:
+        #     QMessageBox.warning(None, "Warning", "No layers to export")
+        #     return
 
-        file_name, _ = QFileDialog.getSaveFileName(
-            None, "Save TIF File", "protein_layers.tif", "*.tif;;All Files (*)"
-        )
+        # file_name, _ = QFileDialog.getSaveFileName(
+        #     None, "Save TIF File", "protein_layers.tif", "*.tif;;All Files (*)"
+        # )
 
-        if not file_name:
-            return
+        # if not file_name:
+        #     return
 
-        # Create an array to hold all the protein layer images as grayscale
-        layers_data = []
-        layer_names = []
+        # # Create an array to hold all the protein layer images as grayscale
+        # layers_data = []
+        # layer_names = []
 
-        for i, c in enumerate(self.controls):
-            if c.current_visibility:  # Only export visible layers
-                img = c.image.copy()
+        # for i, c in enumerate(self.controls):
+        #     if c.current_visibility:  # Only export visible layers
+        #         img = c.image.copy()
 
-                # Get original protein data in grayscale
-                # If the image has 3 channels (RGB), convert to grayscale
-                if len(img.shape) == 3 and img.shape[2] == 3:
-                    img_gray = cv2.cvtColor(img.astype(np.uint8), cv2.COLOR_RGB2GRAY)
-                else:
-                    img_gray = img
-                assert isinstance(img_gray, np.ndarray)
-                # Apply contrast adjustment if needed
-                if (
-                    isinstance(c.current_contrast, list)
-                    and len(c.current_contrast) == 2
-                ):
-                    # Apply contrast stretching
-                    img_gray = self.contrasted_image(img_gray, c.current_contrast)
+        #         # Get original protein data in grayscale
+        #         # If the image has 3 channels (RGB), convert to grayscale
+        #         if len(img.shape) == 3 and img.shape[2] == 3:
+        #             img_gray = cv2.cvtColor(img.astype(np.uint8), cv2.COLOR_RGB2GRAY)
+        #         else:
+        #             img_gray = img
+        #         assert isinstance(img_gray, np.ndarray)
+        #         # Apply contrast adjustment if needed
+        #         if (
+        #             isinstance(c.current_contrast, list)
+        #             and len(c.current_contrast) == 2
+        #         ):
+        #             # Apply contrast stretching
+        #             img_gray = self.contrasted_image(img_gray, c.current_contrast)
 
-                final_img = img_gray.astype(np.float64) * c.current_opacity
+        #         final_img = img_gray.astype(np.float64) * c.current_opacity
 
-                # Ensure we have valid data range
-                final_img = np.clip(final_img, 0, 255)
-                # if c.tint_yn:
-                #     final_img = self.apply_tint(final_img, c.current_tint)
-                # Convert to uint8
-                final_img = final_img.astype(np.uint8)
+        #         # Ensure we have valid data range
+        #         final_img = np.clip(final_img, 0, 255)
+        #         # if c.tint_yn:
+        #         #     final_img = self.apply_tint(final_img, c.current_tint)
+        #         # Convert to uint8
+        #         final_img = final_img.astype(np.uint8)
 
-                # Add to our stack
-                layers_data.append(final_img)
-                layer_names.append(c.name)
+        #         # Add to our stack
+        #         layers_data.append(final_img)
+        #         layer_names.append(c.name)
 
-        if not layers_data:
-            QMessageBox.warning(None, "Warning", "No visible layers to export")
-            return
+        # if not layers_data:
+        #     QMessageBox.warning(None, "Warning", "No visible layers to export")
+        #     return
 
-        # Stack all layers into a single 3D array (Z,Y,X) where Z is the protein layer
-        tif_data = np.stack(layers_data)
+        # # Stack all layers into a single 3D array (Z,Y,X) where Z is the protein layer
+        # tif_data = np.stack(layers_data)
 
-        # Save as multi-layer TIF file
-        try:
-            # Use tifffile to save with ImageJ compatibility
-            tiff.imwrite(file_name, tif_data.astype(np.uint8), imagej=True)
+        # # Save as multi-layer TIF file
+        # try:
+        #     # Use tifffile to save with ImageJ compatibility
+        #     tiff.imwrite(file_name, tif_data.astype(np.uint8), imagej=True)
 
-            # Save layer names to a text file
-            txt_file = os.path.splitext(file_name)[0] + "_protein_order.txt"
-            with open(txt_file, "w") as f:
-                for i, name in enumerate(layer_names):
-                    f.write(f"Layer {i+1}: {name}\n")
+        #     # Save layer names to a text file
+        #     txt_file = os.path.splitext(file_name)[0] + "_protein_order.txt"
+        #     with open(txt_file, "w") as f:
+        #         for i, name in enumerate(layer_names):
+        #             f.write(f"Layer {i+1}: {name}\n")
 
-            QMessageBox.information(
-                None,
-                "Success",
-                f"Multi-layered TIF file saved to {file_name}\n"
-                f"Each layer contains a separate protein in grayscale\n"
-                f"Protein order saved to {txt_file}",
-            )
-        except Exception as e:
-            QMessageBox.critical(None, "Error", f"Failed to save TIF file: {str(e)}")
+        #     QMessageBox.information(
+        #         None,
+        #         "Success",
+        #         f"Multi-layered TIF file saved to {file_name}\n"
+        #         f"Each layer contains a separate protein in grayscale\n"
+        #         f"Protein order saved to {txt_file}",
+        #     )
+        # except Exception as e:
+        #     QMessageBox.critical(None, "Error", f"Failed to save TIF file: {str(e)}")
 
 
 def numpy_to_qimage(array):

@@ -393,6 +393,9 @@ class SignalConnectionManager:
             self.c.view.canvas.update_layer_visibility
         )
         self.c.view.view_tab.reset_view_tab.connect(self.c.view.canvas.reset_view_tab)
+
+        self.c.view.view_tab.export_png_sig.connect(self.c.view.canvas.save_as_png)
+        self.c.view.view_tab.export_tif_sig.connect(self.c.view.canvas.save_as_tif)
         # self.c.model_canvas.canvas_updated.connect(self.c.view.canvas.update_canvas)
         self.c.model_canvas.update_manager.connect(self.c.handle_new_image)
         self.c.model_reference_canvas.update_manager.connect(
