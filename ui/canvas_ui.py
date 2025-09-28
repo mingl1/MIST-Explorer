@@ -46,8 +46,10 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QToolTip,
     QWidget,
+    QFileDialog
 )
 import pyqtgraph as pg
+import tifffile
 import utils
 from ui.lassos.CircleLasso import CircleLasso
 from ui.lassos.PolyLasso import PolyLasso
@@ -882,6 +884,55 @@ class ImageGraphicsViewUI(QGraphicsView):
 
         # Clean up crop mode
         self.cancel_crop_mode()
+    
+    def save_as_png(self, num_layers):
+        if num_layers==0:
+            return
+        file_name, _ = QFileDialog.getSaveFileName(
+            None, "Save PNG File", "protein_layers.png", "*.png;;All Files (*)"
+        )
+        if not file_name:
+            return
+        
+        scene = self.get_scene()
+        scene_rect = scene.sceneRect()
+
+        # Create a QImage to render the scene onto
+        # Use ARGB32_Premultiplied for transparency support
+        img = QImage(scene_rect.size().toSize(), QImage.Format.Format_ARGB32_Premultiplied)
+        img.fill(Qt.GlobalColor.black) # Fill with transparent background
+
+        # Create a QPainter to draw on the QImage
+        painter = QPainter(img)
+
+        # Render the scene onto the QImage
+        scene.render(painter, QRectF(img.rect()), scene_rect)
+
+        # End the painter
+        painter.end()
+        img.save(file_name)
+    def save_as_tif(self, num_layers):
+        if num_layers ==0:
+            return        # the second QRectF is the source rect from the scene.
+        file_name, _ = QFileDialog.getSaveFileName(
+            None, "Save PNG File", "protein_layers.png", "*.png;;All Files (*)"
+        )
+        if not file_name:
+            return
+        
+        assert num_layers == len(self.view_pixmaps)
+        img_stack = []
+        for i in self.view_pixmaps:
+            assert isinstance(i, pg.ImageItem)
+            qimage = i.getPixmap().toImage().convertToFormat(QImage.Format.Format_RGB888)
+            ptr = qimage.bits()
+            ptr.setsize(qimage.width()*qimage.height()*4)
+            arr = np.array(ptr, dtype=np.uint8).reshape(qimage.height(), qimage.width(), 3)
+            img_stack.append(arr)
+
+        img_stack = np.array(img_stack)
+        tifffile.imwrite(file_name,img_stack, imagej=True)
+
 
     def mouseMoveEvent(self, event: QMouseEvent | None):
         super().mouseMoveEvent(event)
@@ -930,7 +981,7 @@ class ImageGraphicsViewUI(QGraphicsView):
             # Create a QImage to render the scene onto
             # Use ARGB32_Premultiplied for transparency support
             img = QImage(scene_rect.size().toSize(), QImage.Format.Format_ARGB32_Premultiplied)
-            img.fill(Qt.GlobalColor.transparent) # Fill with transparent background
+            img.fill(Qt.GlobalColor.black) # Fill with transparent background
 
             # Create a QPainter to draw on the QImage
             painter = QPainter(img)

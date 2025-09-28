@@ -379,6 +379,8 @@ class SignalConnectionManager:
         self.c.view.view_tab.change_pix.connect(self.c.view.canvas.update_view_tab_canvas)
         self.c.view.view_tab.update_contrast_sig.connect(self.c.view.canvas.update_layer_levels)
         self.c.view.view_tab.update_layer_cmap_sig.connect(self.c.view.canvas.update_layer_cmap)
+        self.c.view.view_tab.export_png_sig.connect(self.c.view.canvas.save_as_png)
+        self.c.view.view_tab.export_tif_sig.connect(self.c.view.canvas.save_as_tif)
         # self.c.model_canvas.canvas_updated.connect(self.c.view.canvas.update_canvas)
         self.c.model_canvas.update_manager.connect(self.c.handle_new_image)
         self.c.model_reference_canvas.update_manager.connect(
