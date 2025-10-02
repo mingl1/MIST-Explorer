@@ -166,13 +166,13 @@ class ReferenceGraphicsViewUI(QGraphicsView):
     def init_ui(self):
         self.setMinimumSize(QSize(300, 300))
         self.setMaximumSize(QSize(300, 300))
-        self.setScene(QGraphicsScene())
+        self.setScene(pg.GraphicsScene())
         self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
         self.setRenderHint(self.renderHints() | self.renderHints().Antialiasing)
         self.setStyleSheet("QGraphicsView { border: 1px solid black; }")
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        # self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        # self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
 
     def is_empty(self) -> bool:
         return self.pixmap_item is None
@@ -967,9 +967,10 @@ class ImageGraphicsViewUI(QGraphicsView):
     def mouseMoveEvent(self, event: QMouseEvent | None):
         super().mouseMoveEvent(event)
 
-        # Handle crop rectangle resizing
+        # Handle crop rectangle re  sizing
         if event is None:
             return
+        event.accept()
         if (
             self.crop_mode
             and self.crop_start_pos is not None
