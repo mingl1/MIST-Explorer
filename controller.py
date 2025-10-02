@@ -233,10 +233,6 @@ class Controller:
                         if aligned_data["data"][L] is not None
                         else moving_image
                     )
-                    if L == "Channel 1" and not is_manual:
-                        # use the moving image for channel 1 if aligning arrays, there seems to be a bug that makes channel 1 blank otherwise...
-                        d = moving_image
-                        print("set to moving image for channel 1")
                     wrapped_image = ImageWrapper(d, L)
                     # data[L].data = aligned_data["data"][L]
                     data[L] = wrapped_image

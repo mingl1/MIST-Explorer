@@ -238,6 +238,22 @@ class ImageStorage:
 
     def __setitem__(self, image_id, data):
         self.add_data(str(image_id), data)
+    
+    def get_reference_image(self):
+        with self._data_lock:
+            ref_uuid = self.image_list[str("reference_uuid")]
+            assert ref_uuid is not None
+            data = self.image_list.get(str(ref_uuid['value']))
+            assert data is not None and 'data' in data.keys(), 'ref image is none'
+            
+            return data['data']
+    def get_canvas_image(self):
+        with self._data_lock:
+            canvas_uuid = self.image_list[str("canvas_uuid")]
+            assert canvas_uuid is not None
+            data = self.image_list.get(str(canvas_uuid['value']))
+            assert data is not None and 'data' in data.keys(), "canvas image is none"
+            return data['data']
 
     def add_data(self, image_id, data):
         with self._data_lock:

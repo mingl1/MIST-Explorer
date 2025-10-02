@@ -93,6 +93,14 @@ class Register(QThread):
         # self.run()
 
     def run(self):
+        self.tifs = (
+            {
+                "image_dict": self.storage.get_reference_image(),
+            },
+            {
+                "image_dict": self.storage.get_canvas_image(),
+            },
+        )
 
         m = self.params[
             "max_size"
