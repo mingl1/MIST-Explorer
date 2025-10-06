@@ -83,7 +83,7 @@ class ToolBarUI(QToolBar):
         if index==2 or index==3:  # View or Analysis tab
             # hide all actions
             self.actionReset.setVisible(False)
-            self.channel_selector_action.setVisible(True)
+            self.channel_selector_action.setVisible(False)
             self.cmap_action.setVisible(False)
             self.auto_contrast_button_action.setVisible(False)
             self.contrast_slider_action.setVisible(False)

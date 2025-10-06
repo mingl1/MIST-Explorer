@@ -835,7 +835,8 @@ class ImageOverlay(QWidget):
 
                 self.add_layer(c)
 
-    def show_color_dialog(self, idx):
+    def show_color_dialog(self, gb):
+        idx = self.scroll_layout.indexOf(gb)
         dialog = ColorDialog(color_dict, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             selected_color_name = dialog.get_selected_color_name()
@@ -857,7 +858,8 @@ class ImageOverlay(QWidget):
         self.controls[last_index].image = image
         self.process_images()
 
-    def delete_layer(self, index):
+    def delete_layer(self, gb):
+        index = self.scroll_layout.indexOf(gb)
         c = self.controls.pop(index)
         self.contrast_sliders.pop(index)
 
@@ -866,6 +868,8 @@ class ImageOverlay(QWidget):
         layer.deleteLater()
         layer = None
 
+        for i, control in enumerate(self.controls):
+            control.layout.setTitle(f"Layer {i + 1}: {control.name}")
         self.process_images()
         self.change_pix.emit(np.ndarray(0), index)
 
@@ -886,17 +890,24 @@ class ImageOverlay(QWidget):
         group_layout = QFormLayout()
         group_layout.setSpacing(8)  # Add spacing between form rows
         auto_contrast_button = QPushButton("Auto Contrast")
-        auto_contrast_button.clicked.connect(lambda: self.auto_contrast(idx))
+        
+        auto_contrast_button.clicked.connect(
+            lambda _, gb=group_box: self.auto_contrast(gb)
+        )
+        
         opacity_slider = QSlider(Qt.Orientation.Horizontal)
         opacity_slider.setMinimumWidth(300)
         opacity_slider.setMaximum(100)
         opacity_slider.setValue(100)
-        opacity_slider.sliderReleased.connect(
-            lambda: self.update_opacity(opacity_slider.value(), idx)
+        # opacity_slider.sliderReleased.connect(
+        #     lambda: self.update_opacity(opacity_slider.value(), idx)
+        # )
+        opacity_slider.valueChanged.connect(
+            lambda s, gb=group_box: self.update_opacity(s, gb)
         )
-        self.opacity_timer.timeout.connect(
-            lambda: self.update_opacity(opacity_slider.value(), idx)
-        )
+        # self.opacity_timer.timeout.connect(
+        #     lambda: self.update_opacity(opacity_slider.value(), idx)
+        # )
         group_layout.addRow("Opacity:", opacity_slider)
 
         # --- Existing Contrast Slider ---
@@ -907,15 +918,18 @@ class ImageOverlay(QWidget):
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
         )
         contrast_slider.setMinimumWidth(300)
-        contrast_slider.valueChanged.connect(lambda _: self.restart_contrast_timer())
+        # contrast_slider.valueChanged.connect(lambda _: self.restart_contrast_timer())
 
-        self.contrast_timer.timeout.connect(lambda: self.set_contrast_from_slider(idx))
+        # self.contrast_timer.timeout.connect(lambda: self.set_contrast_from_slider(idx))
+        contrast_slider.valueChanged.connect(
+            lambda s, gb=group_box: self.set_contrast_from_slider(s, gb)
+        )
 
         contrast_slider.setMaximum(255)
         contrast_slider.setValue((0, 255))
         contrast_slider.setDecimals(0)
         self.contrast_sliders.append(contrast_slider)
-        contrast_slider.installEventFilter(self)
+        # contrast_slider.installEventFilter(self)
 
         contrast_label = QLabel("Contrast:")
         contrast_label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
@@ -943,6 +957,7 @@ class ImageOverlay(QWidget):
 
         # --- Button Logic ---
         def apply_contrast_values():
+            idx = self.scroll_layout.indexOf(group_box)
             try:
                 min_val = int(min_input.text())
                 max_val = int(max_input.text())
@@ -960,14 +975,20 @@ class ImageOverlay(QWidget):
         visibility_button = QPushButton("Toggle Visibility")
         visibility_button.setCheckable(True)
         visibility_button.setChecked(True)
+        # visibility_button.toggled.connect(
+        #     lambda checked: self.update_visibility(checked, idx)
+        # )
         visibility_button.toggled.connect(
-            lambda checked: self.update_visibility(checked, idx)
+            lambda checked, gb=group_box: self.update_visibility(checked, gb)
         )
         # self.visibility_buttons.append(visibility_button)
         group_layout.addRow("Visibility:", visibility_button)
 
         color_button = QPushButton("Select Tint Color")
-        color_button.clicked.connect(lambda: self.show_color_dialog(idx))
+        color_button.clicked.connect(
+            lambda _, gb=group_box: self.show_color_dialog(gb)
+        )
+        # color_button.clicked.connect(lambda: self.show_color_dialog(idx))
         # self.color_tints.append(color_button)
         color_label = QLabel("None")
 
@@ -977,7 +998,10 @@ class ImageOverlay(QWidget):
         group_layout.addRow("Tint Color:", color_layout)
 
         delete_button = QPushButton("Delete Layer")
-        delete_button.clicked.connect(lambda: self.delete_layer(idx))
+        # delete_button.clicked.connect(lambda: self.delete_layer(idx))
+        delete_button.clicked.connect(
+            lambda _, gb=group_box: self.delete_layer(gb)
+        )
         # self.visibility_buttons.append(delete_button)
         group_layout.addRow("", delete_button)
 
@@ -989,26 +1013,19 @@ class ImageOverlay(QWidget):
         self.controls[idx].layout = group_box
         self.scroll_layout.addWidget(group_box)
 
-    def set_contrast_from_slider(self, idx):
-        min_val, max_val = self.contrast_sliders[idx].value()
+    def set_contrast_from_slider(self, value, gb):
+        min_val, max_val = value
+        idx = self.scroll_layout.indexOf(gb)
         self.update_contrast((min_val, max_val), idx)
 
-    def eventFilter(self, source, event):
-        if isinstance(source, qtrangeslider.QLabeledDoubleRangeSlider):
-            if event.type() == QEvent.Type.MouseButtonRelease:
-                for idx, slider in enumerate(self.contrast_sliders):
-                    if slider is source:
-                        self.set_contrast_from_slider(idx)
-                        break
-        return super().eventFilter(source, event)
-
-    def update_opacity(self, value, idx):
+    def update_opacity(self, value, gb):
+        idx = self.scroll_layout.indexOf(gb)
         self.controls[idx].current_opacity = value / 100.0
         self.update_layer_opacity_sig.emit(idx, self.controls[idx].current_opacity)
 
     def update_layer_display(self, idx):
         # t0 = time.perf_counter()
-        print(f"Updating contrast for: {idx}")
+        
         c = self.controls[idx]
         contrast_key = tuple(c.current_contrast)
         min, max = contrast_key
@@ -1017,19 +1034,23 @@ class ImageOverlay(QWidget):
         self.update_contrast_sig.emit(idx, contrast_key)
 
     def update_contrast(self, value, idx):
+        if idx==-1:
+            return
         value = [int(value[0]), int(value[1])]
         self.controls[idx].current_contrast = value
         self.update_layer_display(idx)
         self.process_images()
 
-    def auto_contrast(self, idx, lower=0.1, upper=0.9):
+    def auto_contrast(self, gb, lower=0.1, upper=0.9):
+        idx = self.scroll_layout.indexOf(gb)
         img = self.controls[idx].image
         assert isinstance(img, np.ndarray)
         new_min, new_max = auto_contrast_helper(img, lower, upper)
         self.contrast_sliders[idx].setValue((int(new_min), int(new_max)))
         self.update_contrast([new_min, new_max], idx)
 
-    def update_visibility(self, checked, idx):
+    def update_visibility(self, checked, gb):
+        idx = self.scroll_layout.indexOf(gb)
         self.controls[idx].current_visibility = checked
         self.update_layer_visible_sig.emit(idx, checked)
 
