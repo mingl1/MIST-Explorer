@@ -397,12 +397,12 @@ class AnalysisTab(QWidget):
         self.multiComboBox.addItem("Select All")
         self.multiComboBox.addItem("Deselect All")
 
-        data = self.enc.view_tab.load_df()
-        self.multiComboBox.addItems(data.columns[3:])
+        data = self.enc.view_tab.get_df()
+        self.columns = data.columns[2:-1]
+        self.multiComboBox.addItems(list(self.columns))
 
-        for i in range(len(data.columns[3:])):
+        for i in range(len(self.columns)):
             self.multiComboBox.model().item(i).setCheckState(Qt.CheckState.Checked)
-        self.columns = data.columns[3:]
 
         # Add buttons
         apply_button = QPushButton("Apply")
@@ -490,7 +490,7 @@ class AnalysisTab(QWidget):
             data = self.get_poly_data(region[1])
 
         # Create and add graphs
-        box_plot = self.create_box_plot(data[self.columns])
+        box_plot = self.create_box_plot(data)
         self.add_graph_to_current_view(box_plot)
 
         graph_generators = [
@@ -508,12 +508,12 @@ class AnalysisTab(QWidget):
         t = ["Global X","Global Y"] + t
         t = pd.Series(t)
         return data[t]
+    
     def create_box_plot(self, data):
         """Create a box plot widget"""
         result_widget = QWidget()
         layout = QVBoxLayout(result_widget)
-
-        filtered_data = data.iloc[:, 3:]
+        filtered_data = data.loc[:, self.columns]
         filtered_data = filtered_data.melt(var_name="Protein", value_name="Expression")
 
         fig, ax = plt.subplots(figsize=(12, 8))
@@ -538,7 +538,7 @@ class AnalysisTab(QWidget):
 
     def get_rect_data(self, region):
         """Get data filtered by the selected region"""
-        data = self.enc.view_tab.load_df()
+        data = self.enc.view_tab.get_df()
         x_min, y_min, x_max, y_max = [i * 4 for i in region]
 
         return data[
@@ -550,7 +550,7 @@ class AnalysisTab(QWidget):
 
     def get_circle_data(self, region):
         """Get data filtered by the selected circular/oval region"""
-        data = self.enc.view_tab.load_df()
+        data = self.enc.view_tab.get_df()
         x_min, y_min, x_max, y_max = [i * 4 for i in region]
 
         # Calculate circle center and radius
@@ -568,7 +568,7 @@ class AnalysisTab(QWidget):
 
     def get_poly_data(self, region):
         """Get data filtered by the selected polygon region using ray casting algorithm"""
-        data = self.enc.view_tab.load_df()
+        data = self.enc.view_tab.get_df()
 
         def point_in_polygon(point, polygon):
             """Check if a point is inside a polygon using ray casting algorithm"""

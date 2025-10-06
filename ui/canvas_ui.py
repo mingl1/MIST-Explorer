@@ -1147,15 +1147,16 @@ class ImageGraphicsViewUI(QGraphicsView):
                 self.origin = None
 
                 if self.select == "rect" or self.select == "circle":
+                    assert rubberband is not None
                     scene_pos = self.mapToScene(event.pos())
                     image_pos = self.pixmap_item.mapFromScene(scene_pos)
                     image_rect = (
                         self.select,
                         (
-                            self.starting_x,
-                            self.starting_y,
-                            int(image_pos.x()),
-                            int(image_pos.y()),
+                            rubberband.x(),
+                            rubberband.y(),
+                            int(rubberband.x()+rubberband.width()),
+                            int(rubberband.y()+rubberband.height()),
                         ),
                     )
                     if not self.enc.analysis_tab.analyze_region(rubberband, image_rect):

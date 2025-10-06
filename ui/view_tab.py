@@ -408,6 +408,10 @@ class ImageOverlay(QWidget):
 
         self.loaded_df = df
         return df
+    def get_df(self):
+        if self.loaded_df is None:
+            raise ValueError("Need to load DF in view tab.")
+        return self.loaded_df
 
     def generate_image(self, index):
         if self.reduced_cell_img.size == 0:
