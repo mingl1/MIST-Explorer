@@ -276,7 +276,8 @@ class Controller:
 
     def need_canvas_change(self, new_index):
         if self.prev_tab_index != 0 and new_index == 0:
-            self.view.canvas.pixmap_item.show()
+            # self.view.canvas.pixmap_item.show()
+            self.view.canvas._show_images_tab_image()
             if self.model_canvas.uuid:
                 print("swapping channel")
                 self.model_canvas.swap_channel(self.model_canvas.current_channel)
@@ -284,8 +285,9 @@ class Controller:
                 print("clearing canvas")
                 self.model_canvas.clear_canvas()
         else:
+            self.view.canvas._show_view_tab_image()
             self.view.view_tab.process_images()
-            self.view.canvas.pixmap_item.hide()
+            # self.view.canvas.pixmap_item.hide()
 
     def handle_tab_change(self, index):
         self.need_canvas_change(index)

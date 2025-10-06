@@ -6,18 +6,40 @@ import pandas as pd
 import tifffile as tiff
 from numpy.typing import NDArray
 from PyQt6.QtCore import QEvent, QTimer
+import os
+
+import qtrangeslider
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QColor, QImage, QPixmap
+from PyQt6.QtWidgets import (
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QSlider,
+    QSplitter,
+    QVBoxLayout,
+    QWidget,
+    QFileDialog,
+    QMessageBox
+)
 
 from controller import Controller
-from core.canvas import ImageWrapper
 from utils import auto_contrast_helper, create_lut, grayscale_to_agrb, scale_adjust
 
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 import os
 
 import cv2
-from numba import njit
 from PIL import Image
-from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
 from core import Worker
 
@@ -83,7 +105,7 @@ class ControlsBox:
         self.cell_image = np.array([[]])
         self.contrast_cache = {}
 
-        self.current_opacity = 1.0
+        self.current_opacity = 100.0
         self.current_contrast = [0, 255]
         self.current_visibility = True
         self.current_tint = QColor(255, 255, 255)
@@ -179,31 +201,6 @@ def write_protein(protein_data, reduced_cell_img):
 
     return protein_image, cell_image
 
-
-import os
-
-import numpy as np
-import qtrangeslider
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QImage, QPixmap
-from PyQt6.QtWidgets import (
-    QDialog,
-    QDialogButtonBox,
-    QFormLayout,
-    QGroupBox,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QListWidget,
-    QListWidgetItem,
-    QPushButton,
-    QScrollArea,
-    QSizePolicy,
-    QSlider,
-    QSplitter,
-    QVBoxLayout,
-    QWidget,
-)
 
 
 def scale_image_to_255(image_array):
@@ -735,7 +732,7 @@ class ImageOverlay(QWidget):
 
             if len(reduced_cell_img.shape) == 2:
                 reduced_cell_img = np.stack((reduced_cell_img,) * 3, axis=-1)
-            c.image = reduced_cell_img
+            c.image = reduced_cell_img.copy()
             c.name = os.path.basename(file_name)
             c.tint_yn = False
             self.add_layer(c)
@@ -829,7 +826,7 @@ class ImageOverlay(QWidget):
                     reduced_cell_img.dtype,
                 )
                 # reduced_cellImg = reduced_cell_img/255.0
-                c.image = reduced_cell_img
+                c.image = reduced_cell_img.copy()
                 c.cell_image = np.array(self.layers[selected_index]["cell_data"])
                 c.name = self.layers[selected_index]["name"]
 
@@ -855,7 +852,7 @@ class ImageOverlay(QWidget):
 
     def update_current_image(self, image):
         last_index = len(self.controls) - 1
-        self.controls[last_index].image = image
+        self.controls[last_index].image = image.copy()
         self.process_images()
 
     def delete_layer(self, gb):
@@ -1090,15 +1087,89 @@ class ImageOverlay(QWidget):
 
     def export_to_png(self):
         self.export_png_sig.emit(len(self.controls))
-        # combined_image = self.process_images(False)
-        # if combined_image is None:
-        # return
 
-        # img = Image.fromarray(combined_image)
-        # img.save(file_name)
 
     def export_to_tif(self):
-        self.export_tif_sig.emit(len(self.controls))
+        """
+        Exports the current layers to a multi-channel TIFF file.
+        It applies the current contrast and opacity settings for each layer.
+        """
+        # 1. Prompt user for a save location
+        # Assumes 'self' is a QWidget or has access to one for the dialog parent.
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, 
+            "Save Multi-Channel TIFF", 
+            "", 
+            "TIFF Files (*.tif *.tiff)"
+        )
+
+        # Exit if the user cancelled the dialog
+        if not file_path:
+            print("Export cancelled.")
+            return
+
+        multi_channel_image = []
+        
+        for i in range(len(self.controls)):
+            # --- Get layer properties ---
+            control = self.controls[i]
+            opacity = control.current_opacity   # Expected: 0-100
+            contrast = control.current_contrast # Expected: (min, max) tuple, 0-255
+            img = control.image                 # Expected: uint16 NumPy array
+
+            # Get image data type info (e.g., for uint16, max is 65535)
+            dtype_info = np.iinfo(img.dtype)
+            max_dtype_val = float(dtype_info.max)
+
+            # --- A. Adjust Contrast ---
+            # Convert image to float for calculations to avoid clipping/rounding errors
+            img_float = img.astype(np.float32)
+
+            # Scale the 0-255 contrast range to the image's native range (e.g., 0-65535)
+            c_min, c_max = contrast
+            min_val = (c_min / 255.0) * max_dtype_val
+            max_val = (c_max / 255.0) * max_dtype_val
+
+            # Apply the contrast adjustment (windowing/leveling)
+            # Handle the edge case where min and max are the same
+            if max_val <= min_val:
+                processed_float = np.where(img_float > min_val, max_dtype_val, 0.0)
+            else:
+                # Clip the data to the new min/max range
+                processed_float = np.clip(img_float, min_val, max_val)
+                # Scale the clipped data to the full 0.0 to max_dtype_val range
+                processed_float = (processed_float - min_val) / (max_val - min_val) * max_dtype_val
+            
+            # --- B. Adjust Opacity ---
+            # Apply the opacity as a scaling factor
+            opacity_factor = opacity / 100.0
+            processed_float *= opacity_factor
+
+            # --- C. Finalize and Append ---
+            # Clip again to ensure values are valid, then convert back to original dtype
+            final_img = np.clip(processed_float, 0, max_dtype_val).astype(img.dtype)
+            multi_channel_image.append(final_img)
+
+        # 2. Save the result as a multi-channel TIFF
+        if not multi_channel_image:
+            print("No images to save.")
+            return
+
+        # multi_channel_image = np.array(multi_channel_image)
+        try:
+            # Stack the list of 2D images into a single 3D array (C, H, W)
+            output_stack = np.stack(multi_channel_image, axis=0)
+            print(output_stack.shape)
+            
+            # Save the stack to the selected file path
+            tiff.imwrite(file_path, output_stack, imagej=True)
+            
+            print(f"Successfully exported {len(multi_channel_image)} channels to: {file_path}")
+
+        except Exception as e:
+            print(f"Error saving TIFF file: {e}")
+            # Consider showing a QMessageBox to the user here for better UX
+            
 
 def numpy_to_qimage(array):
     if len(array.shape) == 2:  # Grayscale image

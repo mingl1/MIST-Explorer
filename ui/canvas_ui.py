@@ -646,7 +646,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         layer.setVisible(visible)
 
     def update_view_tab_canvas(self, pixmap: np.ndarray, layer_idx):
-        self._show_view_tab_image()
+        # self._show_view_tab_image()
         if layer_idx > (len(self.view_pixmaps)-1):
             new_layer = pg.ImageItem(pixmap, levels=None)
             new_layer.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
