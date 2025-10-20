@@ -65,7 +65,7 @@ from ui.analysis.graphing.SpatialHeatmapUpdated import HeatmapWindow
 from ui.analysis.graphing.CellDensityPlot import CellDensityPlot
 from ui.analysis.graphing.DistributionViewer import DistributionViewer
 from ui.analysis.graphing.PieChartCanvas import PieChartCanvas
-from ui.analysis.graphing.delete_later import UMAPVisualizer
+from ui.analysis.graphing.UMAPPlot import UMAPVisualizer
 
 # Use TYPE_CHECKING to avoid circular imports
 from typing import TYPE_CHECKING, Tuple
@@ -496,13 +496,13 @@ class AnalysisTab(QWidget):
         # Create and add graphs
         box_plot = self.create_box_plot(data)
         self.add_graph_to_current_view(box_plot)
-
+        
         graph_generators = [
             lambda: ZScoreHeatmapWindow(self.get_z_heatmap_data(data)),
             lambda: HeatmapWindow(data[self.columns]),
             lambda: PieChartCanvas(data[self.columns]),
             lambda: DistributionViewer(data[self.columns]),
-            lambda: UMAPVisualizer(),
+            lambda: UMAPVisualizer(self.get_z_heatmap_data(data)),
         ]
 
         for generator in graph_generators:
