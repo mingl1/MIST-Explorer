@@ -174,6 +174,8 @@ class PieChartCanvas(FigureCanvas):
 
         # Process data
         df = df[df.columns[3:]]  # Exclude irrelevant columns
+        if len(self.df)==0:
+            return
         dominant_counts = df.idxmax(axis=1).value_counts()
         labels = dominant_counts.index
         values = dominant_counts.values

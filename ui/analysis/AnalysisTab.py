@@ -68,7 +68,7 @@ from ui.analysis.graphing.PieChartCanvas import PieChartCanvas
 from ui.analysis.graphing.delete_later import UMAPVisualizer
 
 # Use TYPE_CHECKING to avoid circular imports
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Tuple
 
 if TYPE_CHECKING:
     from app import Ui_MainWindow
@@ -331,6 +331,8 @@ class AnalysisTab(QWidget):
         # Handle previous rubberband
 
         # Store selection data
+        region = (region[0], tuple(int(i) for i in region[1]))
+        assert len(region[1]) == 4, 'invalid region definition'
         self.rubberbands.append(rubberband)
         self.regions.append(region)
 
@@ -482,13 +484,15 @@ class AnalysisTab(QWidget):
 
     def generate_analysis_graphs(self, region):
         # Get filtered data
+        data = None
         if self.regions[self.current_view_index][0] == "rect":
             data = self.get_rect_data(region[1])
-        if self.regions[self.current_view_index][0] == "circle":
+        elif self.regions[self.current_view_index][0] == "circle":
+            
             data = self.get_circle_data(region[1])
-        if self.regions[self.current_view_index][0] == "poly":
+        elif self.regions[self.current_view_index][0] == "poly":
             data = self.get_poly_data(region[1])
-
+        assert data is not None, "Shape selection not implemeneted in analysis tab"
         # Create and add graphs
         box_plot = self.create_box_plot(data)
         self.add_graph_to_current_view(box_plot)
@@ -539,7 +543,8 @@ class AnalysisTab(QWidget):
     def get_rect_data(self, region):
         """Get data filtered by the selected region"""
         data = self.enc.view_tab.get_df()
-        x_min, y_min, x_max, y_max = [i * 4 for i in region]
+        x_min, y_min, x_max, y_max = [i for i in region]
+        print(x_min, y_min, x_max, y_max)
 
         return data[
             (data["Global X"] >= x_min)
@@ -549,22 +554,18 @@ class AnalysisTab(QWidget):
         ]
 
     def get_circle_data(self, region):
-        """Get data filtered by the selected circular/oval region"""
+        """Get data filtered by the selected circular region"""
         data = self.enc.view_tab.get_df()
-        x_min, y_min, x_max, y_max = [i * 4 for i in region]
+        center_x, center_y, x2, y2 = region
 
-        # Calculate circle center and radius
-        center_x = (x_min + x_max) / 2
-        center_y = (y_min + y_max) / 2
-        radius_x = (x_max - x_min) / 2
-        radius_y = (y_max - y_min) / 2
+        radius = np.linalg.norm(np.array([x2 - center_x, y2 - center_y]))
 
-        # Apply elliptical equation filter
+        # Apply circular filter
         return data[
-            ((data["Global X"] - center_x) ** 2 / radius_x**2)
-            + ((data["Global Y"] - center_y) ** 2 / radius_y**2)
-            <= 1
+            ((data["Global X"] - center_x) ** 2 + (data["Global Y"] - center_y) ** 2)
+            <= radius ** 2
         ]
+
 
     def get_poly_data(self, region):
         """Get data filtered by the selected polygon region using ray casting algorithm"""

@@ -408,6 +408,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.polygons = []
         self.current_polygon = None
         self.rubber_band_positions = []
+        self.select_start_pos = None
 
         # Improved crop system
         self.crop_mode = False
@@ -806,7 +807,9 @@ class ImageGraphicsViewUI(QGraphicsView):
             if self.begin_crop or self.select:
                 self.origin = event.pos()
                 self.update_starting_position(event)
-
+                scene_pos = self.mapToScene(event.pos())
+                image_pos = self.pixmap_item.mapFromScene(scene_pos)
+                self.select_start_pos = image_pos
                 if self.begin_crop:
                     if not self.rubberBand:
                         self.rubberBand = RectLasso(self)
@@ -833,11 +836,11 @@ class ImageGraphicsViewUI(QGraphicsView):
                         self.setMouseTracking(True)
 
                     # Add point in scene coordinates, but relative to the image
-                    scene_pos = self.mapToScene(event.pos())
-                    image_pos = self.pixmap_item.mapFromScene(scene_pos)
+                    
                     # Convert image_pos to scene coordinates relative to the image
                     polygon_pos = self.pixmap_item.mapToScene(image_pos)
                     self.current_polygon.add_point(polygon_pos, image_pos)
+                
 
                 if self.begin_crop:
                     self.rubberBands.append(self.rubberBand)
@@ -1035,7 +1038,7 @@ class ImageGraphicsViewUI(QGraphicsView):
                 QToolTip.showText(global_pos, f"", self)
 
                 # Get layer values if available
-                if self.enc and self.enc.toolBarUI.tabButtonGroup.checkedId() == 1:
+                if self.enc and self.enc.toolBarUI.tabButtonGroup.checkedId() != 0:
                     layers = self.enc.view_tab.get_layer_values_at(x, y)
                 else:
                     layers = None
@@ -1043,7 +1046,6 @@ class ImageGraphicsViewUI(QGraphicsView):
                 combined_layers = None  # added this so we don't get reference error
 
                 if layers:
-                    print(layers)
                     layers = [f"{layer}: {value}\n" for layer, value in layers]
                     combined_layers = "".join(layers)[:-1]
                     QToolTip.showText(global_pos, combined_layers, self)
@@ -1145,20 +1147,25 @@ class ImageGraphicsViewUI(QGraphicsView):
 
             if self.select:
                 self.origin = None
-
+                assert self.select_start_pos is not None
                 if self.select == "rect" or self.select == "circle":
                     assert rubberband is not None
                     scene_pos = self.mapToScene(event.pos())
                     image_pos = self.pixmap_item.mapFromScene(scene_pos)
+                    # if select is circle, then image_pos dist to initial left click pos is radius
+                    # if select is rectangle, then initial is top let and image_pos is bottom right
+                    # initial pos is self.select_start_pos
+                    print(image_pos)
                     image_rect = (
                         self.select,
                         (
-                            rubberband.x(),
-                            rubberband.y(),
-                            int(rubberband.x()+rubberband.width()),
-                            int(rubberband.y()+rubberband.height()),
+                            self.select_start_pos.x(),
+                            self.select_start_pos.y(),
+                            image_pos.x(),
+                            image_pos.y()
                         ),
                     )
+                    # if failed to analyze region, then remove rubber band
                     if not self.enc.analysis_tab.analyze_region(rubberband, image_rect):
                         self.rubberBands.remove(self.rubberBand)
                         self.rubberBandColors.pop()
