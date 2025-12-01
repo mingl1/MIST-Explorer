@@ -11,6 +11,7 @@ from .canvas import (
     ReferenceGraphicsView,
 )
 from .cell_intensity import CellIntensity
+from .umap import UMAPHelper
 from .cell_layer_alignment import (
     CellLayerAligner,
     calculate_alignment_metrics,
@@ -43,4 +44,5 @@ __all__ = [
     "TileMap",
     "Worker",
     "StarDist",
+    "UMAPHelper"
 ]
