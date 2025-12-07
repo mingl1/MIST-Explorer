@@ -1,15 +1,11 @@
 import os
 import sys
-from multiprocessing import Value
-from typing import List
 
 import cv2
 import numpy as np
 import tifffile as tiff
 from numpy.typing import NDArray
-from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QImage, QPixmap
-from skimage import transform
 
 
 def auto_contrast_helper(img, lower=1.0, upper=99.0, zero_eps=None, min_span=5):
@@ -130,7 +126,6 @@ def qimage_to_numpy(qimage: QImage):
 # this and qimage to numpy seems repetitive, delete one of them
 # Dead code: This function is not used anywhere in the codebase.
 def pixmap_to_image(pixmap: QPixmap):
-
     if pixmap == None:
         return None
     # Convert QPixmap to QImage
@@ -154,7 +149,6 @@ def to_pixmap(data: QPixmap | np.ndarray | QImage):
 
 
 def is_grayscale(image: np.ndarray) -> bool:
-
     if len(image.shape) == 3 and image.shape[2] == 3:
         return False
     elif len(image.shape) == 2 or (len(image.shape) == 3 and image.shape[2] == 1):
@@ -274,20 +268,44 @@ def convert_image_to_gray(img: np.ndarray) -> np.ndarray:
 
 
 def adjustContrast(img, alpha=5, beta=15):
-
     alpha = 5  # Contrast control
     beta = 15  # Brightness control
     return cv2.convertScaleAbs(img, alpha=alpha, beta=beta)
 
 
 # uint16 to uint8
+import numpy as np
+
+
+def grayscale_to_agrb(img_2d: np.ndarray) -> np.ndarray:
+    """
+    Convert a 2D grayscale image (0-255) to an ARGB image.
+
+    - Alpha channel is img_2d normalized to [0, 1].
+    - RGB channels are always [255, 255, 255].
+
+    Returns: float32 array of shape (H, W, 4).
+    """
+    # Normalize alpha (0-1)
+    alpha = img_2d.astype(np.float32) / 255.0
+    alpha[alpha == 0] = np.nan
+    alpha[alpha != np.nan] = 0.5
+
+    # Create RGB channels (all 255)
+    h, w = img_2d.shape
+    # rgb = np.ones((h, w, 3), dtype=np.float32) * alpha*255.0
+    rgb = np.stack((img_2d,) * 3, axis=-1, dtype=np.float32)
+
+    # Stack into ARGB: (H, W, 4)
+    argb = np.dstack([rgb, alpha])
+    return argb
 
 
 def scale_adjust(arr: np.ndarray) -> NDArray[np.uint8]:
     if arr.dtype == np.uint16:
         return cv2.convertScaleAbs(arr, alpha=(255.0 / 65535.0))
     elif arr.dtype == np.uint8:
-        return np.clip(arr,0,255)
+        return np.clip(arr, 0, 255)
     elif arr.dtype == np.uint32:
         max_val = arr.max()
         if max_val == 0:
@@ -363,6 +381,49 @@ def adjust_contrast(
     img_adjusted = (img_adjusted - minval) / (maxval - minval)
 
     return img_adjusted  # stays float64, values in [0.0, 1.0]
+
+
+from skimage.filters import threshold_otsu
+
+
+def background_subtraction_with_histogram(image: np.ndarray) -> np.ndarray:
+    """
+    Implements the described method:
+    1. Otsu threshold to extract background.
+    2. Compute histogram of background pixels.
+    3. Use the peak of background histogram as refined threshold.
+    4. Subtract refined threshold from original image.
+
+    https://www.nature.com/articles/s44303-025-00088-w#MOESM1
+    """
+
+    # Ensure float64 for precision
+    original_dtype = image.dtype
+    img = image.astype(np.float64)
+
+    # Step 1: Otsu's threshold
+    otsu_thresh = threshold_otsu(img)
+    background_mask = img <= otsu_thresh  # background region
+
+    # Step 2: Histogram of background pixels
+    background_pixels = img[background_mask]
+    hist, bin_edges = np.histogram(background_pixels, bins=256, range=(0, img.max()))
+
+    # Step 3: Find peak of histogram
+    peak_idx = np.argmax(hist)
+    refined_threshold = bin_edges[peak_idx]
+
+    # Step 4: Subtract refined threshold
+    result = img - refined_threshold
+    result[result < 0] = 0  # clip negatives
+
+    # Convert back to original dtype if possible
+    if original_dtype == np.uint16:
+        result = result.astype(np.uint16)
+    elif original_dtype == np.uint8:
+        result = result.astype(np.uint8)
+
+    return result, otsu_thresh, refined_threshold, hist, bin_edges
 
 
 def pad_to_shape(image, target_shape):

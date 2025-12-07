@@ -3,7 +3,8 @@
 import typing
 
 import numpy as np
-import pandas as pd
+import pyqtgraph as pg
+import tifffile
 from PyQt6.QtCore import (
     QEasingCurve,
     QPoint,
@@ -16,28 +17,29 @@ from PyQt6.QtCore import (
     pyqtSignal,
 )
 from PyQt6.QtGui import (
-    QAction,
     QBrush,
     QColor,
     QCursor,
     QDragEnterEvent,
     QDragMoveEvent,
     QDropEvent,
+    QFont,
     QIcon,
+    QImage,
     QMouseEvent,
+    QPainter,
     QPen,
     QPixmap,
-    QFont,
 )
 from PyQt6.QtWidgets import (
     QApplication,
+    QFileDialog,
     QGraphicsItem,
     QGraphicsItemGroup,
     QGraphicsOpacityEffect,
     QGraphicsPixmapItem,
-    QGraphicsSimpleTextItem,
     QGraphicsRectItem,
-    QGraphicsScene,
+    QGraphicsSimpleTextItem,
     QGraphicsView,
     QHBoxLayout,
     QLabel,
@@ -54,6 +56,11 @@ from utils import resource_path
 
 if typing.TYPE_CHECKING:
     from ui.app import Ui_MainWindow
+
+pg.setConfigOption("imageAxisOrder", "row-major")
+pg.setConfigOption("useOpenGL", True)
+pg.setConfigOption("useCupy", True)
+pg.setConfigOption("useNumba", True)
 
 
 class ArrowItem(QGraphicsItemGroup):
@@ -144,7 +151,7 @@ class ReferenceGraphicsViewUI(QGraphicsView):
             QPointF(15, 150),
             self.prev_slide,  # Action to perform on click
         )
-        self.pixmap_item = QGraphicsPixmapItem()
+        self.pixmap_item: QGraphicsPixmapItem = QGraphicsPixmapItem()
         self.current_index = 1
         self.np_channels = {}
         self.pixmap = None
@@ -156,13 +163,13 @@ class ReferenceGraphicsViewUI(QGraphicsView):
     def init_ui(self):
         self.setMinimumSize(QSize(300, 300))
         self.setMaximumSize(QSize(300, 300))
-        self.setScene(QGraphicsScene())
+        self.setScene(pg.GraphicsScene())
         self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
         self.setRenderHint(self.renderHints() | self.renderHints().Antialiasing)
         self.setStyleSheet("QGraphicsView { border: 1px solid black; }")
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        # self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        # self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
 
     def is_empty(self) -> bool:
         return self.pixmap_item is None
@@ -379,6 +386,7 @@ class ImageGraphicsViewUI(QGraphicsView):
     horizontal_flip = pyqtSignal()  # Signal to request horizontal flip
     vertical_flip = pyqtSignal()  # Signal to request vertical flip
     clear_canvas = pyqtSignal()
+    sigRangeChanged = pyqtSignal(object)  # placeholder for pyqtgraph compatibility
 
     def __init__(self, parent, enc: "Ui_MainWindow", show_buttons=True):
         super().__init__(parent)
@@ -386,7 +394,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.show_buttons = show_buttons
         self.setupUI()
 
-        self.pixmap_item: QGraphicsPixmapItem = QGraphicsPixmapItem()
+        self.pixmap_item = QGraphicsPixmapItem(QPixmap())
         self.rubberBand = None
         self.rubberBands = []
         self.rubberBandColors = []
@@ -398,6 +406,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.polygons = []
         self.current_polygon = None
         self.rubber_band_positions = []
+        self.select_start_pos = None
 
         # Improved crop system
         self.crop_mode = False
@@ -410,25 +419,37 @@ class ImageGraphicsViewUI(QGraphicsView):
         # Setup interaction
         # self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setMouseTracking(True)
-        self.view_pixmap_item = QGraphicsPixmapItem()
+        self.view_pixmaps = []
+        # self.view_pixmap_item = QGraphicsPixmapItem()
 
-        self.get_scene().addItem(self.view_pixmap_item)
+        # self.get_scene().addItem(self.view_pixmap_item)
+        self.view_mode = False
         self.get_scene().addItem(self.pixmap_item)
-        self.view_pixmap_item.hide()
-        self.pixmap_item.hide()
+        # self.view_pixmap_item.hide()
+        self.pixmap_item.show()
 
     def _show_view_tab_image(self):
         self.pixmap_item.hide()
-        self.view_pixmap_item.show()
+        for pixmap in self.view_pixmaps:
+            pixmap.show()
 
     def _show_images_tab_image(self):
         self.pixmap_item.show()
-        self.view_pixmap_item.hide()
+        for pixmap in self.view_pixmaps:
+            pixmap.hide()
 
     def get_scene(self):
         s = self.scene()
         assert s is not None, "Scene should be initialized"
         return s
+
+    def reset_view_tab(self):
+        """Reset the view tab by clearing all additional layers"""
+        for pixmap in self.view_pixmaps:
+            self.get_scene().removeItem(pixmap)
+        self.view_pixmaps = []
+        self._show_images_tab_image()
+        self.__centerImage()
 
     def flip_horizontal(self):
         """Flip the image horizontally"""
@@ -456,7 +477,8 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.setMinimumSize(QSize(600, 600))
         self.setObjectName("canvas")
         self.setAcceptDrops(True)
-        self.setScene(QGraphicsScene())
+        self.setScene(pg.GraphicsScene())
+        self.get_scene().setBackgroundBrush(QBrush(QColor("black")))  # black background
         self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
         self.setRenderHint(self.renderHints() | self.renderHints().Antialiasing)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
@@ -464,7 +486,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.setSceneRect(0, 0, 800, 600)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setContentsMargins(1000, 1000, 1000, 1000)
+        # self.setContentsMargins(1000, 1000, 1000, 1000)
 
         # Create floating selection buttons
         if self.show_buttons:
@@ -596,23 +618,66 @@ class ImageGraphicsViewUI(QGraphicsView):
         if not self.isEmpty():
             self.__centerImage()
 
-    def update_canvas(self, pixmap: QPixmap, is_view=False, crop=False):
+    def update_canvas(self, pixmap: QPixmap):
         """Updates canvas when current image is operated on"""
-
         if self.pixmap_item:
             prev_pixmap_shape = self.pixmap_item.boundingRect()
-            if is_view:
-                self._show_view_tab_image()
-                self.view_pixmap_item.setPixmap(pixmap)
-            else:
-                self._show_images_tab_image()
-                self.pixmap_item.setPixmap(pixmap)
+            self.pixmap_item.setPixmap(pixmap)
             if self.zoom == 1 or self.pixmap_item.boundingRect() != prev_pixmap_shape:
                 self.__centerImage()
 
+    def update_layer_levels(self, layer_idx, value):
+        self.view_pixmaps[layer_idx].setLevels(value, True)
+
+    def update_layer_cmap(self, layer_idx, cmap):
+        layer = self.view_pixmaps[layer_idx]
+        assert isinstance(layer, pg.ImageItem)
+        layer.setLookupTable(cmap)
+
+    def update_layer_opacity(self, layer_idx, opacity):
+        layer = self.view_pixmaps[layer_idx]
+        assert isinstance(layer, pg.ImageItem)
+        layer.setOpacity(opacity)
+
+    def update_layer_visibility(self, layer_idx, visible):
+        layer = self.view_pixmaps[layer_idx]
+        assert isinstance(layer, pg.ImageItem)
+        layer.setVisible(visible)
+
+    def update_view_tab_canvas(self, pixmap: np.ndarray, layer_idx):
+        # self._show_view_tab_image()
+        if layer_idx > (len(self.view_pixmaps) - 1):
+            new_layer = pg.ImageItem(pixmap, levels=None)
+            new_layer.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
+            new_layer.setZValue(2)
+            self.view_pixmaps.append(new_layer)
+            self.get_scene().addItem(new_layer)
+            self.__center_view_tab_image(layer_idx)
+        else:
+            print(f"layer {layer_idx}")
+            print(f"pixmap shape {pixmap.shape}")
+            if pixmap.shape == (0,):
+                removed_item = self.view_pixmaps.pop(layer_idx)
+                self.get_scene().removeItem(removed_item)
+            else:
+                self.view_pixmaps[layer_idx].setImage(pixmap)
+
+    def __center_view_tab_image(self, layer_idx):
+        pixmap_item = self.view_pixmaps[layer_idx]
+        item_rect = pixmap_item.boundingRect()
+        item_rect = QRectF(
+            item_rect.x() - item_rect.width() // 2,
+            item_rect.y() - item_rect.height() // 2,
+            item_rect.width() * 2,
+            item_rect.height() * 2,
+        )
+        self.setSceneRect(item_rect)
+        self.fitInView(pixmap_item, Qt.AspectRatioMode.KeepAspectRatio)
+        self.centerOn(pixmap_item)
+
     def __centerImage(self):
         pixmap_item = (
-            self.pixmap_item if self.pixmap_item.isVisible() else self.view_pixmap_item
+            self.pixmap_item if self.pixmap_item.isVisible() else self.view_pixmaps[0]
         )
         item_rect = pixmap_item.boundingRect()
         item_rect = QRectF(
@@ -740,7 +805,9 @@ class ImageGraphicsViewUI(QGraphicsView):
             if self.begin_crop or self.select:
                 self.origin = event.pos()
                 self.update_starting_position(event)
-
+                scene_pos = self.mapToScene(event.pos())
+                image_pos = self.pixmap_item.mapFromScene(scene_pos)
+                self.select_start_pos = image_pos
                 if self.begin_crop:
                     if not self.rubberBand:
                         self.rubberBand = RectLasso(self)
@@ -767,17 +834,16 @@ class ImageGraphicsViewUI(QGraphicsView):
                         self.setMouseTracking(True)
 
                     # Add point in scene coordinates, but relative to the image
-                    scene_pos = self.mapToScene(event.pos())
-                    image_pos = self.pixmap_item.mapFromScene(scene_pos)
+
                     # Convert image_pos to scene coordinates relative to the image
                     polygon_pos = self.pixmap_item.mapToScene(image_pos)
                     self.current_polygon.add_point(polygon_pos, image_pos)
 
                 if self.begin_crop:
                     self.rubberBands.append(self.rubberBand)
-                    assert (
-                        self.rubberBand is not None
-                    ), "Rubber band should be initialized"
+                    assert self.rubberBand is not None, (
+                        "Rubber band should be initialized"
+                    )
                     self.rubberBandColors.append(self.rubberBand.color)
                     self.rubberBand.setGeometry(QRect(self.origin, QSize()))
                     self.rubberBand.show()
@@ -843,12 +909,68 @@ class ImageGraphicsViewUI(QGraphicsView):
         # Clean up crop mode
         self.cancel_crop_mode()
 
+    def save_as_png(self, num_layers):
+        if num_layers == 0:
+            return
+        file_name, _ = QFileDialog.getSaveFileName(
+            None, "Save PNG File", "protein_layers.png", "*.png;;All Files (*)"
+        )
+        if not file_name:
+            return
+
+        scene = self.get_scene()
+        scene_rect = scene.sceneRect()
+
+        # Create a QImage to render the scene onto
+        # Use ARGB32_Premultiplied for transparency support
+        img = QImage(
+            scene_rect.size().toSize(), QImage.Format.Format_ARGB32_Premultiplied
+        )
+        img.fill(Qt.GlobalColor.black)  # Fill with transparent background
+
+        # Create a QPainter to draw on the QImage
+        painter = QPainter(img)
+
+        # Render the scene onto the QImage
+        scene.render(painter, QRectF(img.rect()), scene_rect)
+
+        # End the painter
+        painter.end()
+        img.save(file_name)
+
+    def save_as_tif(self, num_layers):
+        if num_layers == 0:
+            return  # the second QRectF is the source rect from the scene.
+        file_name, _ = QFileDialog.getSaveFileName(
+            None, "Save PNG File", "protein_layers.png", "*.png;;All Files (*)"
+        )
+        if not file_name:
+            return
+
+        assert num_layers == len(self.view_pixmaps)
+        img_stack = []
+        for i in self.view_pixmaps:
+            assert isinstance(i, pg.ImageItem)
+            qimage = (
+                i.getPixmap().toImage().convertToFormat(QImage.Format.Format_RGB888)
+            )
+            ptr = qimage.bits()
+            ptr.setsize(qimage.width() * qimage.height() * 4)
+            arr = np.array(ptr, dtype=np.uint8).reshape(
+                qimage.height(), qimage.width(), 3
+            )
+            img_stack.append(arr)
+
+        img_stack = np.array(img_stack)
+        tifffile.imwrite(file_name, img_stack, imagej=True)
+
     def mouseMoveEvent(self, event: QMouseEvent | None):
         super().mouseMoveEvent(event)
 
-        # Handle crop rectangle resizing
+        # Handle crop rectangle re  sizing
         if event is None:
             return
+        event.accept()
         if (
             self.crop_mode
             and self.crop_start_pos is not None
@@ -883,21 +1005,37 @@ class ImageGraphicsViewUI(QGraphicsView):
 
             x = int(image_pos.x())
             y = int(image_pos.y())
-            if self.view_pixmap_item.isVisible():
-                img = self.view_pixmap_item.pixmap().toImage()
-            else:
-                img = self.pixmap_item.pixmap().toImage()
+            # Get the bounding rectangle of the entire scene
+            scene = self.get_scene()
+            scene_rect = scene.sceneRect()
 
+            # Create a QImage to render the scene onto
+            # Use ARGB32_Premultiplied for transparency support
+            img = QImage(
+                scene_rect.size().toSize(), QImage.Format.Format_ARGB32_Premultiplied
+            )
+            img.fill(Qt.GlobalColor.black)  # Fill with transparent background
+
+            # Create a QPainter to draw on the QImage
+            painter = QPainter(img)
+
+            # Render the scene onto the QImage
+            # The first QRectF is the target rect on the image,
+            # the second QRectF is the source rect from the scene.
+            scene.render(painter, QRectF(img.rect()), scene_rect)
+
+            # End the painter
+            painter.end()
             # Show pixel info in tooltip
             if 0 <= x < img.width() and 0 <= y < img.height():
                 color = QColor(img.pixel(x, y))
                 r, g, b = color.red(), color.green(), color.blue()
 
                 global_pos = self.mapToGlobal(event.pos())
-                QToolTip.showText(global_pos, f"", self)
+                QToolTip.showText(global_pos, "", self)
 
                 # Get layer values if available
-                if self.enc and self.enc.toolBarUI.tabButtonGroup.checkedId() == 2:
+                if self.enc and self.enc.toolBarUI.tabButtonGroup.checkedId() != 0:
                     layers = self.enc.view_tab.get_layer_values_at(x, y)
                 else:
                     layers = None
@@ -905,7 +1043,7 @@ class ImageGraphicsViewUI(QGraphicsView):
                 combined_layers = None  # added this so we don't get reference error
 
                 if layers:
-                    layers = [f"{layer}: {value[0]}\n" for layer, value in layers]
+                    layers = [f"{layer}: {value}\n" for layer, value in layers]
                     combined_layers = "".join(layers)[:-1]
                     QToolTip.showText(global_pos, combined_layers, self)
                 else:
@@ -928,7 +1066,7 @@ class ImageGraphicsViewUI(QGraphicsView):
                 # if self.reference_view:
                 #     self.reference_view.highlight_pixel(x, y)
             else:
-                self.enc.updateMousePositionLabel(f"")
+                self.enc.updateMousePositionLabel("")
                 # Hide pixel highlight when outside image bounds
                 self.hide_pixel_highlight()
                 # if self.reference_view:
@@ -1006,19 +1144,25 @@ class ImageGraphicsViewUI(QGraphicsView):
 
             if self.select:
                 self.origin = None
-
+                assert self.select_start_pos is not None
                 if self.select == "rect" or self.select == "circle":
+                    assert rubberband is not None
                     scene_pos = self.mapToScene(event.pos())
                     image_pos = self.pixmap_item.mapFromScene(scene_pos)
+                    # if select is circle, then image_pos dist to initial left click pos is radius
+                    # if select is rectangle, then initial is top let and image_pos is bottom right
+                    # initial pos is self.select_start_pos
+                    print(image_pos)
                     image_rect = (
                         self.select,
                         (
-                            self.starting_x,
-                            self.starting_y,
-                            int(image_pos.x()),
-                            int(image_pos.y()),
+                            self.select_start_pos.x(),
+                            self.select_start_pos.y(),
+                            image_pos.x(),
+                            image_pos.y(),
                         ),
                     )
+                    # if failed to analyze region, then remove rubber band
                     if not self.enc.analysis_tab.analyze_region(rubberband, image_rect):
                         self.rubberBands.remove(self.rubberBand)
                         self.rubberBandColors.pop()

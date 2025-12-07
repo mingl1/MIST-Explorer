@@ -90,13 +90,13 @@ class ZoomableImageView(QGraphicsView):
 
 class AlignmentPreviewDialog(QDialog):
     moving_image_changed = pyqtSignal(np.ndarray)
+    transformation_matrix = pyqtSignal(np.ndarray)
 
     def __init__(self, snapshot_data: dict, can_edit: bool = False, can_emit=False):
         super().__init__(None)
 
         self.target_image = snapshot_data["target_image"].copy()
         self.aligned_image = snapshot_data["aligned_image"].copy()
-        print(self.target_image.shape, self.aligned_image.shape)
         self.metadata = snapshot_data.get("metadata", {})
         self.can_edit = can_edit
         self.original_aligned_image = self.aligned_image.copy()
@@ -388,6 +388,7 @@ class AlignmentPreviewDialog(QDialog):
         final_image = cv2.warpAffine(
             self.original_aligned_image, transf_matrix, (w, h)
         )
+        self.transformation_matrix.emit(transf_matrix)
         self.moving_image_changed.emit(final_image)
         self.accept()
 

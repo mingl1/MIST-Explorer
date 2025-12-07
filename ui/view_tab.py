@@ -1,25 +1,43 @@
 import os
-import threading
 
 import numpy as np
 import pandas as pd
+import qtrangeslider
 import tifffile as tiff
-from numpy.typing import NDArray
-from PyQt6.QtCore import QEvent, QTimer
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QColor, QImage
+from PyQt6.QtWidgets import (
+    QDialog,
+    QDialogButtonBox,
+    QFileDialog,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QSlider,
+    QSplitter,
+    QVBoxLayout,
+    QWidget,
+)
 
 from controller import Controller
-from core.canvas import ImageWrapper
-from utils import auto_contrast_helper
+from utils import auto_contrast_helper, create_lut, scale_adjust
 
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 import os
 
 import cv2
-from numba import njit
 from PIL import Image
-from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
 from core import Worker
+from ui.analysis.graphing.UMAPPlot import UMAPVisualizer
 
 Image.MAX_IMAGE_PIXELS = None
 
@@ -58,14 +76,33 @@ color_dict = {
 }
 
 
+def create_contrast_lut(min_val, max_val):
+    """Creates a Look-Up Table for contrast adjustment."""
+    if min_val >= max_val:
+        return np.zeros(256, dtype=np.uint8)
+
+    lut = np.zeros(256, dtype=np.uint8)
+    lut[min_val : max_val + 1] = np.linspace(
+        start=0,
+        stop=255,
+        num=(max_val - min_val + 1),
+        endpoint=True,
+        dtype=np.uint8,
+    )
+    lut[max_val + 1 :] = 255
+    return lut
+
+
 class ControlsBox:
     def __init__(self):
         self.name = ""
         self.image = np.array([[]])
         self.q_image = None
+        self.cell_image = np.array([[]])
+        self.contrast_cache = {}
 
-        self.current_opacity = 1.0
-        self.current_contrast = 1.0
+        self.current_opacity = 100.0
+        self.current_contrast = [0, 255]
         self.current_visibility = True
         self.current_tint = QColor(255, 255, 255)
 
@@ -82,108 +119,86 @@ class ControlsBox:
 
 import time
 
+# def write_protein(protein_data, reduced_cell_img):
+#     t = time.time()
+#     print(protein_data)
+#     cnv = write_protein_sub(protein_data, reduced_cell_img)
+#     print(time.time() - t)
 
+#     return cnv
+
+
+# @njit(cache=True)
+# def write_protein_sub(protein_data=np.array([]), reduced_cell_img=np.array([[]])):
+#     # Copy the image
+#     cnv = reduced_cell_img.copy()
+
+#     # Extract protein data, winsorize, and rescale
+#     protein_1 = protein_data
+#     lower, upper = np.percentile(protein_1, [0, 100])
+#     protein_1 = np.clip(protein_1, lower, upper)
+#     # protein_1 = 60 + (protein_1 - lower) * (255 - 60) / (upper - lower)
+
+#     for i in range(cnv.shape[0]):
+#         for j in range(cnv.shape[1]):
+#             id = reduced_cell_img[i, j]
+#             if id > 0 and id <= len(protein_1):
+#                 cnv[i, j] = protein_1[id - 1]
+
+
+# return cnv
 def write_protein(protein_data, reduced_cell_img):
-    t = time.time()
-    print(protein_data)
-    cnv = write_protein_sub(protein_data, reduced_cell_img)
-    print(time.time() - t)
-
-    return cnv
-
-
-@njit(cache=True)
-def write_protein_sub(protein_data=np.array([]), reduced_cell_img=np.array([[]])):
-    # Copy the image
-    cnv = reduced_cell_img.copy()
-
-    # Extract protein data, winsorize, and rescale
-    protein_1 = protein_data
-    lower, upper = np.percentile(protein_1, [0, 100])
-    protein_1 = np.clip(protein_1, lower, upper)
-    # protein_1 = 60 + (protein_1 - lower) * (255 - 60) / (upper - lower)
-
-    for i in range(cnv.shape[0]):
-        for j in range(cnv.shape[1]):
-            id = reduced_cell_img[i, j]
-            if id > 0 and id <= len(protein_1):
-                cnv[i, j] = protein_1[id - 1]
-
-    return cnv
-
-
-def precompile_jit():
-    """Precompile the function in the background."""
-
-    # Dummy protein data: Random values between 0 and 255
-    dummy_protein_data = np.random.randint(0, 256, size=100, dtype=np.uint8)
-
-    # Dummy reduced cell image: A 10x10 grid with random cell IDs
-    dummy_reduced_cell_img = np.random.randint(0, 101, size=(10, 10), dtype=np.uint8)
-
-    write_protein(dummy_protein_data, dummy_reduced_cell_img)
-
-
-def tint_grayscale_image(grayscale_image, color):
     """
-    Tint a grayscale image with an arbitrary color.
+    Generates a protein intensity image using vectorized numpy indexing.
+    Intensity is scaled absolutely based on a 16-bit range (0-65535).
 
-    Parameters:
-    grayscale_image (numpy array): The input grayscale image array with shape (height, width).
-    color (tuple): The RGB color to use for tinting (R, G, B).
+    Args:
+        protein_data (np.ndarray): 1D array of intensity values for each cell.
+        reduced_cell_img (np.ndarray): 2D array where pixel values are cell IDs (integers).
 
     Returns:
-    numpy array: The tinted image with shape (height, width, 3).
+        np.ndarray: 2D array representing the protein intensity image.
     """
-    # Ensure the grayscale image is a 2D array
-    if len(grayscale_image.shape) != 2:
-        raise ValueError(
-            "Input image must be a 2D array representing a grayscale image."
-        )
+    # Ensure protein_data is a numpy array
+    if not isinstance(protein_data, np.ndarray):
+        protein_data = np.array(protein_data, dtype=np.float32)
+    else:
+        # Ensure float for division
+        protein_data = protein_data.astype(np.float32)
 
-    # Normalize the grayscale image to the range [0, 1]
-    grayscale_image_normalized = grayscale_image / 255.0
+    # Scale data relative to the max value of uint16 (65535).
+    # This provides a consistent, absolute scaling across all proteins.
+    scaled_data = (protein_data / 65535.0 * 255.0).astype(np.float32)
 
-    # Create an empty array with shape (height, width, 3) for the colored image
-    tinted_image = np.zeros(
-        (grayscale_image.shape[0], grayscale_image.shape[1], 3), dtype=np.uint8
-    )
+    # Replace any NaN or inf values before casting to integer type.
+    # NaNs are converted to 0, which is appropriate for missing data.
+    safe_data = np.nan_to_num(scaled_data)
 
-    # Apply the color tint
-    tinted_image = (grayscale_image_normalized[..., None] * np.array(color)).astype(
-        np.uint8
-    )
+    # Clip values to ensure they are in the 0-65535 range and convert to uint8
+    normalized_data = np.clip(safe_data, 0, 255).astype(np.uint8)
+    # normalized_data[normalized_data==0] = np.nan
 
-    return tinted_image
+    # Create a lookup table (LUT) for protein intensities.
+    # The +1 is for the background (cell ID 0), which will have an intensity of 0.
+    num_cells = len(normalized_data)
+    intensity_lut = np.zeros(num_cells + 1, dtype=np.uint8)
+    cell_data_image = np.zeros(num_cells + 1, dtype=np.uint16)
+    # intensity_lut.fill(np.nan)
 
+    # Cell ID 1 maps to index 0 in protein_data, so it goes into index 1 of our LUT.
+    intensity_lut[1:] = normalized_data
+    cell_data_image[1:] = protein_data
 
-import os
+    # Use the cell ID image to index into the LUT to create the final image.
+    protein_image = intensity_lut[reduced_cell_img]
+    cell_image = cell_data_image[reduced_cell_img]
 
-import numpy as np
-import qtrangeslider
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QImage, QPixmap
-from PyQt6.QtWidgets import (
-    QDialog,
-    QDialogButtonBox,
-    QFormLayout,
-    QGroupBox,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QListWidget,
-    QListWidgetItem,
-    QPushButton,
-    QScrollArea,
-    QSizePolicy,
-    QSlider,
-    QVBoxLayout,
-    QWidget,
-)
+    # protein_image[protein_image==0] = np.nan
+
+    return protein_image, cell_image
 
 
 def scale_image_to_255(image_array):
-
     try:
         if image_array.dtype == np.uint8:
             return image_array
@@ -279,27 +294,35 @@ class ColorDialog(QDialog):
 
 
 # changes made
-def adjust_contrast(img, min=5, max=100):
-    # pixvals = np.array(img)
-    minval = np.percentile(img, min)  # room for experimentation
-    maxval = np.percentile(img, max)  # room for experimentation
-    img = np.clip(img, minval, maxval)
-    img = ((img - minval) / (maxval - minval)) * 255
-    return img.astype(np.uint8)
+def adjust_contrast(image, min=5, max=100):
+    t0 = time.perf_counter()
 
+    image = scale_adjust(image)
+    t1 = time.perf_counter()
+    print(f"Time for scale_adjust: {t1 - t0:.6f} sec")
 
-from PyQt6.QtWidgets import (
-    QGraphicsItem,
-    QGraphicsPixmapItem,
-    QGraphicsScene,
-    QGraphicsView,
-    QRubberBand,
-)
+    lut = create_lut(min, max)
+    t2 = time.perf_counter()
+    print(f"Time for create_lut: {t2 - t1:.6f} sec")
+
+    res = np.clip(cv2.LUT(image, lut), 0, 254, dtype=np.uint8)
+    t3 = time.perf_counter()
+    print(f"Time for LUT application: {t3 - t2:.6f} sec")
+
+    print(f"Total adjust_contrast time: {t3 - t0:.6f} sec")
+    return res
 
 
 class ImageOverlay(QWidget):
-    change_pix = pyqtSignal(QPixmap, bool)
+    update_contrast_sig = pyqtSignal(int, tuple)
+    export_png_sig = pyqtSignal(int)
+    export_tif_sig = pyqtSignal(int)
+    update_layer_cmap_sig = pyqtSignal(int, np.ndarray)
+    update_layer_opacity_sig = pyqtSignal(int, float)
+    update_layer_visible_sig = pyqtSignal(int, bool)
+    change_pix = pyqtSignal(np.ndarray, int)
     progress = pyqtSignal(int, str)
+    reset_view_tab = pyqtSignal()
 
     def __init__(self, pixmap_label, enc):
         super().__init__()
@@ -326,17 +349,14 @@ class ImageOverlay(QWidget):
         o_timer.setInterval(300)
         o_timer.setSingleShot(True)
         self.opacity_timer = o_timer
-        c_timer = QTimer()
-        c_timer.setInterval(300)
-        c_timer.setSingleShot(True)
-        self.contrast_timer = c_timer
         self.contrast_sliders = []
+        self.tint_lut_cache = {}
         # Connect timer to the actual work
         self.grayscale = True
         self.initUI()
         self.pending_contrast_idx = 0
         self.contrast_timer = QTimer()
-        self.contrast_timer.setInterval(300)  # 300 ms of no movement triggers update
+        self.contrast_timer.setInterval(10)  # 300 ms of no movement triggers update
         self.contrast_timer.setSingleShot(True)
 
     def load_stardist_image(self):
@@ -380,41 +400,47 @@ class ImageOverlay(QWidget):
         self.loaded_df = df
         return df
 
+    def get_df(self):
+        if self.loaded_df is None:
+            raise ValueError("Need to load DF in view tab.")
+        return self.loaded_df
+
     def generate_image(self, index):
-
-        # protein_name = self.df.columns[3 + index]
-        # im = write_protein(np.array(self.df[protein_name]), np.array(self.reduced_cell_img))
-        # im = adjust_contrast(im)
-        # return tint_grayscale_image(im, [255, 255, 255])
-
-        start = time.perf_counter()
         if self.reduced_cell_img.size == 0:
             raise ValueError("Please load an image first.")
-
         if self.df is None:
-            self.load_df()
-            print("Automatically loaded df from", self.df_path)
-        assert self.df is not None
+            raise ValueError("Dataframe not processed. Please click 'Apply' first.")
 
-        protein_name = self.df.columns[3 + index]
-        print(
-            f"Time after fetching protein name: {time.perf_counter() - start:.6f} sec"
-        )
+        # Get the name of the protein to generate from the layers list
+        protein_name = self.layers[index]["name"]
 
-        im = write_protein(
-            np.array(self.df[protein_name]), np.array(self.reduced_cell_img)
-        )
-        print(f"Time after writing protein: {time.perf_counter() - start:.6f} sec")
+        # The dataframe is now indexed by CellID.
+        # We need to construct a 1D array that can be used as a LUT for write_protein.
+        # The LUT must be indexed from 0 to max_cell_id.
+        max_id_in_image = self.reduced_cell_img.max()
 
-        im = adjust_contrast(im)
-        print(f"Time after adjusting contrast: {time.perf_counter() - start:.6f} sec")
+        # Get the sparse series of intensities for the current protein
+        protein_series = self.df[protein_name]
 
-        result = tint_grayscale_image(im, [255, 255, 255])
-        print(
-            f"Time after tinting grayscale image: {time.perf_counter() - start:.6f} sec"
-        )
+        # Create a dense array for the LUT, with 0 for cells not in the data
+        # The +1 is because cell IDs are 1-based.
+        lut_data = np.zeros(max_id_in_image + 1)
 
-        return result
+        # Place the protein intensities at the correct index (cell ID)
+        # This handles cases where the df doesn't contain all cell IDs present in the image
+        valid_indices = protein_series.index[protein_series.index <= max_id_in_image]
+        lut_data[valid_indices] = protein_series.loc[valid_indices].values
+
+        # The vectorized write_protein function expects a simple 0-indexed array
+        # corresponding to cell IDs 1, 2, 3...
+        # So we pass the LUT data, but skip the 0th element.
+        im, cell_data = write_protein(lut_data[1:], self.reduced_cell_img)
+
+        # The call to adjust_contrast is removed to show the absolute scaled intensity initially.
+        # User can adjust contrast manually with the layer slider.
+        # result = tint_grayscale_image(im, [255, 255, 255])
+
+        return im, cell_data
 
     def build_all(self):
         if not self.controller:
@@ -423,7 +449,6 @@ class ImageOverlay(QWidget):
         import time
 
         if not hasattr(self, "im_path"):
-
             import ui.app
 
             QMessageBox.critical(
@@ -432,7 +457,6 @@ class ImageOverlay(QWidget):
             return
 
         if not hasattr(self, "df_path"):
-
             import ui.app
 
             QMessageBox.critical(
@@ -440,72 +464,104 @@ class ImageOverlay(QWidget):
             )
             return
 
-        # Start compilation in a background thread
-
         start = time.time()
-        self.progress.emit(15, "Compiling `write_protein`function...")
+        self.progress.emit(10, "Loading images and data...")
 
-        threading.Thread(target=precompile_jit, daemon=True).start()
-
-        reduced_cell_img = (self.load_stardist_image()).astype(np.uint16)
-        self.reduced_cell_img = reduced_cell_img
+        self.reduced_cell_img = self.load_stardist_image()
 
         df = self.loaded_df
         if df is None:
+            # This should have been loaded by the user action before build_all is called
             return
-        self.df = df
+
+        self.progress.emit(30, "Associating cells with data...")
+        # --- NEW: Associate DF with Cell IDs ---
+        if "CellID" not in df.columns:  # Perform this expensive operation only once
+            scale_factor = 1 / self.scale_down.value()
+
+            # Vectorized coordinate scaling
+            scaled_x = (df["Global X"] * scale_factor).astype(int)
+            scaled_y = (df["Global Y"] * scale_factor).astype(int)
+
+            # Clip coordinates to be within image bounds
+            h, w = self.reduced_cell_img.shape
+            scaled_x = np.clip(scaled_x, 0, w - 1)
+            scaled_y = np.clip(scaled_y, 0, h - 1)
+
+            # Look up all cell IDs at once using vectorized indexing
+            cell_ids = self.reduced_cell_img[scaled_y, scaled_x]
+            df["CellID"] = cell_ids
+
+        # Filter out rows that are in the background (don't map to a cell)
+        df = df[df["CellID"] > 0].copy()
+
+        # Set CellID as the index for fast lookups later
+        self.df = df.set_index("CellID")
+        # --- END NEW ---
+
+        self.progress.emit(70, "Preparing layers...")
+
+        # Get protein names (assuming they are all columns after the first few)
+        protein_columns = self.loaded_df.columns.drop(
+            ["Global X", "Global Y", "CellID"], errors="ignore"
+        )
+        protein_names = [col for col in protein_columns if col in self.df.columns]
+
+        # Prepare layer structure, but don't generate images yet (on-demand is fast now)
+        self.ims = [None for _ in protein_names]
+        self.layers = [{"name": name, "image": None} for name in protein_names]
+
         end = time.time()
-
-        print("TOTAL TIME ", end - start)
-        # self.progress.emit(35, "Loaded Stardist image")
-        print(" df loaded")
-        # self.progress.emit(75, "Loaded Dataframe")
-
-        ims = [None for i in range(len(df.columns[3:]))]
-
-        # self.progress.emit(70, "Images generated")
-        layer_names = list(df.columns[3:])
-
-        self.progress.emit(96, "Almost complete...")
-
-        print("df", df)
-
-        self.ims = ims  # List of images as np.arrays
-        self.color_dict = color_dict  # Dictionary of color names to RGB values
-
-        self.layers = [
-            {"name": layer_names[i], "image": ims[i]} for i in range(len(ims))
-        ]
+        print(f"Build time: {end - start:.2f} seconds")
         self.progress.emit(100, "Done")
 
+        # Update UI
         self.scroll_area.setVisible(True)
-
         self.add_layer_button.setVisible(True)
         self.add_other_image_button.setVisible(True)
         self.open_image.setVisible(False)
         self.open_image_label.setVisible(False)
         self.open_df.setVisible(False)
         self.open_df_label.setVisible(False)
-
         self.scale_down_label.setVisible(False)
         self.scale_down.setVisible(False)
-
-        # self.todo_label.setVisible(False)
-
         self.apply_button.setVisible(False)
         self.cancel_reset.setVisible(True)
         self.export_tif_button.setVisible(True)
         self.export_png_button.setVisible(True)
+        self.umap_button.setVisible(True)
+        self.splitter.setStretchFactor(0, 1)  # Give more space to the layer list
+        self.splitter.setStretchFactor(1, 0)  # Give more space to the layer list
 
-        return (ims, layer_names)
+        return (self.ims, protein_names)
 
+    def open_umap_analysis(self):
+        if not hasattr(self, "df") or self.df is None:
+            QMessageBox.critical(
+                self, "Error", "Data not processed. Please click 'Apply' first."
+            )
+            return
+
+        # Prepare data for UMAP
+        # self.df has CellID as index. Reset it and rename to "Cell ID" as expected by DataModel
+        df_for_umap = self.df.reset_index().rename(columns={"CellID": "Cell ID"})
+
+        # Instantiate and show UMAP window
+        # We keep a reference to avoid garbage collection
+        self.umap_window = UMAPVisualizer(df_for_umap, self.reduced_cell_img)
+        self.umap_window.show()
+
+    # can probably be optimized by having just one array with all names and values, and then filtering out invisible ones
+    # avoids looping through self.controls
     def get_layer_values_at(self, x, y):
         if len(self.controls) == 0:
             return None
 
         layer_values = []
         for c in self.controls:
-            value = c.image[y, x]
+            if c.current_visibility == False:
+                continue
+            value = c.cell_image[y, x]
             layer_values.append((c.name, value))
 
         return layer_values
@@ -547,6 +603,8 @@ class ImageOverlay(QWidget):
             self.add_other_image_button.setVisible(False)
             self.export_tif_button.setVisible(False)
             self.export_png_button.setVisible(False)
+            self.umap_button.setVisible(False)
+        self.reset_view_tab.emit()
 
     def initUI(self):
         main_layout = QVBoxLayout()
@@ -573,77 +631,87 @@ class ImageOverlay(QWidget):
         self.scroll_content.setLayout(self.scroll_layout)
         self.scroll_area.setWidget(self.scroll_content)
 
-        main_layout.addWidget(self.scroll_area)
-        main_layout.setStretch(0, 1)  # Make the scroll area take up available space
+        # Create a splitter to separate layers from controls
+        self.splitter = QSplitter(Qt.Orientation.Vertical)
+        self.splitter.addWidget(self.scroll_area)
 
+        # Create a container for the bottom controls
+        bottom_controls_widget = QWidget()
+        bottom_controls_layout = QVBoxLayout(bottom_controls_widget)
+
+        self.splitter.addWidget(bottom_controls_widget)
+
+        # Add splitter to the main layout
+        main_layout.addWidget(self.splitter)
+
+        # Set initial sizes for the splitter (optional, but good for default view)
+        # This gives more space to the layer list initially
+        self.splitter.setStretchFactor(0, 1)
+        self.splitter.setStretchFactor(1, 1)
+
+        # --- Add all controls to the bottom layout ---
         self.add_layer_button = QPushButton("Add Layer")
         self.add_layer_button.clicked.connect(self.show_layer_dialog)
-        main_layout.addWidget(self.add_layer_button)
+        bottom_controls_layout.addWidget(self.add_layer_button)
         self.add_layer_button.setVisible(False)
 
         self.add_other_image_button = QPushButton("Add Other Image")
         self.add_other_image_button.clicked.connect(self.open_other_image)
-        main_layout.addWidget(self.add_other_image_button)
+        bottom_controls_layout.addWidget(self.add_other_image_button)
         self.add_other_image_button.setVisible(False)
 
         self.cancel_reset = QPushButton("Cancel And Upload New")
         self.cancel_reset.clicked.connect(self.cancel_reset_first)
-        main_layout.addWidget(self.cancel_reset)
+        bottom_controls_layout.addWidget(self.cancel_reset)
         self.cancel_reset.setVisible(False)
 
         self.open_image = QPushButton("Open Image")
         self.open_image.clicked.connect(self.load_image)
-        main_layout.addWidget(self.open_image)
+        bottom_controls_layout.addWidget(self.open_image)
 
         self.open_image_label = QLabel("Path: ")
         self.open_image_label.setVisible(False)
-        main_layout.addWidget(self.open_image_label)
+        bottom_controls_layout.addWidget(self.open_image_label)
 
         self.open_df = QPushButton("Open Cell Data")
         self.open_df.clicked.connect(self.load_df)
-        main_layout.addWidget(self.open_df)
+        bottom_controls_layout.addWidget(self.open_df)
 
         self.open_df_label = QLabel("Path: ")
         self.open_df_label.setVisible(False)
-        main_layout.addWidget(self.open_df_label)
+        bottom_controls_layout.addWidget(self.open_df_label)
 
-        ### scale slider
-        self.scale_down_label = QLabel("Scale Down Factor: ")
-        main_layout.addWidget(self.scale_down_label)
-
-        self.scale_down = QSlider(Qt.Orientation.Horizontal)
-        self.scale_down.setTickPosition(QSlider.TickPosition.TicksAbove)
-        self.scale_down.valueChanged.connect(self.scale_slider_update)
-
-        self.scale_down.setRange(1, 10)
-        self.scale_down.setValue(4)
-
-        main_layout.addWidget(self.scale_down)
         ### scale slider
 
         self.apply_button = QPushButton("Apply")
         self.apply_button.clicked.connect(self.start_build_all_worker)
-        main_layout.addWidget(self.apply_button)
+        bottom_controls_layout.addWidget(self.apply_button)
 
         self.export_tif_button = QPushButton("Export to TIF")
         self.export_tif_button.clicked.connect(self.export_to_tif)
         self.export_tif_button.setVisible(False)
-        main_layout.addWidget(self.export_tif_button)
+        bottom_controls_layout.addWidget(self.export_tif_button)
 
         self.export_png_button = QPushButton("Export to PNG")
         self.export_png_button.clicked.connect(self.export_to_png)
         self.export_png_button.setVisible(False)
-        main_layout.addWidget(self.export_png_button)
+        bottom_controls_layout.addWidget(self.export_png_button)
+
+        self.umap_button = QPushButton("UMAP Analysis")
+        self.umap_button.clicked.connect(self.open_umap_analysis)
+        self.umap_button.setVisible(False)
+        bottom_controls_layout.addWidget(self.umap_button)
 
         # Add a spacer to ensure content can scroll all the way down
-        main_layout.addStretch(1)  # Add stretch at the end to push content up
+        bottom_controls_layout.addStretch(
+            1
+        )  # Add stretch at the end to push content up
 
         self.setLayout(main_layout)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.process_images()
 
     def open_other_image(self):
-
         file_name, _ = QFileDialog.getOpenFileName(
             None,
             "Open Image File",
@@ -669,7 +737,7 @@ class ImageOverlay(QWidget):
 
             if len(reduced_cell_img.shape) == 2:
                 reduced_cell_img = np.stack((reduced_cell_img,) * 3, axis=-1)
-            c.image = reduced_cell_img
+            c.image = reduced_cell_img.copy()
             c.name = os.path.basename(file_name)
             c.tint_yn = False
             self.add_layer(c)
@@ -683,7 +751,7 @@ class ImageOverlay(QWidget):
 
     def scale_slider_update(self, value):
         if value == 1:
-            self.scale_down_label.setText(f"Scale Down Factor: original size")
+            self.scale_down_label.setText("Scale Down Factor: original size")
             return
         self.scale_down_label.setText(f"Scale Down Factor: 1/{value} of original size")
 
@@ -694,8 +762,6 @@ class ImageOverlay(QWidget):
         return string
 
     def load_image(self):
-        # print("Yo")
-
         file_name, _ = QFileDialog.getOpenFileName(
             None,
             "Open Image File",
@@ -728,7 +794,6 @@ class ImageOverlay(QWidget):
 
     def show_layer_dialog(self):
         if not hasattr(self, "layers"):
-
             import ui.app
 
             QMessageBox.critical(
@@ -752,38 +817,50 @@ class ImageOverlay(QWidget):
 
                 try:
                     if self.layers[selected_index]["image"] == None:
-                        self.layers[selected_index]["image"] = self.generate_image(
-                            selected_index
-                        )
+                        (
+                            self.layers[selected_index]["image"],
+                            self.layers[selected_index]["cell_data"],
+                        ) = self.generate_image(selected_index)
                 except:
                     pass
-
-                c.image = self.layers[selected_index]["image"]
+                reduced_cell_img = np.array(self.layers[selected_index]["image"])
+                print(
+                    reduced_cell_img.min(),
+                    reduced_cell_img.max(),
+                    reduced_cell_img.dtype,
+                )
+                # reduced_cellImg = reduced_cell_img/255.0
+                c.image = reduced_cell_img.copy()
+                c.cell_image = np.array(self.layers[selected_index]["cell_data"])
                 c.name = self.layers[selected_index]["name"]
 
                 self.add_layer(c)
 
-    def show_color_dialog(self, idx):
-        dialog = ColorDialog(self.color_dict, self)
+    def show_color_dialog(self, gb):
+        idx = self.scroll_layout.indexOf(gb)
+        dialog = ColorDialog(color_dict, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             selected_color_name = dialog.get_selected_color_name()
             if selected_color_name:
-                selected_color = self.color_dict[selected_color_name]
-                self.controls[idx].current_tint = QColor(*selected_color)
+                selected_color = color_dict[selected_color_name]
+                selected_color = QColor(*selected_color)
                 self.controls[idx].tint_label.setText(selected_color_name)
-                self.process_images()
+                self.update_layer_cmap_sig.emit(
+                    idx, np.array(self.get_lut(selected_color))
+                )
 
     def add_layer(self, c):
         self.controls.append(c)
         self.add_layer_controls(c)
-        self.process_images()
+        self.change_pix.emit(c.image, len(self.controls) - 1)
 
     def update_current_image(self, image):
         last_index = len(self.controls) - 1
-        self.controls[last_index].image = image
+        self.controls[last_index].image = image.copy()
         self.process_images()
 
-    def delete_layer(self, index):
+    def delete_layer(self, gb):
+        index = self.scroll_layout.indexOf(gb)
         c = self.controls.pop(index)
         self.contrast_sliders.pop(index)
 
@@ -792,19 +869,10 @@ class ImageOverlay(QWidget):
         layer.deleteLater()
         layer = None
 
+        for i, control in enumerate(self.controls):
+            control.layout.setTitle(f"Layer {i + 1}: {control.name}")
         self.process_images()
-
-        if len(self.controls) == 0:
-            combined_image = np.zeros((10, 10, 10))
-
-            height, width, _ = combined_image.shape
-            bytes_per_line = 3
-
-            q_image = QImage(
-                combined_image.tobytes(), width, height, QImage.Format.Format_RGB888
-            )  # interesting image.tobytes() works well, maybe you don't need to do
-            q_pixmap = QPixmap(q_image)
-            self.change_pix.emit(q_pixmap, True)
+        self.change_pix.emit(np.ndarray(0), index)
 
     def restart_contrast_timer(self):
         if self.contrast_timer.isActive():
@@ -818,38 +886,55 @@ class ImageOverlay(QWidget):
         group_box.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
         )
+        group_box.setAlignment(Qt.AlignmentFlag.AlignBaseline)
 
         group_layout = QFormLayout()
         group_layout.setSpacing(8)  # Add spacing between form rows
         auto_contrast_button = QPushButton("Auto Contrast")
-        auto_contrast_button.clicked.connect(lambda: self.auto_contrast(idx))
+
+        auto_contrast_button.clicked.connect(
+            lambda _, gb=group_box: self.auto_contrast(gb)
+        )
+
         opacity_slider = QSlider(Qt.Orientation.Horizontal)
-        opacity_slider.setMinimum(0)
+        opacity_slider.setMinimumWidth(300)
         opacity_slider.setMaximum(100)
         opacity_slider.setValue(100)
-        opacity_slider.sliderReleased.connect(
-            lambda: self.update_opacity(opacity_slider.value(), idx)
+        # opacity_slider.sliderReleased.connect(
+        #     lambda: self.update_opacity(opacity_slider.value(), idx)
+        # )
+        opacity_slider.valueChanged.connect(
+            lambda s, gb=group_box: self.update_opacity(s, gb)
         )
-        self.opacity_timer.timeout.connect(
-            lambda: self.update_opacity(opacity_slider.value(), idx)
-        )
+        # self.opacity_timer.timeout.connect(
+        #     lambda: self.update_opacity(opacity_slider.value(), idx)
+        # )
         group_layout.addRow("Opacity:", opacity_slider)
 
         # --- Existing Contrast Slider ---
         contrast_slider = qtrangeslider.QLabeledDoubleRangeSlider(
             Qt.Orientation.Horizontal
         )
-        contrast_slider.valueChanged.connect(lambda _: self.restart_contrast_timer())
+        contrast_slider.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
+        contrast_slider.setMinimumWidth(300)
+        # contrast_slider.valueChanged.connect(lambda _: self.restart_contrast_timer())
 
-        self.contrast_timer.timeout.connect(lambda: self.set_contrast_from_slider(idx))
+        # self.contrast_timer.timeout.connect(lambda: self.set_contrast_from_slider(idx))
+        contrast_slider.valueChanged.connect(
+            lambda s, gb=group_box: self.set_contrast_from_slider(s, gb)
+        )
 
         contrast_slider.setMaximum(255)
         contrast_slider.setValue((0, 255))
         contrast_slider.setDecimals(0)
         self.contrast_sliders.append(contrast_slider)
-        contrast_slider.installEventFilter(self)
+        # contrast_slider.installEventFilter(self)
 
-        group_layout.addRow("Contrast:", contrast_slider)
+        contrast_label = QLabel("Contrast:")
+        contrast_label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        group_layout.addRow(contrast_label, contrast_slider)
 
         # --- New: Numeric Inputs for Min/Max ---
         min_input = QLineEdit()
@@ -873,6 +958,7 @@ class ImageOverlay(QWidget):
 
         # --- Button Logic ---
         def apply_contrast_values():
+            idx = self.scroll_layout.indexOf(group_box)
             try:
                 min_val = int(min_input.text())
                 max_val = int(max_input.text())
@@ -890,14 +976,18 @@ class ImageOverlay(QWidget):
         visibility_button = QPushButton("Toggle Visibility")
         visibility_button.setCheckable(True)
         visibility_button.setChecked(True)
+        # visibility_button.toggled.connect(
+        #     lambda checked: self.update_visibility(checked, idx)
+        # )
         visibility_button.toggled.connect(
-            lambda checked: self.update_visibility(checked, idx)
+            lambda checked, gb=group_box: self.update_visibility(checked, gb)
         )
         # self.visibility_buttons.append(visibility_button)
         group_layout.addRow("Visibility:", visibility_button)
 
         color_button = QPushButton("Select Tint Color")
-        color_button.clicked.connect(lambda: self.show_color_dialog(idx))
+        color_button.clicked.connect(lambda _, gb=group_box: self.show_color_dialog(gb))
+        # color_button.clicked.connect(lambda: self.show_color_dialog(idx))
         # self.color_tints.append(color_button)
         color_label = QLabel("None")
 
@@ -907,7 +997,8 @@ class ImageOverlay(QWidget):
         group_layout.addRow("Tint Color:", color_layout)
 
         delete_button = QPushButton("Delete Layer")
-        delete_button.clicked.connect(lambda: self.delete_layer(len(self.controls) - 1))
+        # delete_button.clicked.connect(lambda: self.delete_layer(idx))
+        delete_button.clicked.connect(lambda _, gb=group_box: self.delete_layer(gb))
         # self.visibility_buttons.append(delete_button)
         group_layout.addRow("", delete_button)
 
@@ -919,190 +1010,165 @@ class ImageOverlay(QWidget):
         self.controls[idx].layout = group_box
         self.scroll_layout.addWidget(group_box)
 
-    def set_contrast_from_slider(self, idx):
-        min_val, max_val = self.contrast_sliders[idx].value()
+    def set_contrast_from_slider(self, value, gb):
+        min_val, max_val = value
+        idx = self.scroll_layout.indexOf(gb)
         self.update_contrast((min_val, max_val), idx)
 
-    def eventFilter(self, source, event):
-        if isinstance(source, qtrangeslider.QLabeledDoubleRangeSlider):
-            if event.type() == QEvent.Type.MouseButtonRelease:
-                for idx, slider in enumerate(self.contrast_sliders):
-                    if slider is source:
-                        self.set_contrast_from_slider(idx)
-                        break
-        return super().eventFilter(source, event)
-
-    def update_opacity(self, value, idx):
+    def update_opacity(self, value, gb):
+        idx = self.scroll_layout.indexOf(gb)
         self.controls[idx].current_opacity = value / 100.0
+        self.update_layer_opacity_sig.emit(idx, self.controls[idx].current_opacity)
 
-        # self.current_opacities[idx] = value / 100.0
+    def update_layer_display(self, idx):
+        # t0 = time.perf_counter()
 
-        self.process_images()
+        c = self.controls[idx]
+        contrast_key = tuple(c.current_contrast)
+        min, max = contrast_key
+        min /= 255.0
+        max /= 255.0
+        self.update_contrast_sig.emit(idx, contrast_key)
 
     def update_contrast(self, value, idx):
+        if idx == -1:
+            return
         value = [int(value[0]), int(value[1])]
         self.controls[idx].current_contrast = value
+        self.update_layer_display(idx)
         self.process_images()
 
-    def auto_contrast(self, idx, lower=0.1, upper=0.9):
+    def auto_contrast(self, gb, lower=0.1, upper=0.9):
+        idx = self.scroll_layout.indexOf(gb)
         img = self.controls[idx].image
         assert isinstance(img, np.ndarray)
         new_min, new_max = auto_contrast_helper(img, lower, upper)
         self.contrast_sliders[idx].setValue((int(new_min), int(new_max)))
         self.update_contrast([new_min, new_max], idx)
 
-    def update_visibility(self, checked, idx):
-
+    def update_visibility(self, checked, gb):
+        idx = self.scroll_layout.indexOf(gb)
         self.controls[idx].current_visibility = checked
-        self.process_images()
+        self.update_layer_visible_sig.emit(idx, checked)
 
-    def apply_tint(self, img, color):
-        if color is None:
-            return img
-        if len(img.shape) == 2:
-            img = np.stack((img,) * 3, axis=-1)
-        factor = np.array(color.getRgb()[:3]) / 255.0
-        return (img * factor).astype(np.uint8)
+    def get_lut(self, color: QColor):
+        color_name = color.name()
+        if color_name in self.tint_lut_cache:
+            return self.tint_lut_cache[color_name]
+
+        # Ramp from 0..255 normalized to [0,1]
+        ramp = np.linspace(0, 1, 256)[:, None]  # shape (256, 1)
+
+        # Extract RGB values
+        r, g, b, _ = color.getRgb()  # returns (r,g,b,a)
+        rgb = np.array([r, g, b], dtype=np.float32)  # shape (3,)
+
+        # Multiply ramp with RGB to create LUT
+        lut = (ramp * rgb).astype(np.uint8)  # shape (256, 3)
+
+        # Cache and return
+        self.tint_lut_cache[color_name] = lut
+        return lut
 
     def adjust_contrast(self, img, min=5, max=100):
         # pixvals = np.array(img)
-        minval = np.percentile(img, min)  # room for experimentation
-        maxval = np.percentile(img, max)  # room for experimentation
-        img = np.clip(img, minval, maxval)
-        img = ((img - minval) / (maxval - minval)) * 255
-        return img.astype(np.uint8)
+        image = scale_adjust(img)
+        lut = create_lut(min, max)
+        res = np.clip(cv2.LUT(image, lut), 0, 254, dtype=np.uint8)
+        return res
 
     def contrasted_image(self, img, contrast):
         min_val, max_val = contrast
 
-        # Skip if contrast is full range
-        if min_val <= 0 and max_val >= 255:
-            return img.astype(np.float32)
-
-        if max_val == min_val:
-            return np.zeros_like(img, dtype=np.float32)  # avoid division by 0
-
-        img = np.clip(img, min_val, max_val)
-        img = ((img - min_val) / (max_val - min_val)) * 255
-        return img.astype(np.float32)
+        return adjust_contrast(img, min_val, max_val)
 
     def process_images(self, display=True):
-        if len(self.controls) == 0:
-            return
-        combined_image = np.zeros_like(self.controls[0].image, dtype=np.float32)
-        for c in self.controls:
-            visible = c.current_visibility
-            if visible:
-                img = c.image
-                opacity = c.current_opacity
-                contrast = c.current_contrast
-                tint = c.current_tint
-                adjusted_img = img
-                # adjusted_img = winsorize_array(adjusted_img, 0, 255)
-                if isinstance(contrast, list) and contrast != [0, 255]:
-                    adjusted_img = self.contrasted_image(adjusted_img, contrast)
-                if c.tint_yn and c.current_tint is not None:
-                    adjusted_img = self.apply_tint(adjusted_img, tint)
-                combined_image += adjusted_img * opacity
-        combined_image = np.clip(combined_image, 0, 255).astype(np.uint8)
-
-        # height, width, _ = combined_image.shape
-        # bytes_per_line = 3
-
-        q_image = numpy_to_qimage(combined_image)
-        q_pixmap = QPixmap(q_image)
-        # commented out
-        if display:
-            self.change_pix.emit(q_pixmap, True)
-        return combined_image
+        pass
 
     def export_to_png(self):
-        combined_image = self.process_images(False)
-        if combined_image is None:
-            return
-        file_name, _ = QFileDialog.getSaveFileName(
-            None, "Save PNG File", "protein_layers.png", "*.png;;All Files (*)"
-        )
-        if not file_name:
-            return
-        img = Image.fromarray(combined_image)
-        img.save(file_name)
+        self.export_png_sig.emit(len(self.controls))
 
     def export_to_tif(self):
-        if len(self.controls) == 0:
-            QMessageBox.warning(None, "Warning", "No layers to export")
-            return
-
-        file_name, _ = QFileDialog.getSaveFileName(
-            None, "Save TIF File", "protein_layers.tif", "*.tif;;All Files (*)"
+        """
+        Exports the current layers to a multi-channel TIFF file.
+        It applies the current contrast and opacity settings for each layer.
+        """
+        # 1. Prompt user for a save location
+        # Assumes 'self' is a QWidget or has access to one for the dialog parent.
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Save Multi-Channel TIFF", "", "TIFF Files (*.tif *.tiff)"
         )
 
-        if not file_name:
+        # Exit if the user cancelled the dialog
+        if not file_path:
+            print("Export cancelled.")
             return
 
-        # Create an array to hold all the protein layer images as grayscale
-        layers_data = []
-        layer_names = []
+        multi_channel_image = []
 
-        for i, c in enumerate(self.controls):
-            if c.current_visibility:  # Only export visible layers
-                img = c.image.copy()
+        for i in range(len(self.controls)):
+            # --- Get layer properties ---
+            control = self.controls[i]
+            opacity = control.current_opacity  # Expected: 0-100
+            contrast = control.current_contrast  # Expected: (min, max) tuple, 0-255
+            img = control.image  # Expected: uint16 NumPy array
 
-                # Get original protein data in grayscale
-                # If the image has 3 channels (RGB), convert to grayscale
-                if len(img.shape) == 3 and img.shape[2] == 3:
-                    img_gray = cv2.cvtColor(img.astype(np.uint8), cv2.COLOR_RGB2GRAY)
-                else:
-                    img_gray = img
-                assert isinstance(img_gray, np.ndarray)
-                # Apply contrast adjustment if needed
-                if (
-                    isinstance(c.current_contrast, list)
-                    and len(c.current_contrast) == 2
-                ):
-                    # Apply contrast stretching
-                    img_gray = self.contrasted_image(img_gray, c.current_contrast)
+            # Get image data type info (e.g., for uint16, max is 65535)
+            dtype_info = np.iinfo(img.dtype)
+            max_dtype_val = float(dtype_info.max)
 
-                final_img = img_gray.astype(np.float64) * c.current_opacity
+            # --- A. Adjust Contrast ---
+            # Convert image to float for calculations to avoid clipping/rounding errors
+            img_float = img.astype(np.float32)
 
-                # Ensure we have valid data range
-                final_img = np.clip(final_img, 0, 255)
-                # if c.tint_yn:
-                #     final_img = self.apply_tint(final_img, c.current_tint)
-                # Convert to uint8
-                final_img = final_img.astype(np.uint8)
+            # Scale the 0-255 contrast range to the image's native range (e.g., 0-65535)
+            c_min, c_max = contrast
+            min_val = (c_min / 255.0) * max_dtype_val
+            max_val = (c_max / 255.0) * max_dtype_val
 
-                # Add to our stack
-                layers_data.append(final_img)
-                layer_names.append(c.name)
+            # Apply the contrast adjustment (windowing/leveling)
+            # Handle the edge case where min and max are the same
+            if max_val <= min_val:
+                processed_float = np.where(img_float > min_val, max_dtype_val, 0.0)
+            else:
+                # Clip the data to the new min/max range
+                processed_float = np.clip(img_float, min_val, max_val)
+                # Scale the clipped data to the full 0.0 to max_dtype_val range
+                processed_float = (
+                    (processed_float - min_val) / (max_val - min_val) * max_dtype_val
+                )
 
-        if not layers_data:
-            QMessageBox.warning(None, "Warning", "No visible layers to export")
+            # --- B. Adjust Opacity ---
+            # Apply the opacity as a scaling factor
+            opacity_factor = opacity / 100.0
+            processed_float *= opacity_factor
+
+            # --- C. Finalize and Append ---
+            # Clip again to ensure values are valid, then convert back to original dtype
+            final_img = np.clip(processed_float, 0, max_dtype_val).astype(img.dtype)
+            multi_channel_image.append(final_img)
+
+        # 2. Save the result as a multi-channel TIFF
+        if not multi_channel_image:
+            print("No images to save.")
             return
 
-        # Stack all layers into a single 3D array (Z,Y,X) where Z is the protein layer
-        tif_data = np.stack(layers_data)
-
-        # Save as multi-layer TIF file
+        # multi_channel_image = np.array(multi_channel_image)
         try:
-            # Use tifffile to save with ImageJ compatibility
-            tiff.imwrite(file_name, tif_data.astype(np.uint8), imagej=True)
+            # Stack the list of 2D images into a single 3D array (C, H, W)
+            output_stack = np.stack(multi_channel_image, axis=0)
+            print(output_stack.shape)
 
-            # Save layer names to a text file
-            txt_file = os.path.splitext(file_name)[0] + "_protein_order.txt"
-            with open(txt_file, "w") as f:
-                for i, name in enumerate(layer_names):
-                    f.write(f"Layer {i+1}: {name}\n")
+            # Save the stack to the selected file path
+            tiff.imwrite(file_path, output_stack, imagej=True)
 
-            QMessageBox.information(
-                None,
-                "Success",
-                f"Multi-layered TIF file saved to {file_name}\n"
-                f"Each layer contains a separate protein in grayscale\n"
-                f"Protein order saved to {txt_file}",
+            print(
+                f"Successfully exported {len(multi_channel_image)} channels to: {file_path}"
             )
+
         except Exception as e:
-            QMessageBox.critical(None, "Error", f"Failed to save TIF file: {str(e)}")
+            print(f"Error saving TIFF file: {e}")
+            # Consider showing a QMessageBox to the user here for better UX
 
 
 def numpy_to_qimage(array):

@@ -8,14 +8,13 @@ import xml.etree.ElementTree as ET
 from collections import deque
 
 # Standard library imports
-from operator import is_
 from queue import Queue
 from typing import Dict, Optional, OrderedDict, Union
 
 import cv2
 import numpy as np
 import tifffile as tiff
-from cv2 import LUT, rotate
+from cv2 import LUT
 from matplotlib import colormaps
 
 # Third-party imports
@@ -29,7 +28,6 @@ from PyQt6.QtGui import (
     QDragEnterEvent,
     QDragMoveEvent,
     QDropEvent,
-    QImage,
     QPixmap,
 )
 from PyQt6.QtWidgets import (
@@ -54,10 +52,8 @@ from utils import (
     auto_contrast_helper,
     create_lut,
     numpy_to_qimage,
-    qimage_to_numpy,
     scale_adjust,
     to_pixmap,
-    to_uint8,
 )
 
 if typing.TYPE_CHECKING:
@@ -239,6 +235,40 @@ class ImageStorage:
     def __setitem__(self, image_id, data):
         self.add_data(str(image_id), data)
 
+    def get_reference_image(self):
+        with self._data_lock:
+            ref_uuid = self.image_list[str("reference_uuid")]
+            assert ref_uuid is not None
+            data = self.image_list.get(str(ref_uuid["value"]))
+            assert data is not None and "data" in data.keys(), "ref image is none"
+
+            return data["data"]
+
+    def get_canvas_image(self):
+        with self._data_lock:
+            canvas_uuid = self.image_list[str("canvas_uuid")]
+            assert canvas_uuid is not None
+            data = self.image_list.get(str(canvas_uuid["value"]))
+            assert data is not None and "data" in data.keys(), "canvas image is none"
+            return data["data"]
+
+    def get_reference_image(self):
+        with self._data_lock:
+            ref_uuid = self.image_list[str("reference_uuid")]
+            assert ref_uuid is not None
+            data = self.image_list.get(str(ref_uuid["value"]))
+            assert data is not None and "data" in data.keys(), "ref image is none"
+
+            return data["data"]
+
+    def get_canvas_image(self):
+        with self._data_lock:
+            canvas_uuid = self.image_list[str("canvas_uuid")]
+            assert canvas_uuid is not None
+            data = self.image_list.get(str(canvas_uuid["value"]))
+            assert data is not None and "data" in data.keys(), "canvas image is none"
+            return data["data"]
+
     def add_data(self, image_id, data):
         with self._data_lock:
             self.image_list[str(image_id)] = data
@@ -297,6 +327,17 @@ class ImageWrapper:
     def copy(self):
         arr = copy.copy(self.data)
         return ImageWrapper(data=arr, name=self.name, cmap=self.cmap)
+
+    def __copy__(self):
+        return self.copy()
+
+    def __deepcopy__(self, memo):
+        # Deep copy should also create a new numpy array
+        new_data = self.data.copy()
+        new_obj = ImageWrapper(new_data, name=self.name, cmap=self.cmap)
+        new_obj.contrast_min = self.contrast_min
+        new_obj.contrast_max = self.contrast_max
+        return new_obj
 
     def get_uint8_data(self):
         if self.data.dtype == np.uint8:
@@ -396,7 +437,7 @@ class BaseGraphicsView(QWidget):
 
                     yield image, valid_page_count
 
-                except Exception as e:
+                except Exception:
                     # print(f"Error reading page {i}: {e}")
                     continue
 
@@ -454,13 +495,15 @@ class BaseGraphicsView(QWidget):
         channel_one_image = np.array(0)
         working_channels = {}
         # Process pages one at a time using generator
-        for image, channel_num in self._read_tiff_pages(file_name):
-            channel_name = f"Channel {channel_num}"
-            image_adjusted = self._apply_contrast_adjustment(image, adjust_contrast)
-            working_channels[channel_name] = ImageWrapper(image_adjusted, channel_name)
-            self._update_progress(channel_num, self.num_channels)
         with self.queue_lock:
-            # print("File queue:", self.file_queue, "Current file:", file_name)
+            for image, channel_num in self._read_tiff_pages(file_name):
+                channel_name = f"Channel {channel_num}"
+                image_adjusted = self._apply_contrast_adjustment(image, adjust_contrast)
+                working_channels[channel_name] = ImageWrapper(
+                    image_adjusted, channel_name
+                )
+                self._update_progress(channel_num, self.num_channels)
+                # print("File queue:", self.file_queue, "Current file:", file_name)
             if self.file_queue and self.file_queue[-1] == file_name:
                 # print("here 3")
                 for channel_name, image_adjusted in working_channels.items():
@@ -470,7 +513,7 @@ class BaseGraphicsView(QWidget):
                     emit_data[channel_name] = display_image
                     if channel_name == "Channel 1":
                         channel_one_image = display_image
-                self.working_channels = working_channels
+                self.working_channels = copy.deepcopy(working_channels)
                 self._update_number_of_channels(emit_data, subsample_for_emit)
                 self.reset_working_channels = working_channels.copy()
 
@@ -533,9 +576,9 @@ class BaseGraphicsView(QWidget):
                 data, target_channel, subsample_for_emit, max_display_size
             )
             if as_new_image:
-                assert (
-                    new_image_name is not None
-                ), "Image name must be provided for new image"
+                assert new_image_name is not None, (
+                    "Image name must be provided for new image"
+                )
                 self._add_to_manager(new_image_name, self.working_channels)
 
             return ret
@@ -858,13 +901,13 @@ class ReferenceGraphicsView(BaseGraphicsView):
 
 ##########################################################
 class ImageGraphicsView(BaseGraphicsView):
-
     update_canvas = pyqtSignal(QPixmap)
     update_sidebar = pyqtSignal(str, str)
     save_image = pyqtSignal(QGraphicsPixmapItem)
     change_slider = pyqtSignal(tuple)
     update_cmap = pyqtSignal(str)
     crop_signal = pyqtSignal(bool)
+    update_channel = pyqtSignal(int)
 
     def __init__(self, controller: "Controller"):
         super().__init__()
@@ -900,7 +943,7 @@ class ImageGraphicsView(BaseGraphicsView):
         # not 100% so need the len check later
         self.current_channel = index
 
-        channel_num = f"Channel {index+1}"
+        channel_num = f"Channel {index + 1}"
         self.image_wrapper = self.working_channels.get(
             channel_num, ImageWrapper(np.array([]), "")
         )
@@ -1157,6 +1200,7 @@ class ImageGraphicsView(BaseGraphicsView):
         qimage = numpy_to_qimage(image)
         pixmap = QPixmap(qimage)
         # print("setting pixmap")
+        self.update_channel.emit(self.current_channel)
         self.update_canvas.emit(pixmap)  # emit uint16, change to uint8 in canvas_ui
 
     def reset_image(self):
@@ -1369,7 +1413,7 @@ class ImageGraphicsView(BaseGraphicsView):
         the specified percentage of the blurred image from the original.
         """
 
-        self._blur_layer = f"Channel {self.current_channel+ 1}"
+        self._blur_layer = f"Channel {self.current_channel + 1}"
         print("blur")
         # self._clear_caches(self.uuid, self._blur_layer)
 
@@ -1586,7 +1630,7 @@ class MetaData(QWidget):
                 metadata["URI"] = filename
                 metadata["Width"] = raw_meta_data["ImageWidth"]
                 metadata["Height"] = raw_meta_data["ImageLength"]
-                metadata["Pixel Type"] = f'uint{raw_meta_data["BitsPerSample"]}'
+                metadata["Pixel Type"] = f"uint{raw_meta_data['BitsPerSample']}"
                 metadata["Dimension (CZT)"] = "Unknown"
                 metadata["PhysicalSizeX"] = "Unknown"
                 metadata["PhysicalSizeY"] = "Unknown"
@@ -1674,12 +1718,10 @@ class ImageDialog(QDialog):
         self.reject()
 
     def apply_contrast(self, image, new_min, new_max):
-
         lut = self.create_lut(new_min, new_max)
         return LUT(image, lut)
 
     def create_lut(self, new_min, new_max):
-
         lut = np.zeros(256, dtype=np.uint8)  # uint8 for display
         lut[new_min : new_max + 1] = np.linspace(
             start=0,

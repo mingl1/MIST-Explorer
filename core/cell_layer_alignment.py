@@ -13,6 +13,7 @@ from scipy.ndimage import binary_fill_holes, rotate, zoom
 
 from utils import (
     adjust_contrast,
+    background_subtraction_with_histogram,
     make_same_shape,
     match_histograms,
     remove_padding,
@@ -95,7 +96,7 @@ class CellLayerAligner(QThread):
         """
         self.need_gradient_descent = not skip
 
-    def manually_align(self, aligned_image: np.ndarray):
+    def manually_align(self, transf_matrix=None):
         """
         Emit manually aligned image
         """
@@ -105,7 +106,7 @@ class CellLayerAligner(QThread):
                 "uuid": self.unaligned_uuid,
                 "layer": self.unaligned_channel,
                 "replace": self.replace,
-                "data": aligned_image,
+                "data": transf_matrix,
             },
             np.array(0),
             np.array(0),
@@ -361,13 +362,19 @@ class CellLayerAligner(QThread):
             fy=coarse_scale,
             interpolation=cv2.INTER_AREA,
         )
+        coarse_target, otsu_thresh, refined_thresh, hist, bin_edges = (
+            background_subtraction_with_histogram(coarse_target)
+        )
+        coarse_moving, otsu_thresh, refined_thresh, hist, bin_edges = (
+            background_subtraction_with_histogram(coarse_moving)
+        )
         coarse_target = to_uint8(coarse_target)
         coarse_moving = to_uint8(coarse_moving)
         target_histogram = np.histogram(coarse_target.flatten(), bins=256)[0]
         coarse_moving = match_histograms(coarse_moving, target_histogram)
         coarse_moving = np.clip(coarse_moving, 32, 255) - 32
-        coarse_target = adjust_contrast(coarse_target.astype(np.float64), 50, 99)
-        coarse_moving = adjust_contrast(coarse_moving.astype(np.float64), 50, 99)
+        coarse_target = adjust_contrast(coarse_target.astype(np.float64), 2, 99)
+        coarse_moving = adjust_contrast(coarse_moving.astype(np.float64), 2, 99)
         coarse_moving = cv2.normalize(
             coarse_moving, coarse_moving, 255, 0, cv2.NORM_MINMAX, cv2.CV_8U
         )

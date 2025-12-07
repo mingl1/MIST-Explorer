@@ -67,7 +67,6 @@ class Register(QThread):
             return False
 
     def run_registration(self):
-
         # don't think we need to check for GPU here, since we are not using tensorflow
 
         # gpu = len(tf.config.list_physical_devices("GPU")) > 0
@@ -92,6 +91,14 @@ class Register(QThread):
         # self.run()
 
     def run(self):
+        self.tifs = (
+            {
+                "image_dict": self.storage.get_reference_image(),
+            },
+            {
+                "image_dict": self.storage.get_canvas_image(),
+            },
+        )
 
         m = self.params[
             "max_size"
@@ -103,10 +110,12 @@ class Register(QThread):
         channel_wrappers = reference_image_file["image_dict"]
         assert channel_wrappers is not None, "channel wrappers are empty"
         reference_tif_index = self.params["alignment_layer"]
-        alignment_layer = channel_wrappers[f"Channel {reference_tif_index  + 1}"].data
+        alignment_layer = channel_wrappers[f"Channel {reference_tif_index + 1}"].data
 
-        if alignment_layer.dtype != np.uint16:
-            raise ValueError("data type is not uint16. stopping alignment")
+        # if alignment_layer.dtype != np.uint16:
+        #     raise ValueError(
+        #         f"data type is not uint16. stopping alignment, datatype is {alignment_layer.dtype}"
+        #     )
 
         alignment_layer = self.adjust_contrast(alignment_layer, 50, 99)
         alignment_layer = alignment_layer[0:m, 0:m]  # resize to maximum allowed size
@@ -135,7 +144,6 @@ class Register(QThread):
             inputs = []
             radius = int(fixed_map.tile_size)
             for mov_data, fix_data in list(zip(moving_map, fixed_map)):
-
                 (moving_img, moving_bounds) = mov_data
                 (fixed_img, _) = fix_data
 
@@ -156,7 +164,6 @@ class Register(QThread):
                 if self._handle_cancel():
                     return
                 progress_update = int(((tile_n + 1) / len(inputs)) * 100)
-                
 
                 if tif_n == 0:
                     outputs.append(self.on_skip(tile_set))
@@ -166,7 +173,9 @@ class Register(QThread):
                 transforms, ymin, xmin, radius, x, y, best_ncc = result
                 self.progress.emit(
                     progress_update,
-                    str(f"aligning tile {tile_n+1}/{len(inputs)} - NCC: {best_ncc:.2f}"),
+                    str(
+                        f"aligning tile {tile_n + 1}/{len(inputs)} - NCC: {best_ncc:.2f}"
+                    ),
                 )
                 if result is None:
                     continue
@@ -190,24 +199,21 @@ class Register(QThread):
                 continue
 
             file = tif["image_dict"]
+            print(file.keys())
             n_frames = len(file)  # 4
             print("n frames", n_frames)
             new_registered_tif = []
 
             for layer_number in range(n_frames):
-
                 print("Layer Number:", layer_number, "for tif", i)
                 progress_update = int(((layer_number + 1) / n_frames) * 100)
                 self.progress.emit(
-                    progress_update, f"Layer Number: {layer_number+1} for tif {i+1}"
+                    progress_update, f"Layer Number: {layer_number + 1} for tif {i + 1}"
                 )
 
                 bf = file[f"Channel {layer_number + 1}"].data  # channels are index 1
-                reference_brightfield = reference_image_file["image_dict"][
-                    f"Channel {layer_number + 1}"
-                ].data  # channels are index 1 # this is the basis
 
-                bf = bf[0:m, 0:m]
+                bf = bf[:m, :m]
 
                 dest = Image.fromarray(
                     np.zeros((m, m), dtype="float")
@@ -269,30 +275,22 @@ class Register(QThread):
             new_registered_tif = [x.astype("uint16") for x in new_registered_tif]
             new_registered_tif = np.stack(new_registered_tif)
 
-            print(new_registered_tif.shape)
             aligned_protein_signal = new_registered_tif
 
             ##alignment done
         assert aligned_protein_signal is not None, "aligned_protein_signal is None"
         self.protein_signal_array = aligned_protein_signal[
-            self.params["protein_detection_layer"], :, :
-        ][
-            0 : self.params["max_size"], 0 : self.params["max_size"]
+            self.params["protein_detection_layer"], :m, :m
         ]  # -> use to generate cell intensity table
         # self.protein_signal_array = aligned_protein_signal[self.params['protein_detection_layer'], :, :]
-        cell_image = aligned_protein_signal[self.params["cell_layer"], :, :][
-            0 : self.params["max_size"], 0 : self.params["max_size"]
+        cell_image = aligned_protein_signal[
+            self.params["cell_layer"], :m, :m
         ]  # -> stardist
 
-        self.protein_signal_arr_signal.emit(self.protein_signal_array)
-
-        self.cell_image_signal.emit(cell_image)  # -> stardist
         data = {}
         for i in range(len(aligned_protein_signal)):
-            layer = aligned_protein_signal[i, :, :][
-                0 : self.params["max_size"], 0 : self.params["max_size"]
-            ]
-            data[f"Channel {i+1}"] = layer
+            layer = aligned_protein_signal[i, :m, :m].copy()
+            data[f"Channel {i + 1}"] = layer
         result = {}
         result["data"] = data
         layers = list(data.keys())
@@ -306,12 +304,13 @@ class Register(QThread):
             return
         self.alignment_complete.emit(
             result,
-            aligned_protein_signal[self.params["alignment_layer"]][
-                : self.params["max_size"], : self.params["max_size"]
-            ],
-            alignment_layer[: self.params["max_size"], : self.params["max_size"]],
+            aligned_protein_signal[self.params["alignment_layer"]][:m, :m],
+            alignment_layer[:m, :m],
         )
-
+        self.protein_signal_arr_signal.emit(
+            self.protein_signal_array
+        )  # emit protein signal for cell intensity
+        self.cell_image_signal.emit(cell_image)  # emit cell image for stardist
         self.progress.emit(100, "Alignment Done")
 
     def find_points(self, image, min_circularity=0.5, top_k=500):
@@ -521,7 +520,7 @@ class Register(QThread):
                 nextPts, status, err = cv2.calcOpticalFlowPyrLK(
                     source, target, moving_points_cv, fixed_points_cv, **params
                 )
-            except cv2.error as e:
+            except cv2.error:
                 print(f"Could not compute optical flow for this level: {params}")
                 continue
             good_indices = (status.flatten() == 1) & (
@@ -701,19 +700,18 @@ class Register(QThread):
     def update_moving_image(self, channels) -> None:
         self.protein_channels = channels
         self.tifs[1]["image_dict"] = channels
-        if not self.reference_channels is None:
+        if self.reference_channels is not None:
             self.image_ready.emit(True)
             print("moving/protein signal image updated")
 
     def update_reference_channels(self, reference_channels) -> None:
         self.reference_channels = reference_channels
         self.tifs[0]["image_dict"] = reference_channels
-        if not self.protein_channels is None:
+        if self.protein_channels is not None:
             self.image_ready.emit(True)
             print("reference image updated")
 
     def cancel(self):
-
         # self.exit?
         # self.quit?
         self._is_running = False
@@ -742,7 +740,6 @@ class TileMap:
 
     @staticmethod
     def find_mask(moving_array):
-
         def blur(img):
             img = img.copy()
             kernel = np.ones((5, 5), np.float64) / 225

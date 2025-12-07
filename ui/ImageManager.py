@@ -1,11 +1,9 @@
 import os
 import uuid
-from calendar import c
-from email.mime import image
 from uuid import UUID
 
 import numpy as np
-from PyQt6.QtCore import QModelIndex, QSize, Qt, pyqtSignal
+from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QActionGroup
 from PyQt6.QtWidgets import (
     QFileDialog,
@@ -22,9 +20,7 @@ from models.image_list_model import ImageTreeItem, ImageTreeModel
 
 
 class Manager(QWidget):
-
     def __init__(self, parent):
-
         super().__init__(parent)
 
         self.setWindowTitle("Image List")
@@ -164,9 +160,9 @@ class ImageTreeWidget(QTreeView):
             )
 
     def show_on_reference_canvas(self, uuid: UUID, channel: int):
-        assert (
-            self.model_reference_canvas is not None
-        ), "model_reference_canvas is not set"
+        assert self.model_reference_canvas is not None, (
+            "model_reference_canvas is not set"
+        )
         cname = f"Channel {channel + 1}"
         self.model_reference_canvas.add_to_canvas(uuid, cname)
 
@@ -179,10 +175,6 @@ class ImageTreeWidget(QTreeView):
             is_leaf = self._is_leaf(item)
             set_reference = QAction("Reference")
             set_cell_image = QAction("Cell Image (Stardist)")
-            set_protein_data_image = QAction("Set as Protein Data Image")
-            set_protein_data_image.triggered.connect(
-                lambda: self.set_as_protein_data_image(uuid, is_leaf, channel)
-            )
 
             set_tissue_target_image = QAction("Tissue Target Image")
             set_tissue_unaligned_image = QAction("Tissue Unaligned Image")
@@ -257,7 +249,6 @@ class ImageTreeWidget(QTreeView):
                 set_tissue_unaligned_image.setText("Set as Tissue Unaligned Image")
                 set_stardist_label.setText("Set as StarDist Label")
                 menu.addAction(set_reference)
-                menu.addAction(set_protein_data_image)
 
                 stardist_menu = menu.addMenu("Stardist")
                 stardist_menu.addAction(set_cell_image)
@@ -273,12 +264,6 @@ class ImageTreeWidget(QTreeView):
                 menu.addAction(delete)
                 menu.addAction(save_as_tiff)
             menu.exec(event.globalPos())
-
-    def set_as_protein_data_image(self, i_uuid: UUID, is_leaf: bool, channel: int):
-        self.storage.add_data(
-            "protein_data_image", {"uuid": i_uuid, "channel": channel}
-        )
-        self.protein_data.emit(i_uuid, channel)
 
     def set_for_stardist(self, item):
         assert isinstance(self.model_stardist, StarDist), "model_stardist is not set"

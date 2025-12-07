@@ -46,7 +46,6 @@ class Ui_MainWindow(QMainWindow):
 
         # Tab setup!
         self._setup_images_tab()
-        self._setup_preprocessing_tab()
         self._setup_view_tab()
         self._setup_analysis_tab()
         self._setup_metadata_tab()
@@ -73,7 +72,7 @@ class Ui_MainWindow(QMainWindow):
         """Setup main window properties"""
         if sys.platform == "win32":
             self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
-        self.resize(1280, 800)
+        self.resize(1440, 1000)
         self.setMinimumSize(1200, 800)
 
     def toggle_maximize(self):
@@ -137,17 +136,16 @@ class Ui_MainWindow(QMainWindow):
         """Setup the collapsible side panel"""
 
         self.sidePanelContainer = QHBoxLayout()
-        self.sidePanelContainer.setContentsMargins(0, 0, 0, 0)
-        self.sidePanelContainer.setSpacing(0)
+        # self.sidePanelContainer.setContentsMargins(10, 5, 10, 5)
+        self.sidePanelContainer.setSpacing(10)
 
         self.sidePanel = QWidget(self.centralWidget())
         self.sidePanelLayout = QVBoxLayout(self.sidePanel)
-        self.sidePanelLayout.setContentsMargins(10, 5, 10, 5)
-        self.sidePanelLayout.setSpacing(10)
+        # self.sidePanelLayout.setSpacing(10)
         self.sidePanel.setMinimumWidth(400)
-        self.sidePanel.setMinimumWidth(500)
+        self.sidePanel.setMaximumWidth(500)
         self.sidePanel.setSizePolicy(
-            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding
         )
 
         self.toggleButton = QPushButton("◀", self.sidePanel)
@@ -181,120 +179,114 @@ class Ui_MainWindow(QMainWindow):
         self.canvas.reference_view = self.small_view
 
     def _setup_images_tab(self):
-        """Setup the images workspace tab"""
+        """Setup the images workspace tab with an image manager and processing tabs."""
         images_scroll = self._create_scroll_area()
 
+        # The main widget for the "Images" tab, containing the manager and the processing tabs
+        self.images_tab_container = QWidget(self.sidePanel)
+        images_tab_layout = QVBoxLayout(self.images_tab_container)
+
+        # Image Manager (the file tree)
         self.images_tab = Manager(self.canvas)
-        self.images_tab.setSizePolicy(
-            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred
-        )
 
-        images_scroll.setWidget(self.images_tab)
+        # Processing Tabs
+        self.processing_tabs = QTabWidget(self.sidePanel)
+        processing_tab_layout = QVBoxLayout(self.processing_tabs)
+        # Create a splitter to allow resizing of the image manager and processing tabs
+        splitter = QSplitter(Qt.Orientation.Vertical, self.sidePanel)
+        splitter.addWidget(self.images_tab)
+        splitter.setStretchFactor(0, 1)
+        splitter.addWidget(self.processing_tabs)
+
+        # Add splitter to layout
+        images_tab_layout.addWidget(splitter)
+
+        # Add individual processing tabs
+        self._setup_transform_tab()
+        self._setup_alignment_tab()
+        self._setup_segmentation_tab()
+        self._setup_quantification_tab()
+
+        images_scroll.setWidget(self.images_tab_container)
         self.stackedWidget.addWidget(images_scroll)
-        self._setup_crop_rotate_components()
 
-        # Flip components
-        self._setup_images_components()
+    def _setup_transform_tab(self):
+        """Sets up the 'Transform' tab with Crop, Rotate, and Flip tools."""
+        transform_tab = QWidget()
+        transform_layout = QVBoxLayout(transform_tab)
+        transform_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-    def _setup_preprocessing_tab(self):
-        """Setup the preprocessing tab with all its components"""
-        preprocess_scroll = self._create_scroll_area()
+        # Crop and Rotate
+        self.crop_groupbox = CropUI(transform_tab)
+        self.rotate_groupbox = RotateUI(transform_tab)
+        rotate_crop_hlayout = QHBoxLayout()
+        rotate_crop_hlayout.addWidget(self.crop_groupbox.crop_groupbox)
+        rotate_crop_hlayout.addWidget(self.rotate_groupbox.rotate_groupbox)
+        transform_layout.addLayout(rotate_crop_hlayout)
 
-        # Create main preprocessing widget
-        self.preprocessing_tab = QWidget()
-        self.horizontalLayout = QHBoxLayout(self.preprocessing_tab)
-        self.preprocessing_dockwidget_main_vlayout = QVBoxLayout()
-        self.horizontalLayout.addLayout(self.preprocessing_dockwidget_main_vlayout)
-
-        # Setup preprocessing components
-        self._setup_preprocessing_components()
-
-        # Set layout properties
-        self.preprocessing_dockwidget_main_vlayout.setSpacing(5)
-        self.preprocessing_dockwidget_main_vlayout.setContentsMargins(0, 0, 0, 0)
-
-        preprocess_scroll.setWidget(self.preprocessing_tab)
-        self.stackedWidget.addWidget(preprocess_scroll)
-
-    def _setup_preprocessing_components(self):
-        """Setup individual preprocessing components"""
-
-        self.register_groupbox = RegisterUI(
-            self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout
-        )
-
-        self.gaussian_blur = GaussianBlur(
-            self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout
-        )
-
-        self.stardist_groupbox = StarDistUI(
-            self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout
-        )
-
-        self.cellIntensity_groupbox = CellIntensityUI(
-            self.preprocessing_tab, self.preprocessing_dockwidget_main_vlayout
-        )
-
-        # Add save button at the end
-
-    def _setup_crop_rotate_components(self):
-        """Setup crop and rotate components side by side"""
-        self.crop_groupbox = CropUI(self.images_tab)
-        self.rotate_groupbox = RotateUI(self.images_tab)
-
-        # Layout crop and rotate next to each other
-        self.rotate_crop_hlayout = QHBoxLayout()
-        self.rotate_crop_hlayout.setSpacing(3)
-
-        # self.images_tab.layout().addWidget(self.crop_groupbox.crop_groupbox)
-        # self.images_tab.layout().addWidget(self.rotate_groupbox.rotate_groupbox)
-
-        self.rotate_crop_hlayout.addWidget(self.crop_groupbox.crop_groupbox)
-        self.rotate_crop_hlayout.addWidget(self.rotate_groupbox.rotate_groupbox)
-        self.rotate_crop_hlayout.setSpacing(3)
-
-        self.images_tab.layout().addLayout(self.rotate_crop_hlayout)
-
-    def _setup_images_components(self):
-        """Setup flip buttons"""
+        # Flip
         self.flip_groupbox = QGroupBox("Flip Image")
-        self.flip_layout = QHBoxLayout()
-
+        flip_layout = QHBoxLayout(self.flip_groupbox)
         self.flip_horizontal_btn = QPushButton("Flip Horizontal")
         self.flip_vertical_btn = QPushButton("Flip Vertical")
-
-        # Connect to canvas flip methods
         self.flip_horizontal_btn.clicked.connect(self.canvas.flip_horizontal)
         self.flip_vertical_btn.clicked.connect(self.canvas.flip_vertical)
+        flip_layout.addWidget(self.flip_horizontal_btn)
+        flip_layout.addWidget(self.flip_vertical_btn)
+        transform_layout.addWidget(self.flip_groupbox)
 
-        self.flip_layout.addWidget(self.flip_horizontal_btn)
-        self.flip_layout.addWidget(self.flip_vertical_btn)
-        self.flip_groupbox.setLayout(self.flip_layout)
-
-        # Ensure images_tab has a layout before adding widgets
-        images_tab_layout = self.images_tab.layout()
-        assert images_tab_layout is not None, "images_tab layout is not set"
-
-        images_tab_layout.addWidget(self.flip_groupbox)
-
-        images_layout = self.images_tab.layout()
-        assert isinstance(images_layout, QVBoxLayout)
+        # Cell Layer Alignment
         self.cell_layer_alignment = CellLayerAlignmentUI(
-            images_layout,
+            transform_layout,
             self.images_tab.storage,
-            self.images_tab,
+            transform_tab,
         )
-
-        # Now that cell_layer_alignment exists, connect the signals
         self.images_tab.image_tree_view.tissue_target_selected.connect(
             self.cell_layer_alignment.set_target_image
         )
         self.images_tab.image_tree_view.tissue_unaligned_selected.connect(
             self.cell_layer_alignment.set_unaligned_image
         )
-
-        # Connect to progress bar
         self.cell_layer_alignment.aligner.progress.connect(self.update_progress_bar)
+
+        self.processing_tabs.addTab(transform_tab, "Transform")
+
+    def _setup_alignment_tab(self):
+        """Sets up the 'Alignment' tab with Register tools."""
+        alignment_tab = QWidget()
+        alignment_layout = QVBoxLayout(alignment_tab)
+        alignment_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        # Register UI
+        self.register_groupbox = RegisterUI(alignment_tab, alignment_layout)
+
+        self.processing_tabs.addTab(alignment_tab, "Alignment")
+
+    def _setup_segmentation_tab(self):
+        """Sets up the 'Segmentation' tab with Gaussian Blur and StarDist."""
+        segmentation_tab = QWidget()
+        segmentation_layout = QVBoxLayout(segmentation_tab)
+        segmentation_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        # Gaussian Blur
+        self.gaussian_blur = GaussianBlur(segmentation_tab, segmentation_layout)
+
+        # StarDist
+        self.stardist_groupbox = StarDistUI(segmentation_tab, segmentation_layout)
+
+        self.processing_tabs.addTab(segmentation_tab, "Segmentation")
+
+    def _setup_quantification_tab(self):
+        """Sets up the 'Quantification' tab with Cell Intensity."""
+        quantification_tab = QWidget()
+        quantification_layout = QVBoxLayout(quantification_tab)
+        quantification_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        self.cellIntensity_groupbox = CellIntensityUI(
+            quantification_tab, quantification_layout
+        )
+
+        self.processing_tabs.addTab(quantification_tab, "Generation")
 
     def _setup_view_tab(self):
         """Setup the view tab"""
