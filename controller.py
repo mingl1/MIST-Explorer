@@ -5,6 +5,7 @@ import os
 import typing
 import uuid
 
+import cv2
 import numpy as np
 from PIL import Image
 from PyQt6.QtCore import QTimer
@@ -132,7 +133,6 @@ class Controller:
         return arr
 
     def control_save(self):
-
         im = self.model_canvas.image_wrapper.data
         if im.dtype != np.uint8:
             im = (im * 255).astype(np.uint8)
@@ -198,7 +198,7 @@ class Controller:
         }
         is_align_arrays = isinstance(aligned_data["layer"], list)
 
-        def handle_accepted_image(moving_image):
+        def handle_accepted_image(moving_image, is_manual=False):
             """Handle the moving image change in the preview dialog"""
             aligned_image = moving_image
             item_uuid = aligned_data["uuid"]
@@ -206,25 +206,48 @@ class Controller:
             item = self.storage.get_data(item_uuid)
             assert item is not None, "Aligned image data not found in storage"
             data = copy.deepcopy(item["data"])
+            if is_manual:
+                layer = list(data.keys())
+                aligned_data["data"] = {}
+                # treat moving_image as transformation matrix
+                transf_matrix = moving_image
+                # print(transf_matrix)
+                for L in layer:
+                    # print(L)
+                    h, w = data[L].data.shape[-2:]
+                    # print(h,w)
+                    aligned_data["data"][L] = cv2.warpAffine(
+                        item["data"][L].data, transf_matrix, (w, h)
+                    )
             filename = item["name"]
             if isinstance(layer, list):
-                assert len(aligned_data["data"].keys()) == len(
-                    layer
-                ), "Aligned data keys do not match the expected layers"
+                # handles register.py
+                assert len(aligned_data["data"].keys()) == len(layer), (
+                    "Aligned data keys do not match the expected layers"
+                )
                 data = {}
                 for L in layer:
-                    wrapped_image = ImageWrapper(aligned_data["data"][L], L)
+                    d = (
+                        aligned_data["data"][L]
+                        if aligned_data["data"][L] is not None
+                        else moving_image
+                    )
+                    wrapped_image = ImageWrapper(d, L)
+                    # data[L].data = aligned_data["data"][L]
                     data[L] = wrapped_image
                 aligned_name = "Registered_" + filename
             else:
                 wrapped_image = ImageWrapper(aligned_image, layer)
                 aligned_name = f"Aligned_{filename}"
-                data[layer] = wrapped_image
+                data[layer].data = aligned_image
+            if is_manual:
+                aligned_name = "Manual_" + filename
+
             self.model_canvas.add_to_canvas(data, True, aligned_name)
 
         # manual alignment
         if not np.any(aligned_small) and not np.any(target_small):
-            handle_accepted_image(aligned_data["data"])
+            handle_accepted_image(aligned_data["data"], True)
         else:
             if is_align_arrays:
                 preview_dialog = AlignmentPreviewDialog(
@@ -251,21 +274,19 @@ class Controller:
         return result == 1 and preview_dialog.result_accepted
 
     def need_canvas_change(self, new_index):
-        if self.prev_tab_index == 2 and new_index != 2:
-            if self.view.canvas.pixmap_item.isVisible():
-                return
-            self.view.canvas.pixmap_item.show()
-            self.view.canvas.view_pixmap_item.hide()
+        if self.prev_tab_index != 0 and new_index == 0:
+            # self.view.canvas.pixmap_item.show()
+            self.view.canvas._show_images_tab_image()
             if self.model_canvas.uuid:
                 print("swapping channel")
                 self.model_canvas.swap_channel(self.model_canvas.current_channel)
             else:
                 print("clearing canvas")
                 self.model_canvas.clear_canvas()
-        elif self.prev_tab_index != 2 and new_index == 2:
+        else:
+            self.view.canvas._show_view_tab_image()
             self.view.view_tab.process_images()
-            self.view.canvas.pixmap_item.hide()
-            self.view.canvas.view_pixmap_item.show()
+            # self.view.canvas.pixmap_item.hide()
 
     def handle_tab_change(self, index):
         self.need_canvas_change(index)
@@ -322,7 +343,7 @@ class SignalConnectionManager:
         self.c.view.toolBarUI.actionReset.triggered.connect(
             self.c.model_canvas.reset_image
         )
-        # self.c.view.toolBarUI.channelChanged.connect(self.c.model_canvas.swap_channel)
+        self.c.view.toolBarUI.channelChanged.connect(self.c.model_canvas.swap_channel)
         self.c.view.toolBarUI.contrast_slider.valueChanged.connect(
             self.c.model_canvas.update_contrast
         )
@@ -345,10 +366,33 @@ class SignalConnectionManager:
             self.c.view.small_view.display
         )
         self.c.model_canvas.update_canvas.connect(self.c.view.canvas.update_canvas)
+        self.c.model_canvas.update_channel.connect(
+            self.c.view.toolBarUI.setChannelSelector
+        )
+
         self.c.model_canvas.update_sidebar.connect(
             self.c.view.images_tab.set_channel_icon
         )
-        self.c.view.view_tab.change_pix.connect(self.c.view.canvas.update_canvas)
+        self.c.view.view_tab.change_pix.connect(
+            self.c.view.canvas.update_view_tab_canvas
+        )
+        self.c.view.view_tab.update_contrast_sig.connect(
+            self.c.view.canvas.update_layer_levels
+        )
+        self.c.view.view_tab.update_layer_cmap_sig.connect(
+            self.c.view.canvas.update_layer_cmap
+        )
+
+        self.c.view.view_tab.update_layer_opacity_sig.connect(
+            self.c.view.canvas.update_layer_opacity
+        )
+        self.c.view.view_tab.update_layer_visible_sig.connect(
+            self.c.view.canvas.update_layer_visibility
+        )
+        self.c.view.view_tab.reset_view_tab.connect(self.c.view.canvas.reset_view_tab)
+
+        self.c.view.view_tab.export_png_sig.connect(self.c.view.canvas.save_as_png)
+        self.c.view.view_tab.export_tif_sig.connect(self.c.view.canvas.save_as_tif)
         # self.c.model_canvas.canvas_updated.connect(self.c.view.canvas.update_canvas)
         self.c.model_canvas.update_manager.connect(self.c.handle_new_image)
         self.c.model_reference_canvas.update_manager.connect(
@@ -514,14 +558,12 @@ class SignalConnectionManager:
         self.c.view.cellIntensity_groupbox.bead_data.clicked.connect(
             self.c.view.cellIntensity_groupbox.loadBeadData
         )
-        self.c.view.cellIntensity_groupbox.color_code.clicked.connect(
-            self.c.view.cellIntensity_groupbox.loadColorCode
-        )
+
         self.c.view.cellIntensity_groupbox.emitBeadData.connect(
-            self.c.model_cell_intensity.get_bead_data
+            self.c.model_cell_intensity.set_bead_data
         )
-        self.c.view.cellIntensity_groupbox.emitColorCode.connect(
-            self.c.model_cell_intensity.get_color_code
+        self.c.view.cellIntensity_groupbox.emitColorCodes.connect(
+            self.c.model_cell_intensity.set_color_codes
         )
         self.c.view.cellIntensity_groupbox.radius_fg.valueChanged.connect(
             self.c.model_cell_intensity.set_radius_fg
@@ -529,7 +571,7 @@ class SignalConnectionManager:
         self.c.view.cellIntensity_groupbox.radius_bg.valueChanged.connect(
             self.c.model_cell_intensity.set_radius_bg
         )
-        self.c.view.cellIntensity_groupbox.run_button.clicked.connect(
+        self.c.view.cellIntensity_groupbox.generate_cell_data.connect(
             self.c.model_cell_intensity.generate_cell_intensity_table
         )
         self.c.model_cell_intensity.error_signal.connect(self.c.handle_error)
@@ -552,6 +594,7 @@ class SignalConnectionManager:
         image_signal.connect(self.c.view.stardist_groupbox.updateChannelSelector)
         image_signal.connect(self.c.view.gaussian_blur.updateChannelSelector)
         image_signal.connect(self.c.model_register.update_moving_image)
+        image_signal.connect(self.c.view.cellIntensity_groupbox.update_channels)
 
         ref_image = self.c.model_reference_canvas.image_signal
         ref_image.connect(self.c.model_register.update_reference_channels)
@@ -565,5 +608,7 @@ class SignalConnectionManager:
         """Miscellaneous connections"""
         self.c.view.view_tab.progress.connect(self.c.view.update_progress_bar)
         self.c.view.stackedWidget.currentChanged.connect(
-            lambda x: self.c.view.small_view.setVisible(x == 1)
+            lambda x: self.c.view.small_view.setVisible(
+                x == 0 and not self.c.view.small_view.is_empty()
+            )
         )

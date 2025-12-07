@@ -32,7 +32,7 @@ class CellLayerAlignmentUI(QWidget):
         storage: ImageStorage,
         parent=None,
     ):
-        super().__init__()
+        super().__init__(parent)
         self.image_channels = [1, 1]
 
         self.target_image = None
@@ -248,10 +248,10 @@ class CellLayerAlignmentUI(QWidget):
     def __retranslate_UI(self):
         _translate = QCoreApplication.translate
         self.alignment_groupbox.setTitle(
-            _translate("MainWindow", "Cell Layer Alignment")
+            _translate("MainWindow", "Registeration")
         )
         self.image1_label.setText(_translate("MainWindow", "Target Image:"))
-        self.image2_label.setText(_translate("MainWindow", "Unaligned Image:"))
+        self.image2_label.setText(_translate("MainWindow", "Moving Image:"))
         self.register_button.setText(_translate("MainWindow", "Register Images"))
         self.manually_align_button.setText(_translate("MainWindow", "Manually Align"))
 
@@ -374,7 +374,7 @@ class CellLayerAlignmentUI(QWidget):
             },
             True,
         )
-        preview_dialog.moving_image_changed.connect(self.aligner.manually_align)
+        preview_dialog.transformation_matrix.connect(self.aligner.manually_align)
         preview_dialog.exec()
         self.register_button.setEnabled(True)
         self.manually_align_button.setEnabled(True)

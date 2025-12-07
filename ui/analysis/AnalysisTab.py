@@ -65,10 +65,10 @@ from ui.analysis.graphing.SpatialHeatmapUpdated import HeatmapWindow
 from ui.analysis.graphing.CellDensityPlot import CellDensityPlot
 from ui.analysis.graphing.DistributionViewer import DistributionViewer
 from ui.analysis.graphing.PieChartCanvas import PieChartCanvas
-from ui.analysis.graphing.delete_later import UMAPVisualizer
+from ui.analysis.graphing.UMAPPlot import UMAPVisualizer
 
 # Use TYPE_CHECKING to avoid circular imports
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Tuple
 
 if TYPE_CHECKING:
     from app import Ui_MainWindow
@@ -331,6 +331,8 @@ class AnalysisTab(QWidget):
         # Handle previous rubberband
 
         # Store selection data
+        region = (region[0], tuple(int(i) for i in region[1]))
+        assert len(region[1]) == 4, 'invalid region definition'
         self.rubberbands.append(rubberband)
         self.regions.append(region)
 
@@ -397,12 +399,12 @@ class AnalysisTab(QWidget):
         self.multiComboBox.addItem("Select All")
         self.multiComboBox.addItem("Deselect All")
 
-        data = self.enc.view_tab.load_df()
-        self.multiComboBox.addItems(data.columns[3:])
+        data = self.enc.view_tab.get_df()
+        self.columns = data.columns[2:-1]
+        self.multiComboBox.addItems(list(self.columns))
 
-        for i in range(len(data.columns[3:])):
+        for i in range(len(self.columns)):
             self.multiComboBox.model().item(i).setCheckState(Qt.CheckState.Checked)
-        self.columns = data.columns[3:]
 
         # Add buttons
         apply_button = QPushButton("Apply")
@@ -482,23 +484,25 @@ class AnalysisTab(QWidget):
 
     def generate_analysis_graphs(self, region):
         # Get filtered data
+        data = None
         if self.regions[self.current_view_index][0] == "rect":
             data = self.get_rect_data(region[1])
-        if self.regions[self.current_view_index][0] == "circle":
+        elif self.regions[self.current_view_index][0] == "circle":
+            
             data = self.get_circle_data(region[1])
-        if self.regions[self.current_view_index][0] == "poly":
+        elif self.regions[self.current_view_index][0] == "poly":
             data = self.get_poly_data(region[1])
-
+        assert data is not None, "Shape selection not implemeneted in analysis tab"
         # Create and add graphs
-        box_plot = self.create_box_plot(data[self.columns])
+        box_plot = self.create_box_plot(data)
         self.add_graph_to_current_view(box_plot)
-
+        
         graph_generators = [
             lambda: ZScoreHeatmapWindow(self.get_z_heatmap_data(data)),
             lambda: HeatmapWindow(data[self.columns]),
             lambda: PieChartCanvas(data[self.columns]),
             lambda: DistributionViewer(data[self.columns]),
-            lambda: UMAPVisualizer(),
+            lambda: UMAPVisualizer(self.get_z_heatmap_data(data)),
         ]
 
         for generator in graph_generators:
@@ -508,12 +512,12 @@ class AnalysisTab(QWidget):
         t = ["Global X","Global Y"] + t
         t = pd.Series(t)
         return data[t]
+    
     def create_box_plot(self, data):
         """Create a box plot widget"""
         result_widget = QWidget()
         layout = QVBoxLayout(result_widget)
-
-        filtered_data = data.iloc[:, 3:]
+        filtered_data = data.loc[:, self.columns]
         filtered_data = filtered_data.melt(var_name="Protein", value_name="Expression")
 
         fig, ax = plt.subplots(figsize=(12, 8))
@@ -538,8 +542,9 @@ class AnalysisTab(QWidget):
 
     def get_rect_data(self, region):
         """Get data filtered by the selected region"""
-        data = self.enc.view_tab.load_df()
-        x_min, y_min, x_max, y_max = [i * 4 for i in region]
+        data = self.enc.view_tab.get_df()
+        x_min, y_min, x_max, y_max = [i for i in region]
+        print(x_min, y_min, x_max, y_max)
 
         return data[
             (data["Global X"] >= x_min)
@@ -549,26 +554,22 @@ class AnalysisTab(QWidget):
         ]
 
     def get_circle_data(self, region):
-        """Get data filtered by the selected circular/oval region"""
-        data = self.enc.view_tab.load_df()
-        x_min, y_min, x_max, y_max = [i * 4 for i in region]
+        """Get data filtered by the selected circular region"""
+        data = self.enc.view_tab.get_df()
+        center_x, center_y, x2, y2 = region
 
-        # Calculate circle center and radius
-        center_x = (x_min + x_max) / 2
-        center_y = (y_min + y_max) / 2
-        radius_x = (x_max - x_min) / 2
-        radius_y = (y_max - y_min) / 2
+        radius = np.linalg.norm(np.array([x2 - center_x, y2 - center_y]))
 
-        # Apply elliptical equation filter
+        # Apply circular filter
         return data[
-            ((data["Global X"] - center_x) ** 2 / radius_x**2)
-            + ((data["Global Y"] - center_y) ** 2 / radius_y**2)
-            <= 1
+            ((data["Global X"] - center_x) ** 2 + (data["Global Y"] - center_y) ** 2)
+            <= radius ** 2
         ]
+
 
     def get_poly_data(self, region):
         """Get data filtered by the selected polygon region using ray casting algorithm"""
-        data = self.enc.view_tab.load_df()
+        data = self.enc.view_tab.get_df()
 
         def point_in_polygon(point, polygon):
             """Check if a point is inside a polygon using ray casting algorithm"""
