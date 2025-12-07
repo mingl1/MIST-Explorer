@@ -1,19 +1,15 @@
 import os
-import threading
 
 import numpy as np
 import pandas as pd
-import tifffile as tiff
-from numpy.typing import NDArray
-from PyQt6.QtCore import QEvent, QTimer
-import os
-
 import qtrangeslider
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QImage, QPixmap
+import tifffile as tiff
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QColor, QImage
 from PyQt6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -21,6 +17,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -28,12 +25,10 @@ from PyQt6.QtWidgets import (
     QSplitter,
     QVBoxLayout,
     QWidget,
-    QFileDialog,
-    QMessageBox
 )
 
 from controller import Controller
-from utils import auto_contrast_helper, create_lut, grayscale_to_agrb, scale_adjust
+from utils import auto_contrast_helper, create_lut, scale_adjust
 
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 import os
@@ -203,9 +198,7 @@ def write_protein(protein_data, reduced_cell_img):
     return protein_image, cell_image
 
 
-
 def scale_image_to_255(image_array):
-
     try:
         if image_array.dtype == np.uint8:
             return image_array
@@ -406,6 +399,7 @@ class ImageOverlay(QWidget):
 
         self.loaded_df = df
         return df
+
     def get_df(self):
         if self.loaded_df is None:
             raise ValueError("Need to load DF in view tab.")
@@ -543,13 +537,15 @@ class ImageOverlay(QWidget):
 
     def open_umap_analysis(self):
         if not hasattr(self, "df") or self.df is None:
-             QMessageBox.critical(self, "Error", "Data not processed. Please click 'Apply' first.")
-             return
-        
+            QMessageBox.critical(
+                self, "Error", "Data not processed. Please click 'Apply' first."
+            )
+            return
+
         # Prepare data for UMAP
         # self.df has CellID as index. Reset it and rename to "Cell ID" as expected by DataModel
         df_for_umap = self.df.reset_index().rename(columns={"CellID": "Cell ID"})
-        
+
         # Instantiate and show UMAP window
         # We keep a reference to avoid garbage collection
         self.umap_window = UMAPVisualizer(df_for_umap, self.reduced_cell_img)
@@ -686,18 +682,6 @@ class ImageOverlay(QWidget):
         bottom_controls_layout.addWidget(self.open_df_label)
 
         ### scale slider
-        self.scale_down_label = QLabel("Scale Down Factor: ")
-        bottom_controls_layout.addWidget(self.scale_down_label)
-
-        self.scale_down = QSlider(Qt.Orientation.Horizontal)
-        self.scale_down.setTickPosition(QSlider.TickPosition.TicksAbove)
-        self.scale_down.valueChanged.connect(self.scale_slider_update)
-
-        self.scale_down.setRange(1, 10)
-        self.scale_down.setValue(4)
-
-        bottom_controls_layout.addWidget(self.scale_down)
-        ### scale slider
 
         self.apply_button = QPushButton("Apply")
         self.apply_button.clicked.connect(self.start_build_all_worker)
@@ -728,7 +712,6 @@ class ImageOverlay(QWidget):
         self.process_images()
 
     def open_other_image(self):
-
         file_name, _ = QFileDialog.getOpenFileName(
             None,
             "Open Image File",
@@ -768,7 +751,7 @@ class ImageOverlay(QWidget):
 
     def scale_slider_update(self, value):
         if value == 1:
-            self.scale_down_label.setText(f"Scale Down Factor: original size")
+            self.scale_down_label.setText("Scale Down Factor: original size")
             return
         self.scale_down_label.setText(f"Scale Down Factor: 1/{value} of original size")
 
@@ -811,7 +794,6 @@ class ImageOverlay(QWidget):
 
     def show_layer_dialog(self):
         if not hasattr(self, "layers"):
-
             import ui.app
 
             QMessageBox.critical(
@@ -909,11 +891,11 @@ class ImageOverlay(QWidget):
         group_layout = QFormLayout()
         group_layout.setSpacing(8)  # Add spacing between form rows
         auto_contrast_button = QPushButton("Auto Contrast")
-        
+
         auto_contrast_button.clicked.connect(
             lambda _, gb=group_box: self.auto_contrast(gb)
         )
-        
+
         opacity_slider = QSlider(Qt.Orientation.Horizontal)
         opacity_slider.setMinimumWidth(300)
         opacity_slider.setMaximum(100)
@@ -1004,9 +986,7 @@ class ImageOverlay(QWidget):
         group_layout.addRow("Visibility:", visibility_button)
 
         color_button = QPushButton("Select Tint Color")
-        color_button.clicked.connect(
-            lambda _, gb=group_box: self.show_color_dialog(gb)
-        )
+        color_button.clicked.connect(lambda _, gb=group_box: self.show_color_dialog(gb))
         # color_button.clicked.connect(lambda: self.show_color_dialog(idx))
         # self.color_tints.append(color_button)
         color_label = QLabel("None")
@@ -1018,9 +998,7 @@ class ImageOverlay(QWidget):
 
         delete_button = QPushButton("Delete Layer")
         # delete_button.clicked.connect(lambda: self.delete_layer(idx))
-        delete_button.clicked.connect(
-            lambda _, gb=group_box: self.delete_layer(gb)
-        )
+        delete_button.clicked.connect(lambda _, gb=group_box: self.delete_layer(gb))
         # self.visibility_buttons.append(delete_button)
         group_layout.addRow("", delete_button)
 
@@ -1044,7 +1022,7 @@ class ImageOverlay(QWidget):
 
     def update_layer_display(self, idx):
         # t0 = time.perf_counter()
-        
+
         c = self.controls[idx]
         contrast_key = tuple(c.current_contrast)
         min, max = contrast_key
@@ -1053,7 +1031,7 @@ class ImageOverlay(QWidget):
         self.update_contrast_sig.emit(idx, contrast_key)
 
     def update_contrast(self, value, idx):
-        if idx==-1:
+        if idx == -1:
             return
         value = [int(value[0]), int(value[1])]
         self.controls[idx].current_contrast = value
@@ -1110,7 +1088,6 @@ class ImageOverlay(QWidget):
     def export_to_png(self):
         self.export_png_sig.emit(len(self.controls))
 
-
     def export_to_tif(self):
         """
         Exports the current layers to a multi-channel TIFF file.
@@ -1119,10 +1096,7 @@ class ImageOverlay(QWidget):
         # 1. Prompt user for a save location
         # Assumes 'self' is a QWidget or has access to one for the dialog parent.
         file_path, _ = QFileDialog.getSaveFileName(
-            self, 
-            "Save Multi-Channel TIFF", 
-            "", 
-            "TIFF Files (*.tif *.tiff)"
+            self, "Save Multi-Channel TIFF", "", "TIFF Files (*.tif *.tiff)"
         )
 
         # Exit if the user cancelled the dialog
@@ -1131,13 +1105,13 @@ class ImageOverlay(QWidget):
             return
 
         multi_channel_image = []
-        
+
         for i in range(len(self.controls)):
             # --- Get layer properties ---
             control = self.controls[i]
-            opacity = control.current_opacity   # Expected: 0-100
-            contrast = control.current_contrast # Expected: (min, max) tuple, 0-255
-            img = control.image                 # Expected: uint16 NumPy array
+            opacity = control.current_opacity  # Expected: 0-100
+            contrast = control.current_contrast  # Expected: (min, max) tuple, 0-255
+            img = control.image  # Expected: uint16 NumPy array
 
             # Get image data type info (e.g., for uint16, max is 65535)
             dtype_info = np.iinfo(img.dtype)
@@ -1160,8 +1134,10 @@ class ImageOverlay(QWidget):
                 # Clip the data to the new min/max range
                 processed_float = np.clip(img_float, min_val, max_val)
                 # Scale the clipped data to the full 0.0 to max_dtype_val range
-                processed_float = (processed_float - min_val) / (max_val - min_val) * max_dtype_val
-            
+                processed_float = (
+                    (processed_float - min_val) / (max_val - min_val) * max_dtype_val
+                )
+
             # --- B. Adjust Opacity ---
             # Apply the opacity as a scaling factor
             opacity_factor = opacity / 100.0
@@ -1182,16 +1158,18 @@ class ImageOverlay(QWidget):
             # Stack the list of 2D images into a single 3D array (C, H, W)
             output_stack = np.stack(multi_channel_image, axis=0)
             print(output_stack.shape)
-            
+
             # Save the stack to the selected file path
             tiff.imwrite(file_path, output_stack, imagej=True)
-            
-            print(f"Successfully exported {len(multi_channel_image)} channels to: {file_path}")
+
+            print(
+                f"Successfully exported {len(multi_channel_image)} channels to: {file_path}"
+            )
 
         except Exception as e:
             print(f"Error saving TIFF file: {e}")
             # Consider showing a QMessageBox to the user here for better UX
-            
+
 
 def numpy_to_qimage(array):
     if len(array.shape) == 2:  # Grayscale image
