@@ -42,6 +42,7 @@ import cv2
 from PIL import Image
 
 from core import Worker
+from ui.analysis.graphing.UMAPPlot import UMAPVisualizer
 
 Image.MAX_IMAGE_PIXELS = None
 
@@ -534,10 +535,25 @@ class ImageOverlay(QWidget):
         self.cancel_reset.setVisible(True)
         self.export_tif_button.setVisible(True)
         self.export_png_button.setVisible(True)
+        self.umap_button.setVisible(True)
         self.splitter.setStretchFactor(0, 1)  # Give more space to the layer list
         self.splitter.setStretchFactor(1, 0)  # Give more space to the layer list
 
         return (self.ims, protein_names)
+
+    def open_umap_analysis(self):
+        if not hasattr(self, "df") or self.df is None:
+             QMessageBox.critical(self, "Error", "Data not processed. Please click 'Apply' first.")
+             return
+        
+        # Prepare data for UMAP
+        # self.df has CellID as index. Reset it and rename to "Cell ID" as expected by DataModel
+        df_for_umap = self.df.reset_index().rename(columns={"CellID": "Cell ID"})
+        
+        # Instantiate and show UMAP window
+        # We keep a reference to avoid garbage collection
+        self.umap_window = UMAPVisualizer(df_for_umap, self.reduced_cell_img)
+        self.umap_window.show()
 
     # can probably be optimized by having just one array with all names and values, and then filtering out invisible ones
     # avoids looping through self.controls
@@ -591,6 +607,7 @@ class ImageOverlay(QWidget):
             self.add_other_image_button.setVisible(False)
             self.export_tif_button.setVisible(False)
             self.export_png_button.setVisible(False)
+            self.umap_button.setVisible(False)
         self.reset_view_tab.emit()
 
     def initUI(self):
@@ -695,6 +712,11 @@ class ImageOverlay(QWidget):
         self.export_png_button.clicked.connect(self.export_to_png)
         self.export_png_button.setVisible(False)
         bottom_controls_layout.addWidget(self.export_png_button)
+
+        self.umap_button = QPushButton("UMAP Analysis")
+        self.umap_button.clicked.connect(self.open_umap_analysis)
+        self.umap_button.setVisible(False)
+        bottom_controls_layout.addWidget(self.umap_button)
 
         # Add a spacer to ensure content can scroll all the way down
         bottom_controls_layout.addStretch(

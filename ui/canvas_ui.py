@@ -3,7 +3,6 @@
 import typing
 
 import numpy as np
-import pandas as pd
 import pyqtgraph as pg
 import tifffile
 from PyQt6.QtCore import (
@@ -18,7 +17,6 @@ from PyQt6.QtCore import (
     pyqtSignal,
 )
 from PyQt6.QtGui import (
-    QAction,
     QBrush,
     QColor,
     QCursor,
@@ -41,7 +39,6 @@ from PyQt6.QtWidgets import (
     QGraphicsOpacityEffect,
     QGraphicsPixmapItem,
     QGraphicsRectItem,
-    QGraphicsScene,
     QGraphicsSimpleTextItem,
     QGraphicsView,
     QHBoxLayout,
@@ -389,6 +386,7 @@ class ImageGraphicsViewUI(QGraphicsView):
     horizontal_flip = pyqtSignal()  # Signal to request horizontal flip
     vertical_flip = pyqtSignal()  # Signal to request vertical flip
     clear_canvas = pyqtSignal()
+    sigRangeChanged = pyqtSignal(object)  # placeholder for pyqtgraph compatibility
 
     def __init__(self, parent, enc: "Ui_MainWindow", show_buttons=True):
         super().__init__(parent)
@@ -648,7 +646,7 @@ class ImageGraphicsViewUI(QGraphicsView):
 
     def update_view_tab_canvas(self, pixmap: np.ndarray, layer_idx):
         # self._show_view_tab_image()
-        if layer_idx > (len(self.view_pixmaps)-1):
+        if layer_idx > (len(self.view_pixmaps) - 1):
             new_layer = pg.ImageItem(pixmap, levels=None)
             new_layer.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
             new_layer.setZValue(2)
@@ -836,17 +834,16 @@ class ImageGraphicsViewUI(QGraphicsView):
                         self.setMouseTracking(True)
 
                     # Add point in scene coordinates, but relative to the image
-                    
+
                     # Convert image_pos to scene coordinates relative to the image
                     polygon_pos = self.pixmap_item.mapToScene(image_pos)
                     self.current_polygon.add_point(polygon_pos, image_pos)
-                
 
                 if self.begin_crop:
                     self.rubberBands.append(self.rubberBand)
-                    assert (
-                        self.rubberBand is not None
-                    ), "Rubber band should be initialized"
+                    assert self.rubberBand is not None, (
+                        "Rubber band should be initialized"
+                    )
                     self.rubberBandColors.append(self.rubberBand.color)
                     self.rubberBand.setGeometry(QRect(self.origin, QSize()))
                     self.rubberBand.show()
@@ -1035,7 +1032,7 @@ class ImageGraphicsViewUI(QGraphicsView):
                 r, g, b = color.red(), color.green(), color.blue()
 
                 global_pos = self.mapToGlobal(event.pos())
-                QToolTip.showText(global_pos, f"", self)
+                QToolTip.showText(global_pos, "", self)
 
                 # Get layer values if available
                 if self.enc and self.enc.toolBarUI.tabButtonGroup.checkedId() != 0:
@@ -1069,7 +1066,7 @@ class ImageGraphicsViewUI(QGraphicsView):
                 # if self.reference_view:
                 #     self.reference_view.highlight_pixel(x, y)
             else:
-                self.enc.updateMousePositionLabel(f"")
+                self.enc.updateMousePositionLabel("")
                 # Hide pixel highlight when outside image bounds
                 self.hide_pixel_highlight()
                 # if self.reference_view:
@@ -1162,7 +1159,7 @@ class ImageGraphicsViewUI(QGraphicsView):
                             self.select_start_pos.x(),
                             self.select_start_pos.y(),
                             image_pos.x(),
-                            image_pos.y()
+                            image_pos.y(),
                         ),
                     )
                     # if failed to analyze region, then remove rubber band

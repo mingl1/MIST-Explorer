@@ -4,7 +4,7 @@ import traceback
 import matplotlib
 import scanpy as sc
 from PyQt6.QtCore import QThread, pyqtSignal
-from UMAPDataModel import DataModel
+from ui.analysis.graphing.UMAPDataModel import DataModel
 
 matplotlib.use("QtAgg")
 

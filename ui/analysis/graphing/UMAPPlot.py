@@ -1,18 +1,19 @@
 import logging
+import os
 import sys
 import traceback
 
+os.environ["QT_API"] = "PyQt6"
+
 import matplotlib
-import matplotlib.patheffects as PathEffects  # <--- Add this importimport sys
+import matplotlib.patheffects as PathEffects
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pyqtgraph as pg
 import scanpy as sc
 import tifffile
-from matplotlib.backends.backend_qtagg import FigureCanvas
-
-# from matplotlib.colors import to_rgb
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon, QPixmap
@@ -20,6 +21,7 @@ from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -30,6 +32,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSlider,
     QSpinBox,
     QSplitter,
@@ -37,16 +40,38 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from UMAPDataModel import DataModel
-from UMAPLocale import Locale
-from UMAPWorkers import AnalysisWorker, ClusteringWorker
+from ui.analysis.graphing.UMAPDataModel import DataModel
+from ui.analysis.graphing.UMAPLocale import Locale
+from ui.analysis.graphing.UMAPWorkers import AnalysisWorker, ClusteringWorker
 
 matplotlib.use("QtAgg")
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
-# Configure Logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("MIST_UMAP")
+# --- 1. Debugging Setup ---
+
+log_format = "%(asctime)s - %(levelname)s - %(message)s"
+logging.basicConfig(
+    level=logging.DEBUG,
+    format=log_format,
+    handlers=[logging.FileHandler("app_debug.log"), logging.StreamHandler(sys.stdout)],
+)
+
+logger = logging.getLogger("UMAP_App")
+
+logging.getLogger("matplotlib").setLevel(logging.WARNING)
+
+
+def excepthook(exc_type, exc_value, exc_tb):
+    logger.critical("Uncaught exception:", exc_info=(exc_type, exc_value, exc_tb))
+    app = QApplication.instance()
+    if app:
+        tb_str = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Icon.Critical)
+        msg.setText("An unexpected error occurred.")
+        msg.setInformativeText(str(exc_value))
+        msg.setDetailedText(tb_str)
+        msg.exec()
+
 
 # ==========================================
 # 0. AESTHETICS ENGINE
@@ -68,6 +93,7 @@ class ThemeManager:
             "alert": "#ffaa00",  # Signal Amber
             "grid": "#2d3436",  # Subtle Grid
             "plot_cmap": "plasma",  # Matplotlib colormap
+            "plot_palette": "tab20",  # Categorical palette
             "pg_bg": "#0b0c10",  # PyQtGraph Background
         },
         "LIGHT": {
@@ -79,6 +105,7 @@ class ThemeManager:
             "alert": "#d63031",  # Safety Red
             "grid": "#dfe6e9",  # Faint Grey Lines
             "plot_cmap": "viridis",  # Viridis reads better on white
+            "plot_palette": "tab20",  # Categorical palette
             "pg_bg": "#ffffff",  # PyQtGraph Background
         },
     }
@@ -286,40 +313,6 @@ def to_rgb(hex_color):
     return tuple(int(h[i : i + 2], 16) / 255.0 for i in (0, 2, 4))
 
 
-# ==========================================
-# 1. UI COMPONENTS
-# ==========================================
-
-# --- 1. Debugging Setup ---
-
-log_format = "%(asctime)s - %(levelname)s - %(message)s"
-logging.basicConfig(
-    level=logging.DEBUG,
-    format=log_format,
-    handlers=[logging.FileHandler("app_debug.log"), logging.StreamHandler(sys.stdout)],
-)
-
-logger = logging.getLogger("UMAP_App")
-
-logging.getLogger("matplotlib").setLevel(logging.WARNING)
-logging.getLogger("PIL").setLevel(logging.WARNING)
-logging.getLogger("numba").setLevel(logging.WARNING)
-logging.getLogger("h5py").setLevel(logging.WARNING)
-
-
-def excepthook(exc_type, exc_value, exc_tb):
-    logger.critical("Uncaught exception:", exc_info=(exc_type, exc_value, exc_tb))
-    app = QApplication.instance()
-    if app:
-        tb_str = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
-        msg = QMessageBox()
-        msg.setIcon(QMessageBox.Icon.Critical)
-        msg.setText("An unexpected error occurred.")
-        msg.setInformativeText(str(exc_value))
-        msg.setDetailedText(tb_str)
-        msg.exec()
-
-
 sys.excepthook = excepthook
 
 
@@ -386,9 +379,6 @@ class UMAPControls(QWidget):
         btn_row.addWidget(btn_none)
         data_layout.addLayout(btn_row)
 
-        # self.btn_apply_data = QPushButton(Locale.get("BTN_UPLOAD"))
-        # self.btn_apply_data.clicked.connect(self.emit_apply_data)
-        # data_layout.addWidget(self.btn_apply_data)
         data_group.setLayout(data_layout)
         layout.addWidget(data_group)
 
@@ -467,7 +457,7 @@ class UMAPControls(QWidget):
         tokens = raw_text.split(",")
         target_set = set()
         for t in tokens:
-            clean = t.strip().strip('"').strip("'")
+            clean = t.strip().strip("'").strip("'")
             if clean:
                 target_set.add(clean)
         if not target_set:
@@ -482,9 +472,6 @@ class UMAPControls(QWidget):
                 count += 1
         self.feature_list.blockSignals(False)
         self.search_bar.clear()
-        # QMessageBox.information(
-        #     self, Locale.get("ALERT_SCAN_TITLE"), Locale.get("ALERT_SCAN_MSG", count)
-        # )
         self.emit_apply_data()
 
     def populate_features(self, features):
@@ -590,24 +577,19 @@ class PlotView(QWidget):
                 show=False,
                 title=f"PROJECTION :: {color_key.upper()}",
                 legend_loc="on data",
-                palette=c["plot_cmap"],
+                palette=c["plot_palette"],
                 frameon=False,
             )
             for text_obj in self.ax.texts:
-                # 1. Force the UI Font (Monospace)
                 text_obj.set_fontfamily("monospace")
                 text_obj.set_fontsize(10)
                 text_obj.set_weight("bold")
 
-                # 2. Determine High-Contrast Foreground
-                # Dark Mode -> White Text | Light Mode -> Black Text
                 fg_color = (
                     "#ffffff" if ThemeManager.current_mode == "DARK" else "#000000"
                 )
                 text_obj.set_color(fg_color)
 
-                # 3. Apply the "Halo" (Stroke)
-                # The stroke color is the background color, creating a "cutout" look.
                 text_obj.set_path_effects(
                     [PathEffects.withStroke(linewidth=4, foreground=c["bg_dark"])]
                 )
@@ -617,7 +599,6 @@ class PlotView(QWidget):
             self.ax.text(
                 0.5, 0.5, Locale.get("PLOT_NO_SIGNAL"), ha="center", color=c["alert"]
             )
-            # self.ax.text(0.5, 0.5, f"RENDER_ERR: {e}", ha="center", color=c["alert"])
             self.canvas.draw()
 
 
@@ -633,10 +614,6 @@ class HeatmapView(QWidget):
         self.chk_scale = QCheckBox("Scale Data (Max=3)")
         self.chk_scale.stateChanged.connect(self.on_ui_change)
         self.controls_layout.addWidget(self.chk_scale)
-
-        # self.chk_sort_x = QCheckBox("Sort X (Groups)")
-        # self.chk_sort_x.stateChanged.connect(self.on_ui_change)
-        # self.controls_layout.addWidget(self.chk_sort_x)
 
         self.chk_sort_y = QCheckBox("Sort Y (Features)")
         self.chk_sort_y.stateChanged.connect(self.on_ui_change)
@@ -669,7 +646,12 @@ class HeatmapView(QWidget):
             self.canvas.draw()
 
     def update_heatmap(
-        self, adata, cluster_key, visible_indices, rename_map, selected_features
+        self,
+        adata,
+        cluster_key,
+        visible_indices,
+        rename_map,
+        selected_features,
     ):
         self.last_params = (
             adata,
@@ -732,9 +714,6 @@ class HeatmapView(QWidget):
             present_codes = np.unique(current_codes)
             natural_order = [rename_map.get(c, str(c)) for c in sorted(present_codes)]
 
-            # if self.chk_sort_x.isChecked():
-            #     final_categories = sorted(natural_order)
-            # else:
             final_categories = natural_order
 
             heatmap_data.obs["display_label"] = pd.Categorical(
@@ -839,17 +818,22 @@ class RankedGenesView(QWidget):
 
         layout.addLayout(controls_layout)
 
-        # Plot
-        self.figure = Figure(figsize=(5, 5), dpi=100)
-        apply_matplotlib_theme(self.figure)
-        self.canvas = FigureCanvas(self.figure)
-        layout.addWidget(self.canvas)
+        # Scroll Area
+        self.scrollArea = QScrollArea()
+        self.scrollArea.setWidgetResizable(True)
+        layout.addWidget(self.scrollArea)
+
+        # Container for plots (Grid Layout)
+        self.plot_container = QWidget()
+        self.plot_layout = QGridLayout(self.plot_container)
+        self.plot_layout.setSpacing(10)
+        self.scrollArea.setWidget(self.plot_container)
 
         self.adata = None
         self.key = None
 
     def refresh_theme(self):
-        apply_matplotlib_theme(self.figure)
+        # Simply regenerating plots picks up the current theme
         self.on_update()
 
     def set_data(self, adata, key):
@@ -869,8 +853,11 @@ class RankedGenesView(QWidget):
                 rgg = self.adata.uns["rank_genes_groups"]
                 if rgg.get("params", {}).get("groupby") == self.key:
                     # Check if all current categories are present in the ranked results
-                    # scanpy stores names as strings usually
-                    stored_names = set(rgg["names"].dtype.names) if hasattr(rgg["names"], "dtype") else set()
+                    stored_names = (
+                        set(rgg["names"].dtype.names)
+                        if hasattr(rgg["names"], "dtype")
+                        else set()
+                    )
                     current_cats = set(str(c) for c in cats)
                     if current_cats.issubset(stored_names):
                         recompute = False
@@ -892,91 +879,109 @@ class RankedGenesView(QWidget):
 
         if not group:
             return
-        print("Updating ranked genes view...")
-        
-        def get_ranked():
-             return sc.get.rank_genes_groups_df(self.adata, group=group).head(n_genes)["names"]
 
         try:
-            dc_cluster_genes = get_ranked()
+            dc_cluster_genes = sc.get.rank_genes_groups_df(
+                self.adata, group=group
+            ).head(n_genes)["names"]
         except KeyError:
-             # Fallback: try recomputing if group is missing
-             logger.warning(f"Group {group} not found in ranked genes. Recomputing...")
-             try:
-                 sc.tl.rank_genes_groups(self.adata, groupby=self.key, method="t-test")
-                 dc_cluster_genes = get_ranked()
-             except Exception as e:
-                 logger.error(f"Retry failed: {e}")
-                 return
+            # Fallback: try recomputing if group is missing
+            logger.warning(f"Group {group} not found in ranked genes. Recomputing...")
+            try:
+                sc.tl.rank_genes_groups(self.adata, groupby=self.key, method="t-test")
+                dc_cluster_genes = sc.get.rank_genes_groups_df(
+                    self.adata, group=group
+                ).head(n_genes)["names"]
+            except Exception as e:
+                logger.error(f"Retry failed: {e}")
+                return
+
+        # Clear existing plots
+        while self.plot_layout.count():
+            item = self.plot_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
 
         try:
-            self.figure.clear()
-            apply_matplotlib_theme(self.figure)
-
-            colors = [*dc_cluster_genes, self.key]
-            n_plots = len(colors)
+            colors = [self.key, *dc_cluster_genes]
             ncols = 3
-            nrows = (n_plots + ncols - 1) // ncols
-
-            axes = self.figure.subplots(nrows, ncols)
-            if n_plots > 1:
-                axes_flat = axes.flatten()
-            else:
-                axes_flat = [axes]
-
             c = ThemeManager.get_current()
-            for i, ax in enumerate(axes_flat):
-                if i < n_plots:
-                    sc.pl.umap(
-                        self.adata,
-                        color=colors[i],
-                        ax=ax,
-                        show=False,
-                        legend_loc="on data" if colors[i] == self.key else None,
-                        frameon=False,
-                        title=colors[i],
-                        cmap=c["plot_cmap"],
+
+            for i, color_key in enumerate(colors):
+                # Create individual Figure and Canvas
+                fig = Figure(figsize=(4, 4), dpi=100)
+                apply_matplotlib_theme(fig)
+                canvas = FigureCanvas(fig)
+                canvas.setMinimumSize(350, 350)  # Ensure minimum size per plot
+
+                ax = fig.add_subplot(111)
+                
+                is_categorical = color_key == self.key
+                
+                sc.pl.umap(
+                    self.adata,
+                    color=color_key,
+                    ax=ax,
+                    show=False,
+                    legend_loc="on data" if is_categorical else None,
+                    frameon=False,
+                    title=color_key,
+                    cmap=c["plot_cmap"],
+                    palette=c["plot_palette"],
+                    colorbar_loc=None,
+                )
+
+                # Enforce square aspect ratio
+                ax.set_aspect("equal", "box")
+
+                # --- COLOR SETTINGS ---
+                fg_color = (
+                    "#ffffff" if ThemeManager.current_mode == "DARK" else "#000000"
+                )
+                ax.title.set_color(fg_color)
+                ax.title.set_fontfamily("monospace")
+                ax.title.set_weight("bold")
+
+                for text_obj in ax.texts:
+                    text_obj.set_fontfamily("monospace")
+                    text_obj.set_fontsize(8)
+                    text_obj.set_weight("bold")
+                    text_obj.set_color(fg_color)
+                    text_obj.set_path_effects(
+                        [
+                            PathEffects.withStroke(
+                                linewidth=3, foreground=c["bg_dark"]
+                            )
+                        ]
                     )
 
-                    # --- COLOR SETTINGS ---
-                    fg_color = (
-                        "#ffffff" if ThemeManager.current_mode == "DARK" else "#000000"
-                    )
-                    ax.title.set_color(fg_color)
-                    ax.title.set_fontfamily("monospace")  # Optional: match your style
-                    ax.title.set_weight("bold")  # Optional: match your style
+                # Legend styling
+                legend = ax.get_legend()
+                if legend:
+                    for text in legend.get_texts():
+                        text.set_color(fg_color)
 
-                    for text_obj in ax.texts:
-                        text_obj.set_fontfamily("monospace")
-                        text_obj.set_fontsize(8)
-                        text_obj.set_weight("bold")
-                        text_obj.set_color(fg_color)
-                        text_obj.set_path_effects(
-                            [
-                                PathEffects.withStroke(
-                                    linewidth=3, foreground=c["bg_dark"]
-                                )
-                            ]
-                        )
-
-                    # If you have plots where legend_loc is explicitly set or defaults to side
-                    legend = ax.get_legend()
-                    if legend:
-                        for text in legend.get_texts():
-                            text.set_color(fg_color)
-
+                # Manually add colorbar for continuous data
+                if not is_categorical and ax.collections:
+                    mappable = ax.collections[-1]
+                    fig.colorbar(mappable, ax=ax, fraction=0.046, pad=0.04)
                 else:
                     ax.axis("off")
-            self.figure.tight_layout()
-            self.canvas.draw()
+
+                fig.tight_layout()
+                
+                # Add to Grid Layout
+                row = i // ncols
+                col = i % ncols
+                self.plot_layout.addWidget(canvas, row, col)
 
         except Exception as e:
             logger.error(f"Error updating ranked genes view: {e}")
-            self.figure.clear()
-            ax = self.figure.add_subplot(111)
-            ax.text(0.5, 0.5, f"Error: {str(e)}", ha="center", va="center")
-            ax.axis("off")
-            self.canvas.draw()
+            # Show error in a label if plotting fails
+            lbl = QLabel(f"Error: {str(e)}")
+            lbl.setStyleSheet(f"color: {c['alert']}")
+            self.plot_layout.addWidget(lbl, 0, 0)
 
 
 class SegmentationView(QWidget):
@@ -996,7 +1001,7 @@ class SegmentationView(QWidget):
         left_w = QWidget()
         l_layout = QVBoxLayout(left_w)
         l_layout.setContentsMargins(0, 0, 0, 0)
-        # --- LOCALIZATION CHANGE ---
+
         self.info_label = QLabel(Locale.get("SEG_STATUS_OFF"))
         self.info_label.setStyleSheet("font-weight: bold;")
         l_layout.addWidget(self.info_label)
@@ -1012,11 +1017,10 @@ class SegmentationView(QWidget):
         # Right: Controls
         right_w = QWidget()
         r_layout = QVBoxLayout(right_w)
-        # --- LOCALIZATION CHANGE ---
+
         r_layout.addWidget(QLabel(Locale.get("SEG_CLUSTER_FILTER")))
 
         btn_row = QHBoxLayout()
-        # --- LOCALIZATION CHANGE ---
         self.btn_all = QPushButton(Locale.get("BTN_ALL"))
         self.btn_all.clicked.connect(self.select_all)
         self.btn_none = QPushButton(Locale.get("BTN_CLR"))
@@ -1058,35 +1062,33 @@ class SegmentationView(QWidget):
     def render_clusters(self, adata, cluster_key):
         if self.seg_data is None:
             return
-        try:
-            self.refresh_theme()
-            if f"{cluster_key}_colors" not in adata.uns:
-                sc.pl.umap(adata, color=cluster_key, show=False)
-            cluster_colors = adata.uns[f"{cluster_key}_colors"]
-            categories = adata.obs[cluster_key].cat.categories
-            self.npy_cat_idx_to_rgb = np.array([to_rgb(c) for c in cluster_colors])
-            valid_ids = adata.obs["cell_id"].values.astype(int)
-            max_id = max(self.seg_data.max(), valid_ids.max())
-            self.npy_id_to_cat_idx = np.full(max_id + 1, -1, dtype=np.int32)
-            self.npy_id_to_cat_idx[valid_ids] = adata.obs[cluster_key].cat.codes.values
 
-            self.cluster_list.blockSignals(True)
-            self.cluster_list.clear()
-            for cat_name, cat_code in zip(categories, range(len(categories))):
-                item = QListWidgetItem(str(cat_name))
-                item.setFlags(
-                    item.flags()
-                    | Qt.ItemFlag.ItemIsUserCheckable
-                    | Qt.ItemFlag.ItemIsEditable
-                )
-                item.setCheckState(Qt.CheckState.Checked)
-                item.setData(Qt.ItemDataRole.UserRole, int(cat_code))
-                self.cluster_list.addItem(item)
-            self.regenerate_image(force=True)
-            self.cluster_list.blockSignals(False)
-            self.cluster_state_changed.emit(*self.get_state())
-        except:
-            logger.exception("Error in render_clusters")
+        self.refresh_theme()
+        if f"{cluster_key}_colors" not in adata.uns:
+            sc.pl.umap(adata, color=cluster_key, show=False)
+        cluster_colors = adata.uns[f"{cluster_key}_colors"]
+        categories = adata.obs[cluster_key].cat.categories
+        self.npy_cat_idx_to_rgb = np.array([to_rgb(c) for c in cluster_colors])
+        valid_ids = adata.obs["cell_id"].values.astype(int)
+        max_id = max(self.seg_data.max(), valid_ids.max())
+        self.npy_id_to_cat_idx = np.full(max_id + 1, -1, dtype=np.int32)
+        self.npy_id_to_cat_idx[valid_ids] = adata.obs[cluster_key].cat.codes.values
+
+        self.cluster_list.blockSignals(True)
+        self.cluster_list.clear()
+        for cat_name, cat_code in zip(categories, range(len(categories))):
+            item = QListWidgetItem(str(cat_name))
+            item.setFlags(
+                item.flags()
+                | Qt.ItemFlag.ItemIsUserCheckable
+                | Qt.ItemFlag.ItemIsEditable
+            )
+            item.setCheckState(Qt.CheckState.Checked)
+            item.setData(Qt.ItemDataRole.UserRole, int(cat_code))
+            self.cluster_list.addItem(item)
+        self.regenerate_image(force=True)
+        self.cluster_list.blockSignals(False)
+        self.cluster_state_changed.emit(*self.get_state())
 
     def on_item_changed(self, item):
         self.regenerate_image()
@@ -1153,7 +1155,6 @@ class SegmentationView(QWidget):
 class UMAPVisualizer(QMainWindow):
     def __init__(self, df, segmentation=None):
         super().__init__()
-        # --- LOCALIZATION CHANGE ---
         self.setWindowTitle(Locale.get("APP_TITLE"))
         self.resize(1300, 900)
         self.setStyleSheet(ThemeManager.get_stylesheet())
@@ -1172,7 +1173,6 @@ class UMAPVisualizer(QMainWindow):
 
         # === TOOLBAR & THEME TOGGLE ===
         top_bar = QHBoxLayout()
-        # --- LOCALIZATION CHANGE ---
         header = QLabel(Locale.get("HEADER"))
         header.setObjectName("h1")
         top_bar.addWidget(header)
@@ -1191,16 +1191,13 @@ class UMAPVisualizer(QMainWindow):
 
         self.umap_tab = QWidget()
         self.setup_umap_tab()
-        # --- LOCALIZATION CHANGE ---
         self.tabs.addTab(self.umap_tab, Locale.get("TAB_UMAP"))
 
         self.seg_view = SegmentationView(segmentation)
         self.seg_view.cluster_state_changed.connect(self.trigger_heatmap_update)
-        # --- LOCALIZATION CHANGE ---
         self.tabs.addTab(self.seg_view, Locale.get("TAB_SEG"))
 
         self.heatmap_view = HeatmapView()
-        # --- LOCALIZATION CHANGE ---
         self.tabs.addTab(self.heatmap_view, Locale.get("TAB_HEATMAP"))
 
         self.ranked_genes_view = RankedGenesView()
@@ -1252,8 +1249,6 @@ class UMAPVisualizer(QMainWindow):
         self.set_busy_state(True)
         self.is_running_full_pipeline = True
 
-        # NOTE: Workers (AnalysisWorker, ClusteringWorker) must be defined elsewhere or imported
-        # Assuming they exist in the scope as per original code context
         self.analysis_worker = AnalysisWorker(
             model=self.model,
             n_neighbors=params["n_neighbors"],
@@ -1273,7 +1268,7 @@ class UMAPVisualizer(QMainWindow):
             self.status_label.setText("ERR: PIPELINE_REQUIRED")
             return
 
-        self.status_label.setText(f"REPARTITIONING [RES: {resolution}]...")
+        self.status_label.setText(f"REPARTITIONING [RES: {resolution}]")
         self.progress.setVisible(True)
         self.progress.setRange(0, 0)
 
@@ -1324,7 +1319,6 @@ class UMAPVisualizer(QMainWindow):
 
             msg = f"UPDATED: {len(features)} FEATS | {normalization}"
             self.status_label.setText(msg)
-            # QMessageBox.information(self, "SUCCESS", "DATA_STREAM_UPDATED.")
         except Exception as e:
             QMessageBox.critical(self, "ERR", str(e))
         finally:
@@ -1380,13 +1374,8 @@ if __name__ == "__main__":
     try:
         logger.info("Starting Application...")
         df = pd.read_csv("sp13_2_6.csv")
-        # set <1 to 0
-
-        # df = pd.read_csv("tonsil_cell_features.csv")
-        # df = df.sample(frac=0.25, random_state=42).reset_index(drop=True)
         segmentation = tifffile.imread("SP13 Stardist.tif")
 
-        # segmentation = tifffile.imread("tonsil_instance_mask.tif")
         window = UMAPVisualizer(df=df, segmentation=segmentation)
         window.show()
         sys.exit(app.exec())

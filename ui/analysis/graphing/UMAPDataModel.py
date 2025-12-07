@@ -2,6 +2,7 @@ import logging
 
 import numpy as np
 import scanpy as sc
+from sklearn_ann.kneighbors.annoy import AnnoyTransformer
 
 # Setup logger for this module
 logger = logging.getLogger(__name__)
@@ -78,6 +79,13 @@ class DataModel:
         sc.pp.filter_cells(self.adata, min_genes=1)
         self.adata.layers["counts"] = self.adata.X.copy()
 
+        # Populate adata.raw with log-normalized data for DE analysis
+        # This prevents issues with negative values from scaling in adata.X
+        raw_adata = self.adata.copy()
+        sc.pp.normalize_total(raw_adata)
+        sc.pp.log1p(raw_adata)
+        self.adata.raw = raw_adata
+
         # 5. Apply Selected Normalization
         self._apply_normalization()
 
@@ -98,9 +106,22 @@ class DataModel:
             sc.pp.scale(self.adata, max_value=10)
         elif self.normalization_method == "lognorm":
             logger.info("Applying log Normalization")
-            sc.pp.normalize_total(self.adata, target_sum=10_000)
+            sc.pp.normalize_total(self.adata, target_sum=1_000)
             sc.pp.log1p(self.adata)
-            sc.pp.scale(self.adata, max_value=10)
+            sc.pp.scale(self.adata, max_value=3)
+            # adata = self.adata
+            # adata.layers["counts"] = adata.X.copy()
+            # sc.pp.normalize_total(adata, exclude_highly_expressed=False)
+            # adata.layers["cpm"] = adata.X.copy()
+            # sc.pp.log1p(adata)
+            # adata.layers["data"] = adata.X.copy()
+            # sc.pp.highly_variable_genes(
+            #     adata,
+            #     flavor="seurat_v3",
+            #     layer="counts",
+            #     n_top_genes=2500,
+            # )
+            # sc.pp.regress_out(adata, ["pct_counts_mt"])
         elif self.normalization_method == "none":
             logger.info("No normalization applied.")
         elif self.normalization_method == "znorm":
@@ -115,7 +136,7 @@ class DataModel:
         """Computes Highly Variable Genes and initial PCA"""
         # HVG Logic
         assert isinstance(self.adata, sc.AnnData), "adata is not an AnnData instance"
-        sc.pp.pca(self.adata)
+        sc.pp.pca(self.adata, random_state=0, svd_solver="auto")
         try:
             sc.pp.highly_variable_genes(
                 self.adata, flavor="seurat_v3", layer="counts", inplace=True
@@ -187,10 +208,11 @@ class DataModel:
         # 1. Compute Neighbors (using AnnoyTransformer as originally requested)
         sc.pp.neighbors(
             self.adata,
-            # transformer=AnnoyTransformer(n_trees=50, n_neighbors=n_neighbors),  # type: ignore
+            transformer=AnnoyTransformer(n_trees=50, n_neighbors=n_neighbors),  # type: ignore
             random_state=random_state,
             n_neighbors=n_neighbors,
             n_pcs=n_components,
+            use_rep="X_pca",
         )
 
         # 2. Run UMAP
