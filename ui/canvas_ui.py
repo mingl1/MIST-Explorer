@@ -5,48 +5,17 @@ import typing
 import numpy as np
 import pyqtgraph as pg
 import tifffile
-from PyQt6.QtCore import (
-    QEasingCurve,
-    QPoint,
-    QPointF,
-    QPropertyAnimation,
-    QRect,
-    QRectF,
-    QSize,
-    Qt,
-    pyqtSignal,
-)
-from PyQt6.QtGui import (
-    QBrush,
-    QColor,
-    QCursor,
-    QDragEnterEvent,
-    QDragMoveEvent,
-    QDropEvent,
-    QFont,
-    QIcon,
-    QImage,
-    QMouseEvent,
-    QPainter,
-    QPen,
-    QPixmap,
-)
-from PyQt6.QtWidgets import (
-    QApplication,
-    QFileDialog,
-    QGraphicsItem,
-    QGraphicsItemGroup,
-    QGraphicsOpacityEffect,
-    QGraphicsPixmapItem,
-    QGraphicsRectItem,
-    QGraphicsSimpleTextItem,
-    QGraphicsView,
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
-    QToolTip,
-    QWidget,
-)
+from PyQt6.QtCore import (QEasingCurve, QPoint, QPointF, QPropertyAnimation,
+                          QRect, QRectF, QSize, Qt, pyqtSignal)
+from PyQt6.QtGui import (QBrush, QColor, QCursor, QDragEnterEvent,
+                         QDragMoveEvent, QDropEvent, QFont, QIcon, QImage,
+                         QMouseEvent, QPainter, QPen, QPixmap)
+from PyQt6.QtWidgets import (QApplication, QFileDialog, QGraphicsItem,
+                             QGraphicsItemGroup, QGraphicsOpacityEffect,
+                             QGraphicsPixmapItem, QGraphicsRectItem,
+                             QGraphicsSimpleTextItem, QGraphicsView,
+                             QHBoxLayout, QLabel, QPushButton, QToolTip,
+                             QWidget)
 
 import utils
 from ui.lassos.CircleLasso import CircleLasso
@@ -612,7 +581,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.unsetCursor()
 
     def isEmpty(self) -> bool:
-        return self.pixmap_item is None
+        return self.pixmap_item is None or self.pixmap_item.pixmap().isNull()
 
     def mouseDoubleClickEvent(self, event):
         if not self.isEmpty():
@@ -968,7 +937,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         super().mouseMoveEvent(event)
 
         # Handle crop rectangle re  sizing
-        if event is None:
+        if event is None or self.isEmpty():
             return
         event.accept()
         if (
