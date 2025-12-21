@@ -6,7 +6,7 @@ import sys
 from typing import Optional
 
 # pylint: disable=no-name-in-module
-from PyQt6.QtCore import (QCoreApplication, QEvent, QMetaObject, QPoint, Qt)
+from PyQt6.QtCore import QCoreApplication, QEvent, QMetaObject, QPoint, Qt
 from PyQt6.QtGui import QImageReader, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (QGroupBox, QHBoxLayout, QLabel, QMainWindow,
                              QProgressBar, QPushButton, QScrollArea,
@@ -18,7 +18,7 @@ from ui.alignment.cell_intensity_ui import CellIntensityUI
 from ui.alignment.cell_layer_alignment_ui import CellLayerAlignmentUI
 from ui.alignment.register_ui import RegisterUI
 from ui.analysis.AnalysisTab import AnalysisTab
-from ui.canvas_ui import ImageGraphicsViewUI, ReferenceGraphicsViewUI
+from ui.canvas import ImageGraphicsViewUI, ReferenceGraphicsViewUI
 from ui.image_manager import ImageManager
 from ui.processing.crop_ui import CropUI
 from ui.processing.gaussian_blur import GaussianBlur
@@ -130,7 +130,7 @@ class MainWindow(QMainWindow):
             self.showMaximized()
 
     # pylint: disable=invalid-name
-    def eventFilter(self, obj, event):
+    def eventFilter(self, obj, event): # type: ignore
         """Event filter for handling window dragging"""
         if sys.platform == "win32":
             if obj == self.menu_bar:

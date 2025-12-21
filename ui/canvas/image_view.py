@@ -1,30 +1,21 @@
-"""Main Class to handle display of images"""
-
+"Image graphics view module."
 import typing
 
 import numpy as np
 import pyqtgraph as pg
-import tifffile
-from PyQt6.QtCore import (QEasingCurve, QPoint, QPointF, QPropertyAnimation,
-                          QRect, QRectF, QSize, Qt, pyqtSignal)
-from PyQt6.QtGui import (QBrush, QColor, QCursor, QDragEnterEvent,
-                         QDragMoveEvent, QDropEvent, QFont, QIcon, QImage,
-                         QMouseEvent, QPainter, QPen, QPixmap)
-from PyQt6.QtWidgets import (QApplication, QFileDialog, QGraphicsItem,
-                             QGraphicsItemGroup, QGraphicsOpacityEffect,
-                             QGraphicsPixmapItem, QGraphicsRectItem,
-                             QGraphicsSimpleTextItem, QGraphicsView,
-                             QHBoxLayout, QLabel, QPushButton, QToolTip,
-                             QWidget)
+import tifffile  # pylint: disable=import-error
+from PyQt6.QtCore import QPoint, QRect, QRectF, QSize, Qt, pyqtSignal  # pylint: disable=no-name-in-module
+from PyQt6.QtGui import QBrush, QColor, QCursor, QDragEnterEvent, QDragMoveEvent, QIcon, QImage, QMouseEvent, QPainter, QPen, QPixmap  # pylint: disable=no-name-in-module
+from PyQt6.QtWidgets import QFileDialog, QGraphicsPixmapItem, QGraphicsRectItem, QGraphicsView, QHBoxLayout, QLabel, QPushButton, QToolTip, QWidget  # pylint: disable=no-name-in-module
 
-import utils
+from ui.canvas.items import CropRectItem, ResizableRect
 from ui.lassos.CircleLasso import CircleLasso
 from ui.lassos.PolyLasso import PolyLasso
 from ui.lassos.RectLasso import RectLasso
 from utils import resource_path
 
 if typing.TYPE_CHECKING:
-    from ui.app import Ui_MainWindow
+    from ui.app import MainWindow
 
 pg.setConfigOption("imageAxisOrder", "row-major")
 pg.setConfigOption("useOpenGL", True)
@@ -32,321 +23,7 @@ pg.setConfigOption("useCupy", True)
 pg.setConfigOption("useNumba", True)
 
 
-class ArrowItem(QGraphicsItemGroup):
-    """Arrow with hover effect"""
-
-    def __init__(self, pixmap, position, action):
-        fixed_size = QSize(30, 30)  # Fixed size for the background rectangle
-        if pixmap is None:
-            raise ValueError("Pixmap cannot be None")
-        scaled = QGraphicsPixmapItem(
-            pixmap.scaled(
-                fixed_size,
-                aspectRatioMode=Qt.AspectRatioMode.KeepAspectRatio,
-                transformMode=Qt.TransformationMode.SmoothTransformation,
-            )
-        )
-        super().__init__()
-        rect = QRectF(self.boundingRect())
-        self.bg_rect = QGraphicsRectItem(0, 0, fixed_size.width(), fixed_size.height())
-        self.bg_rect.setBrush(QBrush(QColor(255, 255, 255, 100)))
-        self.bg_rect.setZValue(999)
-        self.base_opacity = 0.4
-        self.hover_opacity = 1
-        self.action = action
-        self.addToGroup(self.bg_rect)
-        self.addToGroup(scaled)
-        self.setZValue(100)
-        self.setPos(position)
-        self.applyHoverEffect()
-        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
-
-    def applyHoverEffect(self):
-        self.effect = QGraphicsOpacityEffect()
-        self.effect.setOpacity(self.base_opacity)
-        self.setGraphicsEffect(self.effect)
-        self.bg_rect.setGraphicsEffect(self.effect)
-
-        self.fade_in = QPropertyAnimation(self.effect, b"opacity")
-        self.fade_in.setDuration(300)
-        self.fade_in.setEndValue(self.hover_opacity)
-        self.fade_in.setEasingCurve(QEasingCurve.Type.InOutQuad)
-
-        self.fade_out = QPropertyAnimation(self.effect, b"opacity")
-        self.fade_out.setDuration(300)
-        self.fade_out.setEndValue(self.base_opacity)
-        self.fade_out.setEasingCurve(QEasingCurve.Type.InOutQuad)
-
-        self.setAcceptHoverEvents(True)
-
-    def hoverEnterEvent(self, event):
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.fade_out.stop()
-        self.fade_in.start()
-
-    def hoverLeaveEvent(self, event):
-        self.fade_in.stop()
-        self.fade_out.start()
-
-    def mousePressEvent(self, event):
-        """Handle mouse press events to prevent propagation"""
-        assert event is not None, "Event should not be None"
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.setCursor(Qt.CursorShape.PointingHandCursor)
-            event.accept()
-            # Slideshow action
-            if self.action:
-                self.action()
-        else:
-            super().mousePressEvent(event)
-
-
-class ReferenceGraphicsViewUI(QGraphicsView):
-    """Reference view for displaying images with navigation arrows"""
-
-    image_dropped = pyqtSignal(str)
-
-    def __init__(self, parent):
-        super().__init__(parent)
-        self.parent = parent
-        self.zoom = 1
-        self.right_arrow = ArrowItem(
-            QPixmap(resource_path("assets/icons/right-arrow.png")),
-            QPointF(285, 150),
-            self.next_slide,  # Action to perform on click
-        )
-        self.left_arrow = ArrowItem(
-            QPixmap(resource_path("assets/icons/left-arrow.png")),
-            QPointF(15, 150),
-            self.prev_slide,  # Action to perform on click
-        )
-        self.pixmap_item: QGraphicsPixmapItem = QGraphicsPixmapItem()
-        self.current_index = 1
-        self.np_channels = {}
-        self.pixmap = None
-        self.right_arrow.setZValue(999)  # Ensure arrows are above the image
-        self.left_arrow.setZValue(999)  # Ensure arrows are above the image
-
-        self.init_ui()
-
-    def init_ui(self):
-        self.setMinimumSize(QSize(300, 300))
-        self.setMaximumSize(QSize(300, 300))
-        self.setScene(pg.GraphicsScene())
-        self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
-        self.setRenderHint(self.renderHints() | self.renderHints().Antialiasing)
-        self.setStyleSheet("QGraphicsView { border: 1px solid black; }")
-        self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
-        # self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        # self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-
-    def is_empty(self) -> bool:
-        return self.pixmap_item is None
-
-    def load_channels(self, np_channels):
-        self.np_channels = np_channels
-
-    def mouseDoubleClickEvent(self, event):
-        if not self.is_empty():
-            self.__centerImage()
-            self.position_arrows()
-
-    def wheelEvent(self, event):
-        if event is None:
-            return
-        elif self.pixmap_item is not None:
-            zooming_out = event.angleDelta().y() > 0
-
-            # Prevent excessive zooming in either direction
-            if self.zoom > 1.1**90 and zooming_out:  # Max zoom out
-                return
-
-            zoom_factor = 1.1 if zooming_out else 0.9
-            self.zoom *= zoom_factor
-            self.scale(zoom_factor, zoom_factor)
-            self.position_arrows()
-
-            # self.slideshow(self.zoom)
-        else:
-            super().wheelEvent(event)
-
-    def dragEnterEvent(self, event: QDragEnterEvent | None):
-        if event is not None and event.mimeData() is not None:
-            event.acceptProposedAction()
-
-    def dragMoveEvent(self, event: QDragMoveEvent | None):
-        if event is not None:
-            event.acceptProposedAction()
-
-    def dropEvent(self, event: QDropEvent | None):
-        if event is not None and event.mimeData() is not None:
-            mime = event.mimeData()
-            if mime is None:
-                return
-            event_urls = mime.urls()
-            for url in event_urls:
-                file_path = url.toLocalFile()
-                if file_path is not None:
-                    self.image_dropped.emit(file_path)
-            event.acceptProposedAction()
-
-    def position_arrows(self):
-        vp = self.viewport()
-        assert vp is not None, "Viewport should be initialized"
-        view_width = vp.width()
-        view_height = vp.height()
-
-        y_center = self.mapToScene(QPoint(0, view_height // 2)).y()
-
-        left_x = self.mapToScene(QPoint(10, 0)).x()
-        right_x = self.mapToScene(QPoint(view_width - 40, 0)).x()
-
-        self.left_arrow.setPos(
-            QPointF(left_x, y_center - 15)
-        )  # -15 to vertically center 30px arrow
-        self.right_arrow.setPos(QPointF(right_x, y_center - 15))
-
-    def prev_slide(self):
-        """Show previous slide"""
-        if self.current_index > 1:
-            self.current_index -= 1
-            self.update_slide()
-
-    def next_slide(self):
-        """Show next slide"""
-        if self.current_index < len(self.np_channels.keys()):
-            self.current_index += 1
-            self.update_slide()
-
-    def arrow_visibility(self):
-        """Update visibility of arrows based on current index"""
-        if self.current_index == 1:
-            self.left_arrow.hide()
-        else:
-            self.left_arrow.show()
-
-        if self.current_index == len(self.np_channels.keys()):
-            self.right_arrow.hide()
-        else:
-            self.right_arrow.show()
-
-    def update_slide(self):
-        """Update displayed image"""
-        scene = self.scene()
-        assert scene is not None, "Scene should be initialized"
-        # scene.removeItem(self.pixmap_item)  # Clear previous image
-        self.pixmap = QPixmap(
-            utils.numpy_to_qimage(
-                self.np_channels[f"Channel {self.current_index}"].data
-            )
-        )
-        self.pixmap_item.setPixmap(self.pixmap)
-        assert isinstance(self.pixmap_item, QGraphicsPixmapItem)
-        item_rect = self.pixmap_item.boundingRect()
-        self.setSceneRect(item_rect)
-        self.fitInView(self.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
-        self.arrow_visibility()
-
-    def __centerImage(self):
-        item_rect = self.pixmap_item.boundingRect()
-        self.setSceneRect(item_rect)
-        self.fitInView(self.pixmap_item, Qt.AspectRatioMode.KeepAspectRatio)
-        self.centerOn(self.pixmap_item)
-
-    def mouseMoveEvent(self, event: QMouseEvent | None):
-        """Handle mouse move events for panning"""
-        super().mouseMoveEvent(event)
-        self.position_arrows()
-
-    def display(self, pixmap: QPixmap):
-        scene = self.scene()
-        assert scene is not None, "Scene should be initialized"
-        scene.clear()  # Clear previous image
-        # reset
-        self.current_index = 1
-
-        # if not hasattr(self, "right_arrow"):
-        # self.slideshow()  # Initialize arrows
-
-        self.pixmap = pixmap
-        self.pixmap_item = QGraphicsPixmapItem(self.pixmap)
-        scene.addItem(self.pixmap_item)
-
-        print("has np channels")
-        # Scale arrows appropriately;  !TODO, this should be done dynamically and repositioned dynamically
-
-        # Setup scene
-        item_rect = self.pixmap_item.boundingRect()
-        self.setSceneRect(item_rect)
-        self.fitInView(self.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
-        if self.pixmap.width() > 0:
-            self.add_arrows()
-            self.position_arrows()
-
-    def add_arrows(self):
-        """Add navigation arrows to the scene"""
-        scene = self.scene()
-        assert scene is not None, "Scene should be initialized"
-        self.right_arrow = ArrowItem(
-            QPixmap(resource_path("assets/icons/right-arrow.png")),
-            QPointF(285, 150),
-            self.next_slide,
-        )
-        self.left_arrow = ArrowItem(
-            QPixmap(resource_path("assets/icons/left-arrow.png")),
-            QPointF(15, 150),
-            self.prev_slide,
-        )
-        scene.addItem(self.right_arrow)
-        scene.addItem(self.left_arrow)
-        self.arrow_visibility()
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        # self.move(int(self.parent.width() - 2*self.parent.width()), 10)
-
-    def highlight_pixel(self, x, y):
-        """Highlight the pixel at the given coordinates"""
-        # Remove existing pixel highlight if any
-        if hasattr(self, "pixel_highlight") and self.pixel_highlight:
-            self.get_scene().removeItem(self.pixel_highlight)
-
-        if self.pixmap_item is None:
-            return
-
-        # Create a small rectangle to highlight the pixel
-        # Convert pixel coordinates to scene coordinates
-        pixel_rect = QRectF(x, y, 1, 1)  # 1x1 pixel
-        scene_rect = self.pixmap_item.mapRectToScene(pixel_rect)
-
-        # Create highlight rectangle
-        self.pixel_highlight = QGraphicsRectItem(scene_rect)
-
-        # Style the highlight (you can customize this)
-        pen = QPen(QColor(255, 255, 0, 180))  # Yellow with transparency
-        pen.setWidth(0)  # Cosmetic pen (always 1 pixel wide regardless of zoom)
-        pen.setCosmetic(True)
-        self.pixel_highlight.setPen(pen)
-
-        # Optional: Add a semi-transparent fill
-        brush = QBrush(QColor(255, 255, 0, 50))  # Light yellow fill
-        self.pixel_highlight.setBrush(brush)
-
-        # Add to scene
-        self.get_scene().addItem(self.pixel_highlight)
-
-    def hide_pixel_highlight(self):
-        """Hide the pixel highlight"""
-        if hasattr(self, "pixel_highlight") and self.pixel_highlight:
-            self.get_scene().removeItem(self.pixel_highlight)
-            self.pixel_highlight = None
-
-    def get_scene(self):
-        s = self.scene()
-        assert s is not None, "Scene should be initialized"
-        return s
-
-
+# pylint: disable=too-many-instance-attributes, too-many-public-methods
 class ImageGraphicsViewUI(QGraphicsView):
     """Main image view with support for selection, cropping and other operations"""
 
@@ -357,16 +34,17 @@ class ImageGraphicsViewUI(QGraphicsView):
     clear_canvas = pyqtSignal()
     sigRangeChanged = pyqtSignal(object)  # placeholder for pyqtgraph compatibility
 
-    def __init__(self, parent, enc: "Ui_MainWindow", show_buttons=True):
+    # pylint: disable=too-many-instance-attributes
+    def __init__(self, parent, enc: "MainWindow", show_buttons=True):
         super().__init__(parent)
         self.enc = enc
         self.show_buttons = show_buttons
-        self.setupUI()
+        self.setup_ui()
 
         self.pixmap_item = QGraphicsPixmapItem(QPixmap())
-        self.rubberBand = None
-        self.rubberBands = []
-        self.rubberBandColors = []
+        self.rubber_band = None
+        self.rubber_bands = []
+        self.rubber_band_colors = []
         self.begin_crop = False
         self.origin = None
         self.crop_cursor = QCursor(Qt.CursorShape.CrossCursor)
@@ -396,21 +74,38 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.get_scene().addItem(self.pixmap_item)
         # self.view_pixmap_item.hide()
         self.pixmap_item.show()
+        
+        # Attributes initialized
+        self.floating_container = None
+        self.rect_button = None
+        self.circle_button = None
+        self.poly_button = None
+        self.image_pos = None
+        self.starting_x = 0
+        self.starting_y = 0
+        self.center = None
+        self.initial_crop = None
+        self.initial_crop_rect = None
+        self.np_channels = None
+        self.pixel_highlight = None
 
     def show_view_tab_image(self):
+        """Show the view tab image."""
         self.pixmap_item.hide()
         for pixmap in self.view_pixmaps:
             pixmap.show()
 
     def show_images_tab_image(self):
+        """Show the images tab image."""
         self.pixmap_item.show()
         for pixmap in self.view_pixmaps:
             pixmap.hide()
 
     def get_scene(self):
-        s = self.scene()
-        assert s is not None, "Scene should be initialized"
-        return s
+        """Get the scene."""
+        scene_obj = self.scene()
+        assert scene_obj is not None, "Scene should be initialized"
+        return scene_obj
 
     def reset_view_tab(self):
         """Reset the view tab by clearing all additional layers"""
@@ -418,7 +113,7 @@ class ImageGraphicsViewUI(QGraphicsView):
             self.get_scene().removeItem(pixmap)
         self.view_pixmaps = []
         self.show_images_tab_image()
-        self.__centerImage()
+        self._center_image()
 
     def flip_horizontal(self):
         """Flip the image horizontally"""
@@ -442,7 +137,8 @@ class ImageGraphicsViewUI(QGraphicsView):
             # Emit signal to update the underlying data model
             self.vertical_flip.emit()
 
-    def setupUI(self):
+    def setup_ui(self):
+        """Setup the UI."""
         self.setMinimumSize(QSize(600, 600))
         self.setObjectName("canvas")
         self.setAcceptDrops(True)
@@ -508,10 +204,9 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.circle_button.setIcon(QIcon(resource_path("assets/icons/circle.png")))
         self.poly_button.setIcon(QIcon(resource_path("assets/icons/poly.png")))
 
-        # Connect button signals to selection modes
         self.rect_button.clicked.connect(lambda: self.set_selection_mode("rect"))
         self.circle_button.clicked.connect(lambda: self.set_selection_mode("circle"))
-        self.poly_button.clicked.connect(lambda: self.enc.poly_select())
+        self.poly_button.clicked.connect(self.enc.poly_select)
 
         # Add buttons to layout
         button_layout.addWidget(self.rect_button)
@@ -519,20 +214,22 @@ class ImageGraphicsViewUI(QGraphicsView):
         button_layout.addWidget(self.poly_button)
 
         # Position the container at the top-right of the view
-        self.update_floating_buttons_position()
+        self.update_buttons_position()
 
-    def update_floating_buttons_position(self):
+    def update_buttons_position(self):
         """Update the position of the floating buttons"""
-        if hasattr(self, "floating_container"):
+        if self.floating_container:
             # Position at the top-right of the view with some padding
             self.floating_container.move(
-                self.width() - self.floating_container.width() - 20, 10
+                self.width() - self.floating_container.width() - 20,
+                10,
             )
 
+    # pylint: disable=invalid-name, useless-parent-delegation
     def resizeEvent(self, event):
         """Handle resize events to update floating buttons position"""
         super().resizeEvent(event)
-        self.update_floating_buttons_position()
+        self.update_buttons_position()
 
     def set_selection_mode(self, mode):
         """Set the current selection mode"""
@@ -580,12 +277,15 @@ class ImageGraphicsViewUI(QGraphicsView):
 
         self.unsetCursor()
 
-    def isEmpty(self) -> bool:
+    def is_empty(self) -> bool:
+        """Check if canvas is empty."""
         return self.pixmap_item is None or self.pixmap_item.pixmap().isNull()
 
+    # pylint: disable=invalid-name, unused-argument
     def mouseDoubleClickEvent(self, event):
-        if not self.isEmpty():
-            self.__centerImage()
+        """Handle mouse double click."""
+        if not self.is_empty():
+            self._center_image()
 
     def update_canvas(self, pixmap: QPixmap):
         """Updates canvas when current image is operated on"""
@@ -593,27 +293,32 @@ class ImageGraphicsViewUI(QGraphicsView):
             prev_pixmap_shape = self.pixmap_item.boundingRect()
             self.pixmap_item.setPixmap(pixmap)
             if self.zoom == 1 or self.pixmap_item.boundingRect() != prev_pixmap_shape:
-                self.__centerImage()
+                self._center_image()
 
     def update_layer_levels(self, layer_idx, value):
+        """Update layer levels."""
         self.view_pixmaps[layer_idx].setLevels(value, True)
 
     def update_layer_cmap(self, layer_idx, cmap):
+        """Update layer colormap."""
         layer = self.view_pixmaps[layer_idx]
         assert isinstance(layer, pg.ImageItem)
         layer.setLookupTable(cmap)
 
     def update_layer_opacity(self, layer_idx, opacity):
+        """Update layer opacity."""
         layer = self.view_pixmaps[layer_idx]
         assert isinstance(layer, pg.ImageItem)
         layer.setOpacity(opacity)
 
     def update_layer_visibility(self, layer_idx, visible):
+        """Update layer visibility."""
         layer = self.view_pixmaps[layer_idx]
         assert isinstance(layer, pg.ImageItem)
         layer.setVisible(visible)
 
     def update_view_tab_canvas(self, pixmap: np.ndarray, layer_idx):
+        """Update view tab canvas."""
         # self._show_view_tab_image()
         if layer_idx > (len(self.view_pixmaps) - 1):
             new_layer = pg.ImageItem(pixmap, levels=None)
@@ -621,7 +326,7 @@ class ImageGraphicsViewUI(QGraphicsView):
             new_layer.setZValue(2)
             self.view_pixmaps.append(new_layer)
             self.get_scene().addItem(new_layer)
-            self.__center_view_tab_image(layer_idx)
+            self._center_view_tab_image(layer_idx)
         else:
             print(f"layer {layer_idx}")
             print(f"pixmap shape {pixmap.shape}")
@@ -631,7 +336,7 @@ class ImageGraphicsViewUI(QGraphicsView):
             else:
                 self.view_pixmaps[layer_idx].setImage(pixmap)
 
-    def __center_view_tab_image(self, layer_idx):
+    def _center_view_tab_image(self, layer_idx):
         pixmap_item = self.view_pixmaps[layer_idx]
         item_rect = pixmap_item.boundingRect()
         item_rect = QRectF(
@@ -644,10 +349,9 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.fitInView(pixmap_item, Qt.AspectRatioMode.KeepAspectRatio)
         self.centerOn(pixmap_item)
 
-    def __centerImage(self):
-        pixmap_item = (
+    def _center_image(self):
+        pixmap_item = \
             self.pixmap_item if self.pixmap_item.isVisible() else self.view_pixmaps[0]
-        )
         item_rect = pixmap_item.boundingRect()
         item_rect = QRectF(
             item_rect.x() - item_rect.width() // 2,
@@ -661,15 +365,21 @@ class ImageGraphicsViewUI(QGraphicsView):
         # if self.reference_view:
         #     self.reference_view.__centerImage()
 
+    # pylint: disable=invalid-name
     def dragEnterEvent(self, event: QDragEnterEvent):  # type: ignore
+        """Handle drag enter."""
         mime = event.mimeData()
         if mime and mime.hasUrls():
             event.acceptProposedAction()
 
+    # pylint: disable=invalid-name
     def dragMoveEvent(self, event: QDragMoveEvent):  # type: ignore
+        """Handle drag move."""
         event.acceptProposedAction()
 
+    # pylint: disable=invalid-name
     def dropEvent(self, event):
+        """Handle drop."""
         if event is None:
             return
         mime = event.mimeData()
@@ -680,10 +390,12 @@ class ImageGraphicsViewUI(QGraphicsView):
                     self.image_dropped.emit(file_path)
             event.acceptProposedAction()
 
+    # pylint: disable=invalid-name
     def wheelEvent(self, event):
+        """Handle wheel event for zooming."""
         if event is None:
             return
-        elif self.pixmap_item is None:
+        if self.pixmap_item is None:
             return
         zooming_out = event.angleDelta().y() < 0
 
@@ -703,7 +415,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         # Store rubber band positions before zooming
         if not self.rubber_band_positions:
             self.rubber_band_positions = []
-            for rubber_band in self.rubberBands:
+            for rubber_band in self.rubber_bands:
                 rubber_band_geometry = rubber_band.geometry()
                 top_left_scene = self.mapToScene(rubber_band_geometry.topLeft())
                 bottom_right_scene = self.mapToScene(rubber_band_geometry.bottomRight())
@@ -730,7 +442,8 @@ class ImageGraphicsViewUI(QGraphicsView):
         assert vp is not None, "Viewport should be initialized"
         vp.update()
 
-    def create_rubber_band(self, rubber_band_class, shape, x, y, parent, origin):
+    # pylint: disable=too-many-arguments, too-many-positional-arguments
+    def create_rubber_band(self, rubber_band_class, shape, x, y, origin):
         """Create a rubber band of the specified class"""
         rubber_band = rubber_band_class(shape, x, y, self)
         rubber_band.setGeometry(QRect(origin, QSize()))
@@ -744,8 +457,10 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.starting_x = int(self.image_pos.x())
         self.starting_y = int(self.image_pos.y())
 
+    # pylint: disable=invalid-name, too-many-branches, too-many-statements
     def mousePressEvent(self, event: QMouseEvent | None):
-        if self.isEmpty() or event is None:
+        """Handle mouse press."""
+        if self.is_empty() or event is None:
             return
         if event.button() == Qt.MouseButton.LeftButton:
             # Handle crop mode
@@ -778,21 +493,21 @@ class ImageGraphicsViewUI(QGraphicsView):
                 image_pos = self.pixmap_item.mapFromScene(scene_pos)
                 self.select_start_pos = image_pos
                 if self.begin_crop:
-                    if not self.rubberBand:
-                        self.rubberBand = RectLasso(self)
+                    if not self.rubber_band:
+                        self.rubber_band = RectLasso(self)
                 elif self.select == "rect":
-                    self.rubberBand = RectLasso(self)
-                    self.rubberBands.append(self.rubberBand)
-                    self.rubberBandColors.append(self.rubberBand.color)
-                    self.rubberBand.setGeometry(QRect(self.origin, QSize()))
-                    self.rubberBand.show()
+                    self.rubber_band = RectLasso(self)
+                    self.rubber_bands.append(self.rubber_band)
+                    self.rubber_band_colors.append(self.rubber_band.color)
+                    self.rubber_band.setGeometry(QRect(self.origin, QSize()))
+                    self.rubber_band.show()
                 elif self.select == "circle":
                     self.center = QPoint(self.starting_x, self.starting_y)
-                    self.rubberBand = CircleLasso(self)
-                    self.rubberBands.append(self.rubberBand)
-                    self.rubberBandColors.append(self.rubberBand.color)
-                    self.rubberBand.setGeometry(QRect(self.origin, QSize()))
-                    self.rubberBand.show()
+                    self.rubber_band = CircleLasso(self)
+                    self.rubber_bands.append(self.rubber_band)
+                    self.rubber_band_colors.append(self.rubber_band.color)
+                    self.rubber_band.setGeometry(QRect(self.origin, QSize()))
+                    self.rubber_band.show()
                 elif self.select == "poly":
                     if not self.current_polygon:
                         self.current_polygon = PolyLasso(
@@ -809,22 +524,24 @@ class ImageGraphicsViewUI(QGraphicsView):
                     self.current_polygon.add_point(polygon_pos, image_pos)
 
                 if self.begin_crop:
-                    self.rubberBands.append(self.rubberBand)
+                    self.rubber_bands.append(self.rubber_band)
                     assert (
-                        self.rubberBand is not None
+                        self.rubber_band is not None
                     ), "Rubber band should be initialized"
-                    self.rubberBandColors.append(self.rubberBand.color)
-                    self.rubberBand.setGeometry(QRect(self.origin, QSize()))
-                    self.rubberBand.show()
+                    self.rubber_band_colors.append(self.rubber_band.color)
+                    self.rubber_band.setGeometry(QRect(self.origin, QSize()))
+                    self.rubber_band.show()
 
         if not self.is_resizing and not self.select:
             super().mousePressEvent(event)
 
         # Propagate event to rubber bands
-        for r in self.rubberBands:
+        for r in self.rubber_bands:
             r.mousePressEvent(event)
 
+    # pylint: disable=invalid-name
     def keyPressEvent(self, event):
+        """Handle key press."""
         # Handle crop confirmation with Enter key
         if event is None:
             return
@@ -879,6 +596,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.cancel_crop_mode()
 
     def save_as_png(self, num_layers):
+        """Save as PNG."""
         if num_layers == 0:
             return
         file_name, _ = QFileDialog.getSaveFileName(
@@ -908,6 +626,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         img.save(file_name)
 
     def save_as_tif(self, num_layers):
+        """Save as TIF."""
         if num_layers == 0:
             return  # the second QRectF is the source rect from the scene.
         file_name, _ = QFileDialog.getSaveFileName(
@@ -925,19 +644,23 @@ class ImageGraphicsViewUI(QGraphicsView):
             )
             ptr = qimage.bits()
             ptr.setsize(qimage.width() * qimage.height() * 4)
+            # pylint: disable=too-many-function-args
             arr = np.array(ptr, dtype=np.uint8).reshape(
                 qimage.height(), qimage.width(), 3
             )
             img_stack.append(arr)
 
         img_stack = np.array(img_stack)
+        # pylint: disable=too-many-function-args
         tifffile.imwrite(file_name, img_stack, imagej=True)
 
+    # pylint: disable=invalid-name, too-many-locals, too-many-statements, too-many-branches
     def mouseMoveEvent(self, event: QMouseEvent | None):
+        """Handle mouse move."""
         super().mouseMoveEvent(event)
 
         # Handle crop rectangle re  sizing
-        if event is None or self.isEmpty():
+        if event is None or self.is_empty():
             return
         event.accept()
         if (
@@ -1004,7 +727,7 @@ class ImageGraphicsViewUI(QGraphicsView):
                 QToolTip.showText(global_pos, "", self)
 
                 # Get layer values if available
-                if self.enc and self.enc.toolBarUI.tabButtonGroup.checkedId() != 0:
+                if self.enc and self.enc.tool_bar.tabButtonGroup.checkedId() != 0:
                     layers = self.enc.view_tab.get_layer_values_at(x, y)
                 else:
                     layers = None
@@ -1022,11 +745,11 @@ class ImageGraphicsViewUI(QGraphicsView):
                 if combined_layers:
                     combined_layers = combined_layers.replace("\n", ", ")
                     combined_layers += ";"
-                    self.enc.updateMousePositionLabel(
+                    self.enc.update_mouse_position_label(
                         f"{combined_layers} X: {x}, Y: {y}"
                     )
                 else:
-                    self.enc.updateMousePositionLabel(
+                    self.enc.update_mouse_position_label(
                         f"R: {r}, G: {g}, B: {b} X: {x}, Y: {y}"
                     )
 
@@ -1035,26 +758,26 @@ class ImageGraphicsViewUI(QGraphicsView):
                 # if self.reference_view:
                 #     self.reference_view.highlight_pixel(x, y)
             else:
-                self.enc.updateMousePositionLabel("")
+                self.enc.update_mouse_position_label("")
                 # Hide pixel highlight when outside image bounds
                 self.hide_pixel_highlight()
                 # if self.reference_view:
                 # self.reference_view.hide_pixel_highlight()
         # Handle rubber band updates for old crop system
         if (
-            not self.isEmpty()
+            not self.is_empty()
             and self.begin_crop
-            and self.rubberBand
+            and self.rubber_band
             and not self.crop_mode
         ):
             if self.origin is None:
                 self.origin = event.pos()
                 self.update_starting_position(event)
-            self.rubberBand.setGeometry(QRect(self.origin, event.pos()).normalized())
+            self.rubber_band.setGeometry(QRect(self.origin, event.pos()))
 
         if (
-            (self.select == "rect" or self.select == "circle")
-            and self.rubberBands
+            self.select in ("rect", "circle")
+            and self.rubber_bands
             and self.origin is not None
         ):
             if self.select == "circle":
@@ -1063,21 +786,23 @@ class ImageGraphicsViewUI(QGraphicsView):
                 size = (
                     max(abs(center.x() - corner.x()), abs(center.y() - corner.y())) * 2
                 )
-                self.rubberBands[-1].setGeometry(
+                self.rubber_bands[-1].setGeometry(
                     QRect(center.x() - size // 2, center.y() - size // 2, size, size)
                 )
             else:
-                self.rubberBands[-1].setGeometry(
+                self.rubber_bands[-1].setGeometry(
                     QRect(self.origin, event.pos()).normalized()
                 )
 
-        # Propagate event to rubber bands when not in selection mode
+        # Propagate event to rubber bands
         if not self.select:
-            for r in self.rubberBands:
+            for r in self.rubber_bands:
                 r.mouseMoveEvent(event)
 
+    # pylint: disable=invalid-name
     def mouseReleaseEvent(self, event: QMouseEvent | None):
-        if event is None or self.isEmpty():
+        """Handle mouse release."""
+        if event is None or self.is_empty():
             return
 
         super().mouseReleaseEvent(event)
@@ -1090,31 +815,31 @@ class ImageGraphicsViewUI(QGraphicsView):
             self.initial_crop_rect = self.active_crop_rect.rect()
             self.get_scene().removeItem(self.active_crop_rect)
 
+            # pylint: disable=too-many-function-args
             self.active_crop_rect = ResizableRect(
-                self.initial_crop_rect.x(),
-                self.initial_crop_rect.y(),
-                self.initial_crop_rect.width(),
-                self.initial_crop_rect.height(),
+                self.initial_crop_rect.x(), self.initial_crop_rect.y(),
+                self.initial_crop_rect.width(), self.initial_crop_rect.height(),
             )
             self.active_crop_rect.setZValue(10)
+            
             self.is_resizing = False
 
             self.get_scene().addItem(self.active_crop_rect)
             return
-        if not self.rubberBands:
+        if not self.rubber_bands:
             return
 
         # Propagate event to rubber bands
-        for r in self.rubberBands:
+        for r in self.rubber_bands:
             r.mouseReleaseEvent(event)
 
         if event.button() == Qt.MouseButton.LeftButton:
-            rubberband = self.rubberBand if self.begin_crop else self.rubberBands[-1]
+            rubberband = self.rubber_band if self.begin_crop else self.rubber_bands[-1]
 
             if self.select:
                 self.origin = None
                 assert self.select_start_pos is not None
-                if self.select == "rect" or self.select == "circle":
+                if self.select in ("rect", "circle"):
                     assert rubberband is not None
                     scene_pos = self.mapToScene(event.pos())
                     image_pos = self.pixmap_item.mapFromScene(scene_pos)
@@ -1133,18 +858,18 @@ class ImageGraphicsViewUI(QGraphicsView):
                     )
                     # if failed to analyze region, then remove rubber band
                     if not self.enc.analysis_tab.analyze_region(rubberband, image_rect):
-                        self.rubberBands.remove(self.rubberBand)
-                        self.rubberBandColors.pop()
+                        self.rubber_bands.remove(self.rubber_band)
+                        self.rubber_band_colors.pop()
                         if rubberband:
                             rubberband.deleteLater()
                     self.select = False
                     return
 
-    def loadChannels(self, np_channels):
+    def load_channels(self, np_channels):
         """Load channel data"""
         self.np_channels = np_channels
         if self.pixmap_item is not None:
-            self.__centerImage()
+            self._center_image()
 
     def highlight_pixel(self, x, y):
         """Highlight the pixel at the given coordinates"""
@@ -1180,256 +905,3 @@ class ImageGraphicsViewUI(QGraphicsView):
         if hasattr(self, "pixel_highlight") and self.pixel_highlight:
             self.get_scene().removeItem(self.pixel_highlight)
             self.pixel_highlight = None
-
-
-class ResizableRect(QGraphicsRectItem):
-    def __init__(self, x=0.0, y=0.0, width=0.0, height=0.0, onCenter=False):
-        if onCenter:
-            super().__init__(-width / 2, -height / 2, width, height)
-        else:
-            super().__init__(x, y, width, height)
-
-        self.setFlags(
-            QGraphicsRectItem.GraphicsItemFlag.ItemIsMovable
-            | QGraphicsRectItem.GraphicsItemFlag.ItemIsSelectable
-            | QGraphicsRectItem.GraphicsItemFlag.ItemIsFocusable
-        )
-        self.selected_edge = None
-        self.setAcceptHoverEvents(True)
-        self.setPen(QPen(QBrush(Qt.GlobalColor.blue), 3, Qt.PenStyle.DotLine))
-        self.setBrush(QBrush(QColor(0, 255, 0, 30)))
-        # Create 8 resize handles with correct cursor
-        self.handles = []
-        cursor_shapes = [
-            Qt.CursorShape.SizeFDiagCursor,  # top-left
-            Qt.CursorShape.SizeVerCursor,  # top-center
-            Qt.CursorShape.SizeBDiagCursor,  # top-right
-            Qt.CursorShape.SizeHorCursor,  # mid-right
-            Qt.CursorShape.SizeFDiagCursor,  # bottom-right
-            Qt.CursorShape.SizeVerCursor,  # bottom-center
-            Qt.CursorShape.SizeBDiagCursor,  # bottom-left
-            Qt.CursorShape.SizeHorCursor,  # mid-left
-        ]
-        edges = [
-            Qt.Edge.TopEdge | Qt.Edge.LeftEdge,  # top-left
-            Qt.Edge.TopEdge,  # top-center
-            Qt.Edge.TopEdge | Qt.Edge.RightEdge,  # top-right
-            Qt.Edge.RightEdge,  # mid-right
-            Qt.Edge.BottomEdge | Qt.Edge.RightEdge,  # bottom-right
-            Qt.Edge.BottomEdge,  # bottom-center
-            Qt.Edge.BottomEdge | Qt.Edge.LeftEdge,  # bottom-left
-            Qt.Edge.LeftEdge,  # mid-left
-        ]
-
-        for cursor, edge in zip(cursor_shapes, edges):
-            handle = ResizeHandle(cursor, self)
-            handle.setEdge(edge)
-            self.handles.append(handle)
-
-        self.updateHandles()
-        self.text_item = QGraphicsSimpleTextItem(self)
-        self.text_item.setBrush(QColor("yellow"))
-        self.text_item.setFont(QFont("Arial", 10))
-        self.text_item.setFlag(
-            QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True
-        )
-        self.update_text()
-        # ⬆ ensures text doesn’t scale with zoom
-
-    def updateHandles(self):
-        rect = self.rect()
-        x, y, w, h = rect.x(), rect.y(), rect.width(), rect.height()
-
-        positions = [
-            QPointF(x, y),  # top-left
-            QPointF(x + w / 2, y),  # top-center
-            QPointF(x + w, y),  # top-right
-            QPointF(x + w, y + h / 2),  # mid-right
-            QPointF(x + w, y + h),  # bottom-right
-            QPointF(x + w / 2, y + h),  # bottom-center
-            QPointF(x, y + h),  # bottom-left
-            QPointF(x, y + h / 2),  # mid-left
-        ]
-        HANDLE_SIZE = 16
-        for handle, pos in zip(self.handles, positions):
-            handle.setPos(pos)
-
-            # fixed-size rect centered at (0,0)
-            handle.setRect(-HANDLE_SIZE / 2, -HANDLE_SIZE / 2, HANDLE_SIZE, HANDLE_SIZE)
-
-            # ensure handle doesn't scale with zoom
-            handle.setFlag(
-                QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True
-            )
-
-    def setRect(self, *args, **kwargs):
-        if len(args) == 1 and hasattr(args[0], "x"):
-            # Called with QRectF object
-            rect = args[0]
-            super().setRect(rect.x(), rect.y(), rect.width(), rect.height())
-        elif len(args) == 4:
-            # Called with separate x, y, width, height parameters
-            super().setRect(*args)
-        elif "rect" in kwargs:
-            # Called with rect keyword parameter
-            super().setRect(**kwargs)
-        else:
-            # Fallback to base implementation
-            super().setRect(*args, **kwargs)
-        self.updateHandles()
-        self.update_text()
-
-    def mousePressEvent(self, event):
-        super().mousePressEvent(event)
-
-    def mouseMoveEvent(self, event):
-        if event is None:
-            return
-        if self.selected_edge:
-            rect = self.rect()
-            pos = self.mapFromScene(event.scenePos())
-            new_rect = QRectF(rect)
-
-            if self.selected_edge & Qt.Edge.LeftEdge:
-                diff = pos.x()
-                new_width = rect.right() - diff
-                if new_width > 10:
-                    new_rect.setLeft(diff)
-
-            if self.selected_edge & Qt.Edge.RightEdge:
-                diff = pos.x()
-                new_width = diff - rect.left()
-                if new_width > 10:
-                    new_rect.setRight(diff)
-
-            if self.selected_edge & Qt.Edge.TopEdge:
-                diff = pos.y()
-                new_height = rect.bottom() - diff
-                if new_height > 10:
-                    new_rect.setTop(diff)
-
-            if self.selected_edge & Qt.Edge.BottomEdge:
-                diff = pos.y()
-                new_height = diff - rect.top()
-                if new_height > 10:
-                    new_rect.setBottom(diff)
-
-            self.setRect(new_rect)
-        else:
-            super().mouseMoveEvent(event)
-
-    #
-
-    def update_text(self):
-        MARGIN = 360
-        rect = self.rect()
-        w = int(rect.width())
-        h = int(rect.height())
-        x = rect.x()
-        y = rect.y()
-        # self.text_item.setFlag()
-
-        self.text_item.setText(f"{w} × {h}")
-
-        # Fixed margin (5 px in scene coordinates, stays constant due to IgnoresTransformations)
-        self.text_item.setPos(x - MARGIN, y - MARGIN)
-
-    def mouseReleaseEvent(self, event):
-        self.selected_edge = Qt.Edge(0)
-        super().mouseReleaseEvent(event)
-        self.updateHandles()
-
-    def getEdges(self, pos):
-        """Fallback edge hit detection for resize dragging (not hover)"""
-        edges = Qt.Edge(0)
-        rect = self.rect()
-        buffer = 30
-
-        if pos.x() < rect.x() + buffer:
-            edges |= Qt.Edge.LeftEdge
-        elif pos.x() > rect.right() - buffer:
-            edges |= Qt.Edge.RightEdge
-        if pos.y() < rect.y() + buffer:
-            edges |= Qt.Edge.TopEdge
-        elif pos.y() > rect.bottom() - buffer:
-            edges |= Qt.Edge.BottomEdge
-
-        return edges
-
-
-class ResizeHandle(QGraphicsRectItem):
-    def __init__(self, cursor_shape: Qt.CursorShape, parent: ResizableRect):
-        """Resize handle for ResizableRect"""
-        w, h = parent.boundingRect().width(), parent.boundingRect().height()
-        w, h = w // 16, h // 16
-        w, h = max(16, w), max(16, h)  # Ensure minimum size
-
-        super().__init__(-w // 2, -h // 2, w, h, parent)  # Center the handle
-        self.setBrush(QBrush(Qt.GlobalColor.white))
-        self.setPen(QPen(Qt.GlobalColor.black))
-        self.setZValue(11)
-        self.setAcceptHoverEvents(True)
-        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable)
-        self.cursor_shape = cursor_shape
-        self.edge = Qt.Edge(0)
-        self.parent = parent
-
-    def setEdge(self, edge):
-        """Set the edge this handle is associated with"""
-        self.edge = edge
-
-    def hoverEnterEvent(self, event):
-        QApplication.setOverrideCursor(QCursor(self.cursor_shape))
-
-    def hoverLeaveEvent(self, event):
-        QApplication.restoreOverrideCursor()
-
-    def mousePressEvent(self, event):
-        """Handle mouse press events on the resize handle"""
-        self.parent.selected_edge = self.edge
-        # super().mousePressEvent(event)
-
-    def mouseReleaseEvent(self, event):
-        """Handle mouse release events on the resize handle"""
-        self.parent.selected_edge = Qt.Edge(0)
-        # super().mouseReleaseEvent(event)
-
-    def mouseMoveEvent(self, event):
-        """Handle mouse move events on the resize handle"""
-        super().mouseMoveEvent(event)
-        # Update the parent rectangle's position if needed
-        self.parent.mouseMoveEvent(event)
-
-
-class CropRectItem(QGraphicsRectItem):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-
-        # Rectangle style
-        self.setPen(QPen(QColor("red"), 2, Qt.PenStyle.DashLine))
-        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
-        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
-        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges, True)
-
-        # Size text overlay
-        self.text_item = QGraphicsSimpleTextItem(self)
-        self.text_item.setBrush(QColor("yellow"))
-        self.text_item.setFont(QFont("Arial", 10))
-        self.text_item.setFlag(
-            QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True
-        )
-        # ⬆ ensures text doesn’t scale with zoom
-
-    def update_text(self):
-        rect = self.rect()
-        w = int(rect.width())
-        h = int(rect.height())
-        self.text_item.setText(f"{w} × {h}")
-
-        # Place text at top-left of rect with a small margin
-        self.text_item.setPos(rect.x() + 5, rect.y() + 5)
-
-    def setRect(self, *args):
-        """Override setRect to keep text updated"""
-        super().setRect(*args)
-        self.update_text()
