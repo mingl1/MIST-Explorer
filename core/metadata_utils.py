@@ -1,5 +1,6 @@
 import os
 import xml.etree.ElementTree as ET
+
 import tifffile as tiff
 
 
@@ -60,3 +61,4 @@ def parse_metadata(filename):
         metadata["DimensionOrder"] = "Unknown"
 
     return metadata
+

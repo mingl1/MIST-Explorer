@@ -12,7 +12,7 @@ from .cell_layer_alignment import (CellLayerAligner,
                                    create_preprocessing_matrix,
                                    extract_complete_transformation, morph_open,
                                    register_combination)
-from .register import Register, TileMap
+from .registeration import Register, TileMap
 from .stardist import StarDist
 from .umap import UMAPHelper
 from .worker import Worker

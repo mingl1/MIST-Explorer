@@ -32,6 +32,7 @@ from pystackreg.util import to_uint16
 from skimage.color import label2rgb as sk_label2rgb
 
 # Local/project imports
+from core.metadata_utils import parse_metadata
 from core.worker import Worker
 from utils import (adjustContrast, auto_contrast_helper, create_lut,
                    numpy_to_qimage, scale_adjust, to_pixmap)
@@ -459,7 +460,7 @@ class BaseGraphicsView(QWidget):
         """Process multi-channel TIFF images."""
         # Handle metadata
         metadata_widget = MetaData()
-        metadata = metadata_widget.parse_metadata(file_name)
+        metadata = parse_metadata(file_name)
         self.fill_metadata.emit(metadata)
 
         emit_data = {}
@@ -1600,61 +1601,6 @@ class MetaData(QWidget):
 
             # key_item.setFlags(key_item.flags() ^ Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(row, 0, value_item)
-
-    def parse_metadata(self, filename):
-        file_name = os.path.basename(filename)
-        name = os.path.splitext(file_name)[0]
-        metadata = {}
-
-        with tiff.TiffFile(filename) as tif:
-            raw_meta_data = {}
-            page = tif.pages[0]
-            if isinstance(page, tiff.TiffFrame):
-                page = page.aspage()
-            for tag in page.tags.values():
-                raw_meta_data[tag.name] = tag.value
-
-        try:
-            desc = raw_meta_data["ImageDescription"]
-            root = ET.fromstring(desc)
-            namespace_uri = root.tag[root.tag.find(
-                "{") + 1: root.tag.find("}")]
-            ns = {"ome": namespace_uri}
-            pixels = root.find(".//ome:Pixels", namespaces=ns)
-
-            if pixels is not None:
-                metadata = {
-                    "Name": name,
-                    "URI": filename,
-                    "Width": pixels.attrib.get("SizeX"),
-                    "Height": pixels.attrib.get("SizeY"),
-                    "Dimension (CZT)": f"{pixels.attrib.get('SizeC')} x {pixels.attrib.get('SizeZ')} x {pixels.attrib.get('SizeT')}",
-                    "Pixel Type": pixels.attrib.get("Type"),
-                    "PhysicalSizeX": f"{pixels.attrib.get('PhysicalSizeX')} {pixels.attrib.get('PhysicalSizeXUnit')}",
-                    "PhysicalSizeY": f"{pixels.attrib.get('PhysicalSizeY')} {pixels.attrib.get('PhysicalSizeYUnit')}",
-                    "DimensionOrder": pixels.attrib.get("DimensionOrder"),
-                }
-
-                # for k, v in metadata.items():
-            else:
-                print("Pixels element not found.")
-
-        except ET.ParseError as e:
-            print("Parse error has occurred:", e)
-
-        finally:
-            if not metadata:
-                metadata["Name"] = name
-                metadata["URI"] = filename
-                metadata["Width"] = raw_meta_data["ImageWidth"]
-                metadata["Height"] = raw_meta_data["ImageLength"]
-                metadata["Pixel Type"] = f"uint{raw_meta_data['BitsPerSample']}"
-                metadata["Dimension (CZT)"] = "Unknown"
-                metadata["PhysicalSizeX"] = "Unknown"
-                metadata["PhysicalSizeY"] = "Unknown"
-                metadata["DimensionOrder"] = "Unknown"
-
-        return metadata
 
     def metadata_tooltip(self, metadata: dict) -> str:
         """
