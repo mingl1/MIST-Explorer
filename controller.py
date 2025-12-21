@@ -299,6 +299,14 @@ class Controller:
         self.need_canvas_change(index)
         self.prev_tab_index = index
 
+    def update_small_view_visibility(self, *args):
+        """Updates the visibility of the small view (reference view)."""
+        # args can be ignored (either index from tab change or pixmap from update_reference)
+        index = self.view.stacked_widget.currentIndex()
+        is_images_tab = index == 0
+        has_content = not self.view.small_view.is_empty()
+        self.view.small_view.setVisible(is_images_tab and has_content)
+
     def handle_cancel_registration(self):
         """Cancels the registration."""
         self.model_register.cancel()
@@ -374,6 +382,9 @@ class SignalConnectionManager:
         )
         self.c.model_reference_canvas.update_reference.connect(
             self.c.view.small_view.display
+        )
+        self.c.model_reference_canvas.update_reference.connect(
+            self.c.update_small_view_visibility
         )
         self.c.model_canvas.update_canvas.connect(self.c.view.canvas.update_canvas)
         self.c.model_canvas.update_channel.connect(
@@ -619,7 +630,5 @@ class SignalConnectionManager:
         """Miscellaneous connections"""
         self.c.view.view_tab.progress.connect(self.c.view.update_progress_bar)
         self.c.view.stacked_widget.currentChanged.connect(
-            lambda x: self.c.view.small_view.setVisible(
-                x == 0 and not self.c.view.small_view.is_empty()
-            )
+            self.c.update_small_view_visibility
         )

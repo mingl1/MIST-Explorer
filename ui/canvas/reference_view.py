@@ -1,17 +1,17 @@
 """
 Reference graphics view module.
 """
+import pyqtgraph as pg
 # pylint: disable=no-name-in-module, missing-final-newline, fixme
 from PyQt6.QtCore import QPoint, QPointF, QRectF, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import (QBrush, QColor, QDragEnterEvent, QDragMoveEvent,
-                         QDropEvent, QMouseEvent, QPen, QPixmap)
+                         QDropEvent, QPen, QPixmap)
 from PyQt6.QtWidgets import (QGraphicsPixmapItem, QGraphicsRectItem,
-                             QGraphicsView)
-import pyqtgraph as pg
+                             QGraphicsView, QSizeGrip)
 
 import utils
-from utils import resource_path
 from ui.canvas.items import ArrowItem
+from utils import resource_path
 
 
 # pylint: disable=too-many-instance-attributes
@@ -42,23 +42,73 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         self.left_arrow.setZValue(999)  # Ensure arrows are above the image
         self.pixel_highlight = None
 
+        self._resizing = False
+        self._resize_start_pos = None
+        self._initial_size = None
+        self._hide_threshold = 100
+
         self.init_ui()
 
     def init_ui(self):
         """Initialize the UI"""
-        self.setMinimumSize(QSize(300, 300))
-        self.setMaximumSize(QSize(300, 300))
+        self.setMinimumSize(QSize(50, 50))
+        # self.setMaximumSize(QSize(300, 300))
+        self.resize(300, 300)
         self.setScene(pg.GraphicsScene())
         self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
         self.setRenderHint(self.renderHints() | self.renderHints().Antialiasing)
         self.setStyleSheet("QGraphicsView { border: 1px solid black; }")
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
+        self.setMouseTracking(True)
+        
+        # Add size grip for visual handle only - we'll override its behavior
+        self.size_grip = QSizeGrip(self)
+        self.size_grip.setStyleSheet("""
+            QSizeGrip {
+                background-color: rgba(128, 128, 128, 150);
+                width: 16px;
+                height: 16px;
+            }
+        """)
+        # Install event filter to intercept size grip events
+        self.size_grip.installEventFilter(self)
+        
         # self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         # self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
 
+    def eventFilter(self, obj, event):
+        """Filter events from the size grip to handle resize manually"""
+        if hasattr(self, 'size_grip') and obj == self.size_grip:
+            if event.type() == event.Type.MouseButtonPress:
+                self._resizing = True
+                self._resize_start_pos = event.globalPosition().toPoint()
+                self._initial_size = self.size()
+                return True  # Block the event from size grip
+            elif event.type() == event.Type.MouseButtonRelease:
+                self._resizing = False
+                return True
+            elif event.type() == event.Type.MouseMove and self._resizing:
+                delta = event.globalPosition().toPoint() - self._resize_start_pos
+                new_width = max(50, self._initial_size.width() + delta.x())
+                new_height = max(50, self._initial_size.height() + delta.y())
+                
+                if new_width < self._hide_threshold or new_height < self._hide_threshold:
+                    self.hide()
+                    self._resizing = False
+                    return True
+                
+                # Manually resize without affecting parent layout
+                self.setFixedSize(new_width, new_height)
+                return True
+        return super().eventFilter(obj, event)
+
     def is_empty(self) -> bool:
         """Check if the view is empty"""
-        return self.pixmap_item is None
+        return (
+            self.pixmap_item is None
+            or self.pixmap_item.pixmap().isNull()
+            or self.pixmap_item.pixmap().width() == 0
+        )
 
     def load_channels(self, np_channels):
         """Load channels"""
@@ -182,14 +232,10 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         self.fitInView(self.pixmap_item, Qt.AspectRatioMode.KeepAspectRatio)
         self.centerOn(self.pixmap_item)
 
-    # pylint: disable=invalid-name
-    def mouseMoveEvent(self, event: QMouseEvent | None):
-        """Handle mouse move events for panning"""
-        super().mouseMoveEvent(event)
-        self.position_arrows()
-
     def display(self, pixmap: QPixmap):
         """Display the given pixmap"""
+        self.show()
+        # self.raise_()
         scene = self.scene()
         assert scene is not None, "Scene should be initialized"
         scene.clear()  # Clear previous image
@@ -232,11 +278,26 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         scene.addItem(self.left_arrow)
         self.arrow_visibility()
 
-    # pylint: disable=invalid-name, useless-parent-delegation
+    # pylint: disable=invalid-name
     def resizeEvent(self, event):
         """Handle resize event"""
         super().resizeEvent(event)
-        # self.move(int(self.parent.width() - 2*self.parent.width()), 10)
+        
+        # Position the size grip in the bottom-right corner
+        grip_size = self.size_grip.sizeHint()
+        self.size_grip.move(
+            self.width() - grip_size.width(),
+            self.height() - grip_size.height()
+        )
+        
+        # Reposition arrows when resized
+        self.position_arrows()
+
+    def get_scene(self):
+        """Get the scene"""
+        s = self.scene()
+        assert s is not None, "Scene should be initialized"
+        return s
 
     def highlight_pixel(self, x, y):
         """Highlight the pixel at the given coordinates"""
@@ -273,9 +334,3 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         if hasattr(self, "pixel_highlight") and self.pixel_highlight:
             self.get_scene().removeItem(self.pixel_highlight)
             self.pixel_highlight = None
-
-    def get_scene(self):
-        """Get the scene"""
-        s = self.scene()
-        assert s is not None, "Scene should be initialized"
-        return s

@@ -11,7 +11,7 @@ class ImageTreeItem(QStandardItem):
         self.storage = ImageStorage()
         image_dict = self.storage.get_data(uuid)
         if not image_dict:
-            raise ValueError(f"No image data found for UUID: {uuid}")
+            raise ValueError(f"No image data found for UUID: {uuid}, type: {type(uuid)}")
         name = image_dict.get("name", "")
         text = name if useItemName else channel
         data = image_dict.get("data", {})

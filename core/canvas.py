@@ -203,13 +203,10 @@ class ImageStorage:
                     cls._instance = super().__new__(cls)
                     cls._instance._init_instance()
         return cls._instance
-    
-    def __init__(self) -> None:
-        self.image_list = {}
-        self._data_lock = threading.Lock()  # Instance-level lock for image_list
 
     def _init_instance(self):
-        self.__init__()
+        self.image_list = {}
+        self._data_lock = threading.Lock()  # Instance-level lock for image_list
 
     def __len__(self):
         with self._data_lock:
@@ -634,7 +631,7 @@ class BaseGraphicsView(QWidget):
     def _schedule_caching_task(self, channels, uuid):
         """Add a caching task to the queue and start a worker if not running."""
         self.caching_queue.put((channels, uuid))
-        if not (hasattr(self, "_caching_worker")
+        if not (self._caching_worker is not None
                 and self._caching_worker.isRunning()):
             self._caching_worker = Worker(self._process_caching_queue)
             self._caching_worker.finished.connect(
@@ -858,23 +855,23 @@ class ReferenceGraphicsView(BaseGraphicsView):
                     self.add_to_canvas(file_path)
 
     def add_to_canvas(self, i: str | UUID_Type, target_channel="Channel 1"):
-        reference_worker = None
+        self.reference_worker = None
         if isinstance(i, UUID_Type):
             self.set_uuid(i)
             item = self.storage.get_data(str(i))
             assert item is not None, "UUID not found in storage"
             image_data = item.get("data", None)
             assert image_data is not None, "UUID not found in storage"
-            reference_worker = Worker(
+            self.reference_worker = Worker(
                 self._replace_canvas, image_data, target_channel=target_channel
             )
         else:
-            reference_worker = Worker(self._process_new_file, i, False)
-        reference_worker.start()
-        reference_worker.signal.connect(self.set_pixmap)
-        reference_worker.finished.connect(reference_worker.quit)
-        reference_worker.finished.connect(
-            reference_worker.deleteLater)
+            self.reference_worker = Worker(self._process_new_file, i, False)
+        self.reference_worker.start()
+        self.reference_worker.signal.connect(self.set_pixmap)
+        self.reference_worker.finished.connect(self.reference_worker.quit)
+        self.reference_worker.finished.connect(
+            self.reference_worker.deleteLater)
     def set_uuid(self, uuid):
         """Set UUID for the reference image."""
         self.uuid = uuid
@@ -1132,7 +1129,7 @@ class ImageGraphicsView(BaseGraphicsView):
         # if hasattr(self, "memory_cache"):
         # self.memory_cache.clear_all()
         # str is filepath
-        image_worker = None
+        self.image_worker = None
         if isinstance(i, str):
             assert self.storage.get_data(
                 i) is None, "Convert str to UUID instance"
@@ -1140,9 +1137,9 @@ class ImageGraphicsView(BaseGraphicsView):
                 raise ValueError(
                     "Cannot replace canvas with a filename, UUID replace not supported yet."
                 )
-            image_worker = Worker(self._process_new_file, i)
+            self.image_worker = Worker(self._process_new_file, i)
         elif isinstance(i, ImageWrapper):
-            image_worker = Worker(
+            self.image_worker = Worker(
                 self.array_to_image, i, as_new_image, new_image_name
             )
         elif isinstance(i, UUID_Type):
@@ -1154,7 +1151,7 @@ class ImageGraphicsView(BaseGraphicsView):
             assert item is not None, "UUID not found in storage"
             image_data = item.get("data", None)
             assert image_data is not None, "UUID not found in storage"
-            image_worker = Worker(
+            self.image_worker = Worker(
                 self._replace_canvas,
                 image_data,
                 as_new_image,
@@ -1162,7 +1159,7 @@ class ImageGraphicsView(BaseGraphicsView):
                 target_channel,
             )
         elif isinstance(i, dict):
-            image_worker = Worker(
+            self.image_worker = Worker(
                 self._replace_canvas,
                 i,
                 as_new_image,
@@ -1170,10 +1167,10 @@ class ImageGraphicsView(BaseGraphicsView):
                 target_channel,
             )
 
-        image_worker.signal.connect(self.set_pixmap)
-        image_worker.error.connect(self.on_error)
-        image_worker.finished.connect(image_worker.quit)
-        image_worker.start()
+        self.image_worker.signal.connect(self.set_pixmap)
+        self.image_worker.error.connect(self.on_error)
+        self.image_worker.finished.connect(self.image_worker.quit)
+        self.image_worker.start()
 
     def array_to_image(self, img: ImageWrapper, as_new_image, image_name=None):
         channel_name = "Channel 1"
@@ -1329,19 +1326,19 @@ class ImageGraphicsView(BaseGraphicsView):
             return
 
         if len(self.working_channels) > 0 and angle is not None:
-            rotation_worker = Worker(
+            self.rotation_worker = Worker(
                 self.rotate_image_task,
                 self.uuid,
                 self.working_channels,
                 self.reset_working_channels,
                 angle,
             )
-            rotation_worker.signal.connect(self.on_rotation_completed)
-            rotation_worker.error.connect(self.on_error)
-            rotation_worker.finished.connect(rotation_worker.quit)
-            rotation_worker.finished.connect(
-                rotation_worker.deleteLater)
-            rotation_worker.start()
+            self.rotation_worker.signal.connect(self.on_rotation_completed)
+            self.rotation_worker.error.connect(self.on_error)
+            self.rotation_worker.finished.connect(self.rotation_worker.quit)
+            self.rotation_worker.finished.connect(
+                self.rotation_worker.deleteLater)
+            self.rotation_worker.start()
 
     def same_uuid(self, other_uuid):
         return str(self.uuid) == str(other_uuid)
@@ -1503,10 +1500,10 @@ class ImageGraphicsView(BaseGraphicsView):
                 )
                 channels[channel_name] = wrapper_copy
 
-            crop_worker = Worker(self.add_to_canvas, channels, True, name)
-            crop_worker.finished.connect(crop_worker.quit)
-            crop_worker.finished.connect(crop_worker.deleteLater)
-            crop_worker.start()
+            self.crop_worker = Worker(self.add_to_canvas, channels, True, name)
+            self.crop_worker.finished.connect(self.crop_worker.quit)
+            self.crop_worker.finished.connect(self.crop_worker.deleteLater)
+            self.crop_worker.start()
         else:
             self.crop_signal.emit(False)
         if right <= left or bottom <= top:
