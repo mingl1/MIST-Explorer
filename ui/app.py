@@ -19,7 +19,7 @@ from ui.alignment.cell_layer_alignment_ui import CellLayerAlignmentUI
 from ui.alignment.register_ui import RegisterUI
 from ui.analysis.AnalysisTab import AnalysisTab
 from ui.canvas_ui import ImageGraphicsViewUI, ReferenceGraphicsViewUI
-from ui.ImageManager import Manager
+from ui.image_manager import ImageManager
 from ui.processing.crop_ui import CropUI
 from ui.processing.gaussian_blur import GaussianBlur
 from ui.processing.rotation_ui import RotateUI
@@ -84,7 +84,7 @@ class MainWindow(QMainWindow):
         self.canvas: Optional[ImageGraphicsViewUI] = None
         self.small_view: Optional[ReferenceGraphicsViewUI] = None
         self.images_tab_container: Optional[QWidget] = None
-        self.images_tab: Optional[Manager] = None
+        self.images_tab: Optional[ImageManager] = None
         self.processing_tabs: Optional[QTabWidget] = None
         self.crop_groupbox: Optional[CropUI] = None
         self.rotate_groupbox: Optional[RotateUI] = None
@@ -237,7 +237,7 @@ class MainWindow(QMainWindow):
         images_tab_layout = QVBoxLayout(self.images_tab_container)
 
         # Image Manager (the file tree)
-        self.images_tab = Manager(self.canvas)
+        self.images_tab = ImageManager(self.canvas)
 
         # Processing Tabs
         self.processing_tabs = QTabWidget(self.side_panel)
