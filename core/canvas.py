@@ -6,7 +6,6 @@ import typing
 import uuid
 import xml.etree.ElementTree as ET
 from collections import deque
-
 # Standard library imports
 from queue import Queue
 from typing import Dict, Optional, OrderedDict, Union
@@ -16,45 +15,24 @@ import numpy as np
 import tifffile as tiff
 from cv2 import LUT
 from matplotlib import colormaps
-
 # Third-party imports
 from matplotlib.colors import Colormap
 from PIL import Image
-
 # PyQt6 imports
 from PyQt6.QtCore import QSize, Qt, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import (
-    QCursor,
-    QDragEnterEvent,
-    QDragMoveEvent,
-    QDropEvent,
-    QPixmap,
-)
-from PyQt6.QtWidgets import (
-    QDialog,
-    QGraphicsPixmapItem,
-    QGraphicsScene,
-    QGraphicsView,
-    QHBoxLayout,
-    QPushButton,
-    QTableWidget,
-    QTableWidgetItem,
-    QVBoxLayout,
-    QWidget,
-)
+from PyQt6.QtGui import (QCursor, QDragEnterEvent, QDragMoveEvent, QDropEvent,
+                         QPixmap)
+from PyQt6.QtWidgets import (QDialog, QGraphicsPixmapItem, QGraphicsScene,
+                             QGraphicsView, QHBoxLayout, QPushButton,
+                             QTableWidget, QTableWidgetItem, QVBoxLayout,
+                             QWidget)
 from pystackreg.util import to_uint16
 from skimage.color import label2rgb as sk_label2rgb
 
 # Local/project imports
-from core.Worker import Worker
-from utils import (
-    adjustContrast,
-    auto_contrast_helper,
-    create_lut,
-    numpy_to_qimage,
-    scale_adjust,
-    to_pixmap,
-)
+from core.worker import Worker
+from utils import (adjustContrast, auto_contrast_helper, create_lut,
+                   numpy_to_qimage, scale_adjust, to_pixmap)
 
 if typing.TYPE_CHECKING:
     from controller import Controller

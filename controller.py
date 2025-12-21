@@ -8,10 +8,9 @@ import uuid
 import cv2
 import numpy as np
 from PIL import Image
-from PyQt6.QtCore import QTimer  # pylint: disable=no-name-in-module
-from PyQt6.QtGui import QPixmap  # pylint: disable=no-name-in-module
-from PyQt6.QtWidgets import QFileDialog  # pylint: disable=no-name-in-module
-from PyQt6.QtWidgets import QMessageBox  # pylint: disable=no-name-in-module
+from PyQt6.QtCore import QTimer
+from PyQt6.QtGui import QPixmap
+from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
 from core import (CellIntensity, ImageGraphicsView, ImageWrapper,
                   ReferenceGraphicsView, Register, StarDist)
