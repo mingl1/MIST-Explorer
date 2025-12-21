@@ -60,14 +60,15 @@ class Register(QThread):
         self.progress.emit(100, "Retry Maybe")
 
     def _handle_cancel(self):
-        if self._is_running == False:
+        if not self._is_running:
             self._fatal_error_message("Cancelled registration")
             return True
         else:
             return False
 
     def run_registration(self):
-        # don't think we need to check for GPU here, since we are not using tensorflow
+        # don't think we need to check for GPU here, since we are not using
+        # tensorflow
 
         # gpu = len(tf.config.list_physical_devices("GPU")) > 0
         # if gpu:
@@ -118,9 +119,14 @@ class Register(QThread):
         #     )
 
         alignment_layer = self.adjust_contrast(alignment_layer, 50, 99)
-        alignment_layer = alignment_layer[0:m, 0:m]  # resize to maximum allowed size
+        # resize to maximum allowed size
+        alignment_layer = alignment_layer[0:m, 0:m]
 
-        fixed_map = TileMap("fixed", alignment_layer, self.overlap, self.num_tiles)
+        fixed_map = TileMap(
+            "fixed",
+            alignment_layer,
+            self.overlap,
+            self.num_tiles)
         moving_map = None
         # generate tiles
         for tif_n, tif in enumerate(self.tifs):
@@ -135,7 +141,8 @@ class Register(QThread):
             ].data
 
             alignable_brightfield = alignable_brightfield[0:m, 0:m]
-            alignable_brightfield = self.adjust_contrast(alignable_brightfield, 50, 99)
+            alignable_brightfield = self.adjust_contrast(
+                alignable_brightfield, 50, 99)
 
             moving_map = TileMap(
                 "moving", alignable_brightfield, self.overlap, self.num_tiles
@@ -154,7 +161,8 @@ class Register(QThread):
                 radius = int(fixed_map.tile_size)
                 # import time
                 # time.sleep(20)
-                inputs.append((fixed_img, moving_img, ymin, xmin, radius, x, y))
+                inputs.append(
+                    (fixed_img, moving_img, ymin, xmin, radius, x, y))
 
             # Select the inputs number
             outputs = []
@@ -191,7 +199,8 @@ class Register(QThread):
         total_sr_none = 0
         total_aa_none = 0
         total = 0
-        assert isinstance(moving_map, TileMap), "moving_map is not a TileMap instance"
+        assert isinstance(
+            moving_map, TileMap), "moving_map is not a TileMap instance"
         for i, tif in enumerate(self.tifs):
             if self._handle_cancel():
                 return
@@ -208,10 +217,11 @@ class Register(QThread):
                 print("Layer Number:", layer_number, "for tif", i)
                 progress_update = int(((layer_number + 1) / n_frames) * 100)
                 self.progress.emit(
-                    progress_update, f"Layer Number: {layer_number + 1} for tif {i + 1}"
-                )
+                    progress_update,
+                    f"Layer Number: {layer_number + 1} for tif {i + 1}")
 
-                bf = file[f"Channel {layer_number + 1}"].data  # channels are index 1
+                # channels are index 1
+                bf = file[f"Channel {layer_number + 1}"].data
 
                 bf = bf[:m, :m]
 
@@ -239,10 +249,10 @@ class Register(QThread):
                     if transf is not None:
                         if isinstance(transf, np.ndarray):
                             registered = cv2.warpAffine(
-                                source, transf, (target.shape[1], target.shape[0])
-                            )
+                                source, transf, (target.shape[1], target.shape[0]))
                         else:
-                            registered, _ = aa.apply_transform(transf, source, target)
+                            registered, _ = aa.apply_transform(
+                                transf, source, target)
                     else:
                         registered = source
                     # Apply additional ITK transformation if available
@@ -259,25 +269,24 @@ class Register(QThread):
                         )
 
                     corresponding_tile = registered[
-                        ymin : ymin + radius * 2, xmin : xmin + radius * 2
+                        ymin: ymin + radius * 2, xmin: xmin + radius * 2
                     ]
 
                     # corresponding_tile = cv2.copyMakeBorder(corresponding_tile, 0,1,0,1, cv2.BORDER_REPLICATE)
 
-                    dest.paste(
-                        Image.fromarray(pystackreg.util.to_uint16(corresponding_tile)),
-                        (int(x - radius), int(y - radius)),
-                    )
+                    dest.paste(Image.fromarray(pystackreg.util.to_uint16(
+                        corresponding_tile)), (int(x - radius), int(y - radius)), )
 
                 dest_arr = np.array(dest)
                 new_registered_tif.append(dest_arr)
 
-            new_registered_tif = [x.astype("uint16") for x in new_registered_tif]
+            new_registered_tif = [x.astype("uint16")
+                                  for x in new_registered_tif]
             new_registered_tif = np.stack(new_registered_tif)
 
             aligned_protein_signal = new_registered_tif
 
-            ##alignment done
+            # alignment done
         assert aligned_protein_signal is not None, "aligned_protein_signal is None"
         self.protein_signal_array = aligned_protein_signal[
             self.params["protein_detection_layer"], :m, :m
@@ -484,7 +493,12 @@ class Register(QThread):
                     itk_transf = None
         return [transf, itk_transf], ymin, xmin, radius, x, y, best_ncc
 
-    def try_optical_flow_alignment(self, source, target, moving_points, fixed_points):
+    def try_optical_flow_alignment(
+            self,
+            source,
+            target,
+            moving_points,
+            fixed_points):
         """Try optical flow with multiple pyramid levels"""
         if len(moving_points) < 4:
             return None, False
@@ -521,7 +535,8 @@ class Register(QThread):
                     source, target, moving_points_cv, fixed_points_cv, **params
                 )
             except cv2.error:
-                print(f"Could not compute optical flow for this level: {params}")
+                print(
+                    f"Could not compute optical flow for this level: {params}")
                 continue
             good_indices = (status.flatten() == 1) & (
                 err.flatten() < 50
@@ -557,7 +572,8 @@ class Register(QThread):
             return None, False
 
         # Match features
-        matcher = cv2.FlannBasedMatcher({"algorithm": 1, "trees": 5}, {"checks": 50})
+        matcher = cv2.FlannBasedMatcher(
+            {"algorithm": 1, "trees": 5}, {"checks": 50})
         matches = matcher.knnMatch(des1, des2, k=2)
 
         # Filter good matches using Lowe's ratio test
@@ -572,12 +588,10 @@ class Register(QThread):
             return None, False
 
         # Extract matched points
-        src_pts = np.float32([kp1[m.queryIdx].pt for m in good_matches]).reshape(
-            -1, 1, 2
-        )
-        dst_pts = np.float32([kp2[m.trainIdx].pt for m in good_matches]).reshape(
-            -1, 1, 2
-        )
+        src_pts = np.float32(
+            [kp1[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+        dst_pts = np.float32(
+            [kp2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
 
         # Estimate transformation with RANSAC
         M, mask = cv2.estimateAffine2D(
@@ -614,7 +628,8 @@ class Register(QThread):
             target_itk, transform_domain_mesh_size
         )
 
-        registration_method.SetInitialTransform(bspline_transform, inPlace=False)
+        registration_method.SetInitialTransform(
+            bspline_transform, inPlace=False)
         registration_method.SetOptimizerAsLBFGSB(
             gradientConvergenceTolerance=1e-4,
             numberOfIterations=30,
@@ -680,17 +695,15 @@ class Register(QThread):
         pos = relu
 
         # print(pos(cy1x-cy2x), pos(cy1y-cy2y))
-        cy2_rescale = np.pad(
-            cy2_rescale,
-            (
-                (
-                    int(math.floor(pos(cy1x - cy2x) / 2)),
-                    int(math.ceil(pos(cy1x - cy2x) / 2)),
-                ),
-                (math.floor((pos(cy1y - cy2y) / 2)), math.ceil((pos(cy1y - cy2y) / 2))),
-            ),
-            "empty",
-        )
+        cy2_rescale = np.pad(cy2_rescale,
+                             ((int(math.floor(pos(cy1x - cy2x) / 2)),
+                               int(math.ceil(pos(cy1x - cy2x) / 2)),
+                               ),
+                                 (math.floor((pos(cy1y - cy2y) / 2)),
+                                  math.ceil((pos(cy1y - cy2y) / 2))),
+                              ),
+                             "empty",
+                             )
         # Sometimes "edge" might work better
 
         cy2_rescale = cy2_rescale[0:cy1x, 0:cy1y]
@@ -719,7 +732,12 @@ class Register(QThread):
 
 ############################
 class TileMap:
-    def __init__(self, name: str, image: np.ndarray, overlap: int, height_width: int):
+    def __init__(
+            self,
+            name: str,
+            image: np.ndarray,
+            overlap: int,
+            height_width: int):
         """
         :param name:
         :param image:
@@ -732,7 +750,8 @@ class TileMap:
 
         self.height_width = height_width
 
-        self.tile_center_points = self.blockify(height_width) * self.image.shape[0]
+        self.tile_center_points = self.blockify(
+            height_width) * self.image.shape[0]
 
         self.tile_size = self.tile_center_points[0][0][0]
 
@@ -761,7 +780,10 @@ class TileMap:
 
         im = np.invert(threshold(blur(small), 20))
 
-        out = dip.AreaOpening(im, filterSize=150, connectivity=2)  # type: ignore
+        out = dip.AreaOpening(
+            im,
+            filterSize=150,
+            connectivity=2)  # type: ignore
         out = np.array(out)
 
         big = cv2.resize(
@@ -778,10 +800,11 @@ class TileMap:
         x = round(x)
         tile_size = round(self.tile_size) + self.overlap
 
-        return image[
-            self.keep_in_bounds(y - tile_size) : self.keep_in_bounds(y + tile_size),
-            self.keep_in_bounds(x - tile_size) : self.keep_in_bounds(x + tile_size),
-        ]
+        return image[self.keep_in_bounds(y -
+                                         tile_size): self.keep_in_bounds(y +
+                                                                         tile_size), self.keep_in_bounds(x -
+                                                                                                         tile_size): self.keep_in_bounds(x +
+                                                                                                                                         tile_size), ]
 
     def get_bounds_of_tile(self, x, y):
         # print("Got ", x, y)

@@ -253,8 +253,7 @@ class CellLayerAligner(QThread):
             if self.need_gradient_descent:
                 # refine alignment using gradient descent
                 gradient_transform, gradient_aligned = gradient_descent_alignment(
-                    aligned_preview, fine_target_image, 200
-                )
+                    aligned_preview, fine_target_image, 200)
                 gradient_metadata = {
                     "matrix": gradient_transform,
                 }
@@ -272,8 +271,10 @@ class CellLayerAligner(QThread):
             full_refinement_transform = self._scale_transform_matrix(
                 refinement_transform[:2, :3], self.fine_scale, 1
             )
-            _, padded_moving = make_same_shape(self.target_image, self.unaligned_image)
-            intermediate_aligned = warp_image(padded_moving, full_coarse_matrix)
+            _, padded_moving = make_same_shape(
+                self.target_image, self.unaligned_image)
+            intermediate_aligned = warp_image(
+                padded_moving, full_coarse_matrix)
             intermediate_aligned = remove_padding(
                 intermediate_aligned, self.target_image.shape
             )
@@ -373,8 +374,10 @@ class CellLayerAligner(QThread):
         target_histogram = np.histogram(coarse_target.flatten(), bins=256)[0]
         coarse_moving = match_histograms(coarse_moving, target_histogram)
         coarse_moving = np.clip(coarse_moving, 32, 255) - 32
-        coarse_target = adjust_contrast(coarse_target.astype(np.float64), 2, 99)
-        coarse_moving = adjust_contrast(coarse_moving.astype(np.float64), 2, 99)
+        coarse_target = adjust_contrast(
+            coarse_target.astype(np.float64), 2, 99)
+        coarse_moving = adjust_contrast(
+            coarse_moving.astype(np.float64), 2, 99)
         coarse_moving = cv2.normalize(
             coarse_moving, coarse_moving, 255, 0, cv2.NORM_MINMAX, cv2.CV_8U
         )
@@ -382,7 +385,8 @@ class CellLayerAligner(QThread):
             coarse_target, coarse_target, 255, 0, cv2.NORM_MINMAX, cv2.CV_8U
         )
         coarse_moving = morph_open(coarse_moving)
-        coarse_target, coarse_moving = make_same_shape(coarse_target, coarse_moving)
+        coarse_target, coarse_moving = make_same_shape(
+            coarse_target, coarse_moving)
         return coarse_target, coarse_moving
 
     def _itk_align(self, rotation_angles, fixed, moving):
@@ -427,13 +431,15 @@ class CellLayerAligner(QThread):
         all_results = sorted_angle_results + flip_results
         valid_all_results = [r for r in all_results if r[3] is not None]
         if not valid_all_results:
-            raise RuntimeError("No valid alignment found after all ITK attempts.")
+            raise RuntimeError(
+                "No valid alignment found after all ITK attempts.")
 
         final_sorted_results = sorted(
             valid_all_results, key=lambda x: x[0], reverse=True
         )
         best_score, best_angle, best_flip, params = final_sorted_results[0]
-        print(f"Final best: angle={best_angle}, flip={best_flip}, score={best_score}")
+        print(
+            f"Final best: angle={best_angle}, flip={best_flip}, score={best_score}")
         return best_angle, best_flip, params
 
     def _alignment_stackreg(self, target_fine, unaligned_fine):
@@ -445,7 +451,8 @@ class CellLayerAligner(QThread):
             target_uint16 = to_uint16(target_enhanced)
             unaligned_uint16 = to_uint16(unaligned_enhanced)
             sr = StackReg(StackReg.AFFINE)
-            aligned_result = sr.register_transform(target_uint16, unaligned_uint16)
+            aligned_result = sr.register_transform(
+                target_uint16, unaligned_uint16)
             refinement_matrix = sr.get_matrix()
             aligned_result = warp_image(unaligned_fine, refinement_matrix)
             return refinement_matrix[:2, :3], aligned_result
@@ -503,7 +510,11 @@ def calculate_alignment_metrics(fixed_array, aligned_array):
     if fixed_array.shape != aligned_array.shape:
         # Resize if needed
 
-        zoom_factors = [f / a for f, a in zip(fixed_array.shape, aligned_array.shape)]
+        zoom_factors = [
+            f / a for f,
+            a in zip(
+                fixed_array.shape,
+                aligned_array.shape)]
         aligned_array = zoom(aligned_array, zoom_factors, order=1)
 
     # Flatten arrays for easier computation
@@ -619,7 +630,8 @@ def register_combination(fixed, moving, angle, flip):
 
     try:
         # Set up registration parameters
-        registration_method.SetInitialTransform(initial_transform, inPlace=False)
+        registration_method.SetInitialTransform(
+            initial_transform, inPlace=False)
         registration_method.SetInterpolator(sitk.sitkLinear)
 
         # Set optimizer
@@ -690,7 +702,8 @@ def create_preprocessing_matrix(angle, flip, image_shape):
     center_x, center_y = width / 2.0, height / 2.0
 
     # Step 1: Translate to origin
-    translate_to_origin = np.array([[1, 0, -center_x], [0, 1, -center_y], [0, 0, 1]])
+    translate_to_origin = np.array(
+        [[1, 0, -center_x], [0, 1, -center_y], [0, 0, 1]])
 
     # Step 2: Y-flip (if applied)
     if flip:
@@ -702,7 +715,8 @@ def create_preprocessing_matrix(angle, flip, image_shape):
     if angle != 0:
         angle_rad = np.radians(angle)
         cos_a, sin_a = np.cos(angle_rad), np.sin(angle_rad)
-        rotation_matrix = np.array([[cos_a, -sin_a, 0], [sin_a, cos_a, 0], [0, 0, 1]])
+        rotation_matrix = np.array(
+            [[cos_a, -sin_a, 0], [sin_a, cos_a, 0], [0, 0, 1]])
     else:
         rotation_matrix = np.eye(3)
 
@@ -734,7 +748,8 @@ def combine_transforms(itk_params, angle, flip, image_shape):
     itk_matrix = itk_params
 
     # Create preprocessing transformation matrix
-    preprocessing_matrix = create_preprocessing_matrix(angle, flip, image_shape)
+    preprocessing_matrix = create_preprocessing_matrix(
+        angle, flip, image_shape)
 
     # Make matrices compatible (both 3x3 or both 4x4)
     if itk_matrix.shape == (3, 3) and preprocessing_matrix.shape == (4, 4):
@@ -797,8 +812,10 @@ def extract_complete_transformation(
         # else:
         #     itk_matrix = extract_itk_transform_matrix(itk_params)
         itk_matrix = itk_params
-        preprocessing_matrix = create_preprocessing_matrix(angle, flip, image_shape)
-        combined_matrix = combine_transforms(itk_matrix, angle, flip, image_shape)
+        preprocessing_matrix = create_preprocessing_matrix(
+            angle, flip, image_shape)
+        combined_matrix = combine_transforms(
+            itk_matrix, angle, flip, image_shape)
 
         results = {
             "combined_matrix": combined_matrix,
@@ -832,7 +849,10 @@ def extract_complete_transformation(
         return {}
 
 
-def gradient_descent_alignment(moving_image, fixed_image, num_histogram_bins=300):
+def gradient_descent_alignment(
+        moving_image,
+        fixed_image,
+        num_histogram_bins=300):
     """
     Perform gradient descent alignment between two images.
 
@@ -895,6 +915,7 @@ def gradient_descent_alignment(moving_image, fixed_image, num_histogram_bins=300
     final_transform_matrix = composite_to_matrix(final_transform, fixed_image)
     final_transform = np.array(final_transform_matrix)
     if final_transform.shape == (3, 3):
-        final_transform = final_transform[:2, :3]  # Convert to 2x3 for 2D images
+        # Convert to 2x3 for 2D images
+        final_transform = final_transform[:2, :3]
     moving_resampled = sitk.GetArrayFromImage(moving_resampled)
     return final_transform, moving_resampled

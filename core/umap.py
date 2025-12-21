@@ -29,7 +29,8 @@ class UMAPHelper:
             self.labels = self.df["Cell ID"].values
         else:
             self.labels = np.arange(1, len(self.df) + 1)
-        # Extract feature columns (exclude Cell ID, Global X, Global Y, and columns with "N/A")
+        # Extract feature columns (exclude Cell ID, Global X, Global Y, and
+        # columns with "N/A")
         exclude_cols = ["Cell ID", "Global X", "Global Y"]
         self.feature_cols = [
             col
@@ -60,9 +61,8 @@ class UMAPHelper:
             sc.pp.log1p(self.adata)
             try:
                 sc.pp.highly_variable_genes(
-                    self.adata, flavor="seurat_v3", layer="counts", inplace=True
-                )
-            except:
+                    self.adata, flavor="seurat_v3", layer="counts", inplace=True)
+            except BaseException:
                 sc.pp.highly_variable_genes(
                     self.adata,
                     flavor="seurat_v3",
@@ -72,7 +72,8 @@ class UMAPHelper:
                 )
             sc.pp.scale(self.adata, max_value=10)
         sc.pp.pca(self.adata)
-        print(f"Data loaded: {self.data.shape[0]} cells, {self.data.shape[1]} features")
+        print(
+            f"Data loaded: {self.data.shape[0]} cells, {self.data.shape[1]} features")
 
     def getNumCells(self):
         return self.adata.n_obs
@@ -182,8 +183,8 @@ class UMAPHelper:
         ax.set_xscale("log")
         ax.set_ylabel("Normalized variance", fontsize=12)
         ax.set_title(
-            f"Mean vs Variance (Top {top_n} Highly Variable Genes Labeled)", fontsize=14
-        )
+            f"Mean vs Variance (Top {top_n} Highly Variable Genes Labeled)",
+            fontsize=14)
         ax.legend()
         ax.grid(True, alpha=0.3)
 
@@ -191,7 +192,8 @@ class UMAPHelper:
 
         # Print the top N genes
         print(f"\nTop {top_n} Highly Variable Genes:")
-        print(top_hvg[["means", "variances_norm", "highly_variable_rank"]].to_string())
+        print(top_hvg[["means", "variances_norm",
+              "highly_variable_rank"]].to_string())
         return fig, ax
 
     def plot_umap(
@@ -212,14 +214,20 @@ class UMAPHelper:
             show=show,
             legend_loc="on data",
         )
-        if show == False:
+        if not show:
             return res
         plt.tight_layout()
         plt.show()
 
     def plot_heatmap(self, fig=None, key="leiden"):
         exp = self.adata.X
-        m = ma.Heatmap(exp, cmap="viridis", height=20, width=10, vmin=0, vmax=3)
+        m = ma.Heatmap(
+            exp,
+            cmap="viridis",
+            height=20,
+            width=10,
+            vmin=0,
+            vmax=3)
         m.group_rows(self.adata.obs[key])
 
         # Get cluster names and colors from adata
@@ -261,9 +269,11 @@ class UMAPHelper:
         # Get leiden colors
         if f"{cluster_key}_colors" in self.adata.uns:
             leiden_colors = self.adata.uns[f"{cluster_key}_colors"]
-            unique_leiden = self.adata.obs[cluster_key].cat.categories.astype(str)
+            unique_leiden = self.adata.obs[cluster_key].cat.categories.astype(
+                str)
         else:
-            unique_leiden = np.sort(self.adata.obs[cluster_key].unique()).astype(str)
+            unique_leiden = np.sort(
+                self.adata.obs[cluster_key].unique()).astype(str)
             n_clusters = len(unique_leiden)
             leiden_colors = sc.pl.palettes.default_102[:n_clusters]
 
@@ -317,8 +327,9 @@ class UMAPHelper:
         if use_plotly:
             fig = px.imshow(colored_image)
             fig.update_layout(
-                width=800, height=800, title=f"Segmentation colored by {cluster_key}"
-            )
+                width=800,
+                height=800,
+                title=f"Segmentation colored by {cluster_key}")
             fig.show()
         else:
             fig, ax = plt.subplots(figsize=figsize)

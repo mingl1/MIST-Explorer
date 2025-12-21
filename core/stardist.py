@@ -56,12 +56,14 @@ class StarDist(QThread):
         if cell_image is None:
             self._fatal_error_message("No cell image available for processing")
             return
-        assert isinstance(cell_image, np.ndarray), "cell_image must be a numpy array"
+        assert isinstance(
+            cell_image, np.ndarray), "cell_image must be a numpy array"
 
         self.progress.emit(0, "Starting StarDist")
         if self.current_model != str(self.params["model"]):
             try:
-                self.model = StarDist2D.from_pretrained(str(self.params["model"]))
+                self.model = StarDist2D.from_pretrained(
+                    str(self.params["model"]))
             except Exception as e:
                 self._fatal_error_message(f"Model load failed: {e}")
                 return
@@ -104,7 +106,8 @@ class StarDist(QThread):
                 return
             stardist_labels = labels  # last one is full image
             pct = 10 + int(70 * max(0, (i - 2) / total_tiles))
-            self.progress.emit(pct, f"Processing tile {max(0, i-2)}/{total_tiles}")
+            self.progress.emit(
+                pct, f"Processing tile {max(0, i-2)}/{total_tiles}")
 
         if stardist_labels is None:
             self._fatal_error_message("No labels produced")
@@ -144,9 +147,8 @@ class StarDist(QThread):
 
     def save_image(self):
         file_name, _ = QFileDialog.getSaveFileName(
-            None, "Save File", "image.png", "*.png;;*.jpg;;*.tif;; All Files(*)"
-        )
-        if not self.stardist_labels_grayscale is None:
+            None, "Save File", "image.png", "*.png;;*.jpg;;*.tif;; All Files(*)")
+        if self.stardist_labels_grayscale is not None:
             Image.fromarray(self.stardist_labels_grayscale).save(file_name)
         else:
             self.error_signal.emit("Cannot save. No stardist labels available")
@@ -156,7 +158,15 @@ class StarDist(QThread):
 
     def generate_lut(self, cmap: str):
         label_range = np.linspace(0, 1, 256)
-        return np.uint8(colormaps[cmap](label_range)[:, 2::-1] * 256).reshape(256, 1, 3)
+        return np.uint8(
+            colormaps[cmap](label_range)[
+                :,
+                2::-
+                1] *
+            256).reshape(
+            256,
+            1,
+            3)
 
     def label2rgb(self, labels, lut):
         return cv.LUT(cv.merge((labels, labels, labels)), lut)
@@ -165,7 +175,11 @@ class StarDist(QThread):
         self.np_image = None
         self.protein_channels = protein_channels
 
-    def set_protein_image(self, protein_channels, channel="Channel 1", name=None):
+    def set_protein_image(
+            self,
+            protein_channels,
+            channel="Channel 1",
+            name=None):
         self.protein_channels = protein_channels
         self.params["channel"] = channel
         self.cell_image_set.emit(name, channel)
