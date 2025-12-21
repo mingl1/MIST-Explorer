@@ -5,48 +5,17 @@ import typing
 import numpy as np
 import pyqtgraph as pg
 import tifffile
-from PyQt6.QtCore import (
-    QEasingCurve,
-    QPoint,
-    QPointF,
-    QPropertyAnimation,
-    QRect,
-    QRectF,
-    QSize,
-    Qt,
-    pyqtSignal,
-)
-from PyQt6.QtGui import (
-    QBrush,
-    QColor,
-    QCursor,
-    QDragEnterEvent,
-    QDragMoveEvent,
-    QDropEvent,
-    QFont,
-    QIcon,
-    QImage,
-    QMouseEvent,
-    QPainter,
-    QPen,
-    QPixmap,
-)
-from PyQt6.QtWidgets import (
-    QApplication,
-    QFileDialog,
-    QGraphicsItem,
-    QGraphicsItemGroup,
-    QGraphicsOpacityEffect,
-    QGraphicsPixmapItem,
-    QGraphicsRectItem,
-    QGraphicsSimpleTextItem,
-    QGraphicsView,
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
-    QToolTip,
-    QWidget,
-)
+from PyQt6.QtCore import (QEasingCurve, QPoint, QPointF, QPropertyAnimation,
+                          QRect, QRectF, QSize, Qt, pyqtSignal)
+from PyQt6.QtGui import (QBrush, QColor, QCursor, QDragEnterEvent,
+                         QDragMoveEvent, QDropEvent, QFont, QIcon, QImage,
+                         QMouseEvent, QPainter, QPen, QPixmap)
+from PyQt6.QtWidgets import (QApplication, QFileDialog, QGraphicsItem,
+                             QGraphicsItemGroup, QGraphicsOpacityEffect,
+                             QGraphicsPixmapItem, QGraphicsRectItem,
+                             QGraphicsSimpleTextItem, QGraphicsView,
+                             QHBoxLayout, QLabel, QPushButton, QToolTip,
+                             QWidget)
 
 import utils
 from ui.lassos.CircleLasso import CircleLasso
@@ -428,12 +397,12 @@ class ImageGraphicsViewUI(QGraphicsView):
         # self.view_pixmap_item.hide()
         self.pixmap_item.show()
 
-    def _show_view_tab_image(self):
+    def show_view_tab_image(self):
         self.pixmap_item.hide()
         for pixmap in self.view_pixmaps:
             pixmap.show()
 
-    def _show_images_tab_image(self):
+    def show_images_tab_image(self):
         self.pixmap_item.show()
         for pixmap in self.view_pixmaps:
             pixmap.hide()
@@ -448,7 +417,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         for pixmap in self.view_pixmaps:
             self.get_scene().removeItem(pixmap)
         self.view_pixmaps = []
-        self._show_images_tab_image()
+        self.show_images_tab_image()
         self.__centerImage()
 
     def flip_horizontal(self):

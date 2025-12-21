@@ -8,24 +8,20 @@ import uuid
 import cv2
 import numpy as np
 from PIL import Image
-from PyQt6.QtCore import QTimer
-from PyQt6.QtGui import QPixmap
-from PyQt6.QtWidgets import QFileDialog, QMessageBox
+from PyQt6.QtCore import QTimer  # pylint: disable=no-name-in-module
+from PyQt6.QtGui import QPixmap  # pylint: disable=no-name-in-module
+from PyQt6.QtWidgets import QFileDialog  # pylint: disable=no-name-in-module
+from PyQt6.QtWidgets import QMessageBox
 
-from core import (
-    CellIntensity,
-    ImageGraphicsView,
-    ImageWrapper,
-    ReferenceGraphicsView,
-    Register,
-    StarDist,
-)
+from core import (CellIntensity, ImageGraphicsView, ImageWrapper,
+                  ReferenceGraphicsView, Register, StarDist)
 from ui.alignment.alignment_preview_dialog import AlignmentPreviewDialog
 
 if typing.TYPE_CHECKING:
     from ui.app import Ui_MainWindow
 
 
+# pylint: disable=too-many-instance-attributes
 class Controller:
     """
     Controller class implements the Singleton pattern for managing the MIST-Explorer application.
@@ -68,11 +64,13 @@ class Controller:
 
     @classmethod
     def init(cls, app):
+        """Initializes the controller."""
         if cls._instance is None:
             cls._instance = cls(app)
 
     @classmethod
     def get(cls):
+        """Returns the singleton instance of the controller."""
         if cls._instance is None:
             raise RuntimeError("Controller not initialized")
         return cls._instance
@@ -110,9 +108,11 @@ class Controller:
         self.model_register.error.connect(self.handle_error)
 
     def handle_error(self, error_message):
+        """Displays an error message."""
         QMessageBox.critical(self.view, "Error", error_message)
 
     def pixmap_to_image(self, pixmap: QPixmap):
+        """Converts a QPixmap to a numpy array."""
         if pixmap is None:
             raise ValueError("No pixmap provided")
         qimage = pixmap.toImage()
@@ -133,6 +133,7 @@ class Controller:
         return arr
 
     def control_save(self):
+        """Saves the current canvas image."""
         im = self.model_canvas.image_wrapper.data
         if im.dtype != np.uint8:
             im = (im * 255).astype(np.uint8)
@@ -144,14 +145,15 @@ class Controller:
             if file_name:
                 print(file_name)
                 Image.fromarray(im).save(file_name)
+                return True
 
-            else:
-                return False
+            return False
 
-        else:
-            self.handle_error("No image in canvas, please load image")
+        self.handle_error("No image in canvas, please load image")
+        return False
 
     def open_file_dialog(self, viewer):
+        """Opens a file dialog to select an image."""
         file_name, _ = QFileDialog.getOpenFileName(
             None, "Open Image File", "", "Images (*.png *.jpg *.tif);;All Files (*)"
         )
@@ -159,13 +161,16 @@ class Controller:
             viewer.add_to_canvas(file_name)
 
     def on_action_reference_triggered(self):
+        """Handles the reference image open action."""
         self.open_file_dialog(self.model_reference_canvas)
 
     def on_action_open_triggered(self):
+        """Handles the main image open action."""
         self.open_file_dialog(self.model_canvas)
 
     # add new image to storage
     def handle_new_image(self, data, file_name, metadata=None):
+        """Handles a new image by adding it to storage."""
         self.view.toolBarUI.enable_actions()
         storage_item = {}
         storage_item["name"] = os.path.basename(file_name)
@@ -179,6 +184,7 @@ class Controller:
         self.view.images_tab.add_item(my_uuid)
 
     def handle_new_reference_image(self, data, file_name):
+        """Handles a new reference image by adding it to storage."""
         storage_item = {}
         storage_item["name"] = os.path.basename(file_name)
         self.image_count += 1
@@ -212,12 +218,12 @@ class Controller:
                 # treat moving_image as transformation matrix
                 transf_matrix = moving_image
                 # print(transf_matrix)
-                for L in layer:
+                for l in layer:
                     # print(L)
-                    h, w = data[L].data.shape[-2:]
+                    h, w = data[l].data.shape[-2:]
                     # print(h,w)
-                    aligned_data["data"][L] = cv2.warpAffine(
-                        item["data"][L].data, transf_matrix, (w, h)
+                    aligned_data["data"][l] = cv2.warpAffine(  # pylint: disable=no-member
+                        item["data"][l].data, transf_matrix, (w, h)
                     )
             filename = item["name"]
             if isinstance(layer, list):
@@ -226,15 +232,15 @@ class Controller:
                     layer
                 ), "Aligned data keys do not match the expected layers"
                 data = {}
-                for L in layer:
+                for l in layer:
                     d = (
-                        aligned_data["data"][L]
-                        if aligned_data["data"][L] is not None
+                        aligned_data["data"][l]
+                        if aligned_data["data"][l] is not None
                         else moving_image
                     )
-                    wrapped_image = ImageWrapper(d, L)
+                    wrapped_image = ImageWrapper(d, l)
                     # data[L].data = aligned_data["data"][L]
-                    data[L] = wrapped_image
+                    data[l] = wrapped_image
                 aligned_name = "Registered_" + filename
             else:
                 wrapped_image = ImageWrapper(aligned_image, layer)
@@ -256,7 +262,7 @@ class Controller:
             else:
                 preview_dialog = AlignmentPreviewDialog(snapshot, can_edit=True)
             preview_dialog.moving_image_changed.connect(handle_accepted_image)
-            result = preview_dialog.exec()
+            preview_dialog.exec()
 
     def _show_preview_dialog(self, target_small, aligned_small):
         """Show the preview dialog with red/green overlay"""
@@ -274,9 +280,10 @@ class Controller:
         return result == 1 and preview_dialog.result_accepted
 
     def need_canvas_change(self, new_index):
+        """Handles the canvas change when the tab is changed."""
         if self.prev_tab_index != 0 and new_index == 0:
             # self.view.canvas.pixmap_item.show()
-            self.view.canvas._show_images_tab_image()
+            self.view.canvas.show_images_tab_image()
             if self.model_canvas.uuid:
                 print("swapping channel")
                 self.model_canvas.swap_channel(self.model_canvas.current_channel)
@@ -284,15 +291,17 @@ class Controller:
                 print("clearing canvas")
                 self.model_canvas.clear_canvas()
         else:
-            self.view.canvas._show_view_tab_image()
+            self.view.canvas.show_view_tab_image()
             self.view.view_tab.process_images()
             # self.view.canvas.pixmap_item.hide()
 
     def handle_tab_change(self, index):
+        """Handles the tab change."""
         self.need_canvas_change(index)
         self.prev_tab_index = index
 
     def handle_cancel_registration(self):
+        """Cancels the registration."""
         self.model_register.cancel()
 
 
@@ -301,6 +310,7 @@ class SignalConnectionManager:
 
     def __init__(self, controller: Controller):
         self.c = controller
+        self.blur_timer = None
 
     def setup_all_connections(self):
         """Set up all signal-slot connections with full IntelliSense support"""
