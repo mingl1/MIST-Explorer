@@ -1,8 +1,13 @@
+"""
+Cell intensity UI module.
+"""
 import os
+import typing
 
 import numpy as np
 import pandas as pd
-from PyQt6.QtCore import QCoreApplication, QMetaObject, QSize, pyqtSignal
+# pylint: disable=no-name-in-module
+from PyQt6.QtCore import QCoreApplication, pyqtSignal
 from PyQt6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -16,20 +21,47 @@ from PyQt6.QtWidgets import (
 )
 
 
+# pylint: disable=too-many-instance-attributes
 class CellIntensityUI(QWidget):
+    """
+    UI for managing cell intensity analysis parameters.
+    """
     errorSignal = pyqtSignal(str)
     emitBeadData = pyqtSignal(np.ndarray)
     emitColorCodes = pyqtSignal(dict)
     generate_cell_data = pyqtSignal()
 
-    def __init__(self, parent=None, containing_layout: QVBoxLayout = None):
+    def __init__(self, parent=None, containing_layout: typing.Optional[QVBoxLayout] = None):
         super().__init__(parent)
         self.channel_rows = []
         self.channel_to_color_code = {}
         self.available_channels = []
-        self.setupUI(parent, containing_layout)
+        self.bead_data_file = None
+
+        # Attributes initialized in setup_ui
+        self.cell_intensity_groupbox = None
+        self.main_layout = None
+        self.components_widget = None
+        self.cellintensity_components_vlayout = None
+        self.bead_data_layout = None
+        self.bead_data = None
+        self.bead_data_label = None
+        self.channels_layout = None
+        self.add_channel_button = None
+        self.radius_fg_layout = None
+        self.radius_fg_label = None
+        self.radius_fg = None
+        self.radius_bg_layout = None
+        self.radius_bg_label = None
+        self.radius_bg = None
+        self.run_button = None
+        self.cancel_button = None
+        self.save_button = None
+
+        self.setup_ui(parent, containing_layout)
 
     def update_channels(self, channels: dict):
+        """Update available channels in dropdowns."""
         self.available_channels = sorted(
             channels.keys(), key=lambda x: int(x.replace("Channel ", ""))
         )
@@ -42,19 +74,15 @@ class CellIntensityUI(QWidget):
                 if current_text in self.available_channels:
                     combo_box.setCurrentText(current_text)
 
-    def setupUI(self, parent, containing_layout: QVBoxLayout):
+    def setup_ui(self, parent, containing_layout: typing.Optional[QVBoxLayout]):
+        """Initialize the UI components."""
         self.cell_intensity_groupbox = QGroupBox(parent)
         self.cell_intensity_groupbox.setObjectName("cell_intensity_groupbox")
 
-        # Main layout for the groupbox - this is essential for proper layout
         self.main_layout = QVBoxLayout(self.cell_intensity_groupbox)
 
-        # Container widget for all components
         self.components_widget = QWidget()
         self.cellintensity_components_vlayout = QVBoxLayout(self.components_widget)
-        # self.cellintensity_components_vlayout.setSpacing(6)  # Better spacing
-        # self.cellintensity_components_vlayout.setContentsMargins(5, 5, 5, 5)
-        # self.components_widget.setMaximumWidth(400)
 
         # bead data
         self.bead_data_layout = QHBoxLayout()
@@ -90,9 +118,6 @@ class CellIntensityUI(QWidget):
         self.radius_bg_layout.addWidget(self.radius_bg)
         self.cellintensity_components_vlayout.addLayout(self.radius_bg_layout)
 
-        # Spacer to push buttons to bottom
-        # self.cellintensity_components_vlayout.addStretch()
-
         # run button
         self.run_button = QPushButton(self.cell_intensity_groupbox)
         self.run_button.clicked.connect(self._handle_generate_cell_data)
@@ -106,25 +131,25 @@ class CellIntensityUI(QWidget):
         self.save_button = QPushButton(self.cell_intensity_groupbox)
         self.cellintensity_components_vlayout.addWidget(self.save_button)
 
-        # Add the components widget to the main layout
         self.main_layout.addWidget(self.components_widget)
 
-        # Add the groupbox to the containing layout
-        containing_layout.addWidget(self.cell_intensity_groupbox)
+        if containing_layout:
+            containing_layout.addWidget(self.cell_intensity_groupbox)
 
-        # Setup UI text and connections
-        self.__retranslate_UI()
+        self._retranslate_ui()
 
     def _handle_generate_cell_data(self):
-        self.emitBeadData.emit(self.bead_data_file)
-        self.emitColorCodes.emit(self.channel_to_color_code)
-        self.generate_cell_data.emit()
+        if self.bead_data_file is not None:
+            self.emitBeadData.emit(self.bead_data_file)
+            self.emitColorCodes.emit(self.channel_to_color_code)
+            self.generate_cell_data.emit()
+        else:
+            self.errorSignal.emit("Please load bead data first.")
 
     def add_channel_row(self):
+        """Add a new row for channel color code mapping."""
         row_widget = QWidget(self)
         row_layout = QHBoxLayout(row_widget)
-        # row_widget.setMaximumWidth(600)
-        # row_layout.setContentsMargins(10, 5, 10, 5)
 
         channel_combo = QComboBox()
         channel_combo.setEditable(True)
@@ -134,7 +159,6 @@ class CellIntensityUI(QWidget):
             channel_combo.addItems([f"Channel {i+1}" for i in range(10)])
 
         load_button = QPushButton("Load Color Code")
-
         remove_button = QPushButton("Remove")
 
         row_layout.addWidget(channel_combo)
@@ -150,6 +174,7 @@ class CellIntensityUI(QWidget):
         remove_button.clicked.connect(lambda: self.remove_channel_row(row_widget))
 
     def remove_channel_row(self, row_widget):
+        """Remove a channel row."""
         channel_combo = row_widget.findChild(QComboBox)
         if channel_combo:
             channel_name = channel_combo.currentText()
@@ -162,6 +187,7 @@ class CellIntensityUI(QWidget):
         row_widget.deleteLater()
 
     def load_color_code_for_channel(self, channel_combo, button):
+        """Load color code from file for a specific channel."""
         channel_name = channel_combo.currentText()
         if not channel_name:
             self.errorSignal.emit("Please specify a channel name.")
@@ -191,7 +217,8 @@ class CellIntensityUI(QWidget):
             except (UnicodeDecodeError, pd.errors.ParserError):
                 self.errorSignal.emit("Please select a valid file type")
 
-    def loadBeadData(self):
+    def load_bead_data(self):
+        """Load bead data from file."""
         file_name, _ = QFileDialog.getOpenFileName(
             self, "Open Bead Data", "", "Bead Data(*.csv *.xlsx);;All Files (*)"
         )
@@ -199,12 +226,12 @@ class CellIntensityUI(QWidget):
             try:
                 self.bead_data_file = (
                     pd.read_csv(file_name).to_numpy().astype("uint16")
-                )  # this is the output from the registration->decoding program
+                )
                 self.bead_data_label.setText(os.path.basename(file_name))
             except UnicodeDecodeError:
                 self.errorSignal.emit("Please select a valid file type")
 
-    def __retranslate_UI(self):
+    def _retranslate_ui(self):
         _translate = QCoreApplication.translate
         self.cell_intensity_groupbox.setTitle(
             _translate("MainWindow", "Generate Protein Data of Cells")

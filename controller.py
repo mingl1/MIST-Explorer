@@ -567,7 +567,7 @@ class SignalConnectionManager:
         )
 
         self.c.view.cell_intensity_groupbox.bead_data.clicked.connect(
-            self.c.view.cell_intensity_groupbox.loadBeadData
+            self.c.view.cell_intensity_groupbox.load_bead_data
         )
 
         self.c.view.cell_intensity_groupbox.emitBeadData.connect(
@@ -596,11 +596,12 @@ class SignalConnectionManager:
 
     def _setup_img_broadcast_conns(self):
         """Image signal broadcast to multiple targets"""
+        # ensure all the relevant UI components are not None
 
         image_signal = self.c.model_canvas.image_signal
         image_signal.connect(self.c.view.tool_bar.updateChannelSelector)
         image_signal.connect(self.c.view.register_groupbox.updateChannelSelector)
-        image_signal.connect(self.c.view.canvas.loadChannels)
+        image_signal.connect(self.c.view.canvas.load_channels)
         image_signal.connect(self.c.model_stardist.update_channels)
         image_signal.connect(self.c.view.stardist_groupbox.updateChannelSelector)
         image_signal.connect(self.c.view.gaussian_blur.updateChannelSelector)
