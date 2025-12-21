@@ -11,7 +11,7 @@ from PIL import Image
 from PyQt6.QtCore import QTimer  # pylint: disable=no-name-in-module
 from PyQt6.QtGui import QPixmap  # pylint: disable=no-name-in-module
 from PyQt6.QtWidgets import QFileDialog  # pylint: disable=no-name-in-module
-from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QMessageBox  # pylint: disable=no-name-in-module
 
 from core import (CellIntensity, ImageGraphicsView, ImageWrapper,
                   ReferenceGraphicsView, Register, StarDist)
@@ -134,17 +134,17 @@ class Controller:
 
     def control_save(self):
         """Saves the current canvas image."""
-        im = self.model_canvas.image_wrapper.data
-        if im.dtype != np.uint8:
-            im = (im * 255).astype(np.uint8)
+        img = self.model_canvas.image_wrapper.data
+        if img.dtype != np.uint8:
+            img = (img * 255).astype(np.uint8)
         # qimage = pm.toImage()
-        if im is not None:
+        if img is not None:
             file_name, _ = QFileDialog.getSaveFileName(
                 None, "Save File", "image.png", "*.png;;*.jpg;;*.tif;; All Files(*)"
             )
             if file_name:
                 print(file_name)
-                Image.fromarray(im).save(file_name)
+                Image.fromarray(img).save(file_name)
                 return True
 
             return False
@@ -218,12 +218,12 @@ class Controller:
                 # treat moving_image as transformation matrix
                 transf_matrix = moving_image
                 # print(transf_matrix)
-                for l in layer:
+                for layer_key in layer:
                     # print(L)
-                    h, w = data[l].data.shape[-2:]
+                    height, width = data[layer_key].data.shape[-2:]
                     # print(h,w)
-                    aligned_data["data"][l] = cv2.warpAffine(  # pylint: disable=no-member
-                        item["data"][l].data, transf_matrix, (w, h)
+                    aligned_data["data"][layer_key] = cv2.warpAffine(  # pylint: disable=no-member
+                        item["data"][layer_key].data, transf_matrix, (width, height)
                     )
             filename = item["name"]
             if isinstance(layer, list):
@@ -232,15 +232,15 @@ class Controller:
                     layer
                 ), "Aligned data keys do not match the expected layers"
                 data = {}
-                for l in layer:
-                    d = (
-                        aligned_data["data"][l]
-                        if aligned_data["data"][l] is not None
+                for layer_key in layer:
+                    img_data = (
+                        aligned_data["data"][layer_key]
+                        if aligned_data["data"][layer_key] is not None
                         else moving_image
                     )
-                    wrapped_image = ImageWrapper(d, l)
+                    wrapped_image = ImageWrapper(img_data, layer_key)
                     # data[L].data = aligned_data["data"][L]
-                    data[l] = wrapped_image
+                    data[layer_key] = wrapped_image
                 aligned_name = "Registered_" + filename
             else:
                 wrapped_image = ImageWrapper(aligned_image, layer)
@@ -305,6 +305,7 @@ class Controller:
         self.model_register.cancel()
 
 
+# pylint: disable=too-few-public-methods
 class SignalConnectionManager:
     """Manages signal connections"""
 
@@ -317,14 +318,14 @@ class SignalConnectionManager:
         self._setup_alignment_connections()
         self._setup_menubar_connections()
         self._setup_toolbar_connections()
-        self._setup_image_handling_connections()
+        self._setup_img_handling_conns()
         self._setup_canvas_connections()
         self._setup_crop_connections()
         self._setup_transform_connections()
         self._setup_stardist_connections()
         self._setup_registration_connections()
-        self._setup_cell_intensity_connections()
-        self._setup_image_broadcast_connections()
+        self._setup_cell_intensity_conns()
+        self._setup_img_broadcast_conns()
         self._setup_misc_connections()
 
     def _setup_alignment_connections(self):
@@ -366,7 +367,7 @@ class SignalConnectionManager:
         )
         self.c.view.toolBarUI.tabChanged.connect(self.c.handle_tab_change)
 
-    def _setup_image_handling_connections(self):
+    def _setup_img_handling_conns(self):
         """Image loading and display connections"""
         self.c.view.canvas.image_dropped.connect(self.c.model_canvas.add_to_canvas)
         self.c.view.small_view.image_dropped.connect(
@@ -555,7 +556,7 @@ class SignalConnectionManager:
 
         # Results
 
-    def _setup_cell_intensity_connections(self):
+    def _setup_cell_intensity_conns(self):
         """Cell intensity-related connections"""
 
         self.c.view.images_tab.image_tree_view.protein_data.connect(
@@ -593,7 +594,7 @@ class SignalConnectionManager:
             self.c.model_cell_intensity.cancel
         )
 
-    def _setup_image_broadcast_connections(self):
+    def _setup_img_broadcast_conns(self):
         """Image signal broadcast to multiple targets"""
 
         image_signal = self.c.model_canvas.image_signal
