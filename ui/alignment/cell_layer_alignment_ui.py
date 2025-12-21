@@ -247,9 +247,7 @@ class CellLayerAlignmentUI(QWidget):
 
     def __retranslate_UI(self):
         _translate = QCoreApplication.translate
-        self.alignment_groupbox.setTitle(
-            _translate("MainWindow", "Registeration")
-        )
+        self.alignment_groupbox.setTitle(_translate("MainWindow", "Registeration"))
         self.image1_label.setText(_translate("MainWindow", "Target Image:"))
         self.image2_label.setText(_translate("MainWindow", "Moving Image:"))
         self.register_button.setText(_translate("MainWindow", "Register Images"))

@@ -576,9 +576,9 @@ class BaseGraphicsView(QWidget):
                 data, target_channel, subsample_for_emit, max_display_size
             )
             if as_new_image:
-                assert new_image_name is not None, (
-                    "Image name must be provided for new image"
-                )
+                assert (
+                    new_image_name is not None
+                ), "Image name must be provided for new image"
                 self._add_to_manager(new_image_name, self.working_channels)
 
             return ret

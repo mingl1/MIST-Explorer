@@ -1,10 +1,18 @@
-
-from PyQt6.QtWidgets import QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QComboBox, QPushButton, QWidget, QSlider
+from PyQt6.QtWidgets import (
+    QVBoxLayout,
+    QHBoxLayout,
+    QGroupBox,
+    QLabel,
+    QComboBox,
+    QPushButton,
+    QWidget,
+    QSlider,
+)
 from PyQt6.QtCore import QSize, Qt, QCoreApplication
 
 
 class ThresholdUI(QWidget):
-    def __init__(self, parent=None, containing_layout:QVBoxLayout=None):
+    def __init__(self, parent=None, containing_layout: QVBoxLayout = None):
         super().__init__()
         self.thresholding_groupBox = QGroupBox(parent)
         self.thresholding_groupBox.setObjectName("thresholding_groupBox")
@@ -12,10 +20,8 @@ class ThresholdUI(QWidget):
         horizontalLayout.setObjectName("horizontalLayout_9")
         thresholding_components_vlayout = QVBoxLayout()
 
-        
         self.thresholding_label1 = QLabel(self.thresholding_groupBox)
         self.thresholding_label1.setObjectName("thresholding_label1")
-
 
         self.channel_selector_layout = QHBoxLayout()
         self.channel_selector = QComboBox(self.thresholding_groupBox)
@@ -25,7 +31,6 @@ class ThresholdUI(QWidget):
         self.channel_selector_layout.addWidget(self.channel_selector)
         thresholding_components_vlayout.addLayout(self.channel_selector_layout)
         thresholding_components_vlayout.addWidget(self.thresholding_label1)
-
 
         self.thresholding_slider1 = QSlider(self.thresholding_groupBox)
         self.thresholding_slider1.setMinimumSize(QSize(100, 0))

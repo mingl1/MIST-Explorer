@@ -160,9 +160,9 @@ class ImageTreeWidget(QTreeView):
             )
 
     def show_on_reference_canvas(self, uuid: UUID, channel: int):
-        assert self.model_reference_canvas is not None, (
-            "model_reference_canvas is not set"
-        )
+        assert (
+            self.model_reference_canvas is not None
+        ), "model_reference_canvas is not set"
         cname = f"Channel {channel + 1}"
         self.model_reference_canvas.add_to_canvas(uuid, cname)
 

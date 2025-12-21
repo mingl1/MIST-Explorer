@@ -222,9 +222,9 @@ class Controller:
             filename = item["name"]
             if isinstance(layer, list):
                 # handles register.py
-                assert len(aligned_data["data"].keys()) == len(layer), (
-                    "Aligned data keys do not match the expected layers"
-                )
+                assert len(aligned_data["data"].keys()) == len(
+                    layer
+                ), "Aligned data keys do not match the expected layers"
                 data = {}
                 for L in layer:
                     d = (

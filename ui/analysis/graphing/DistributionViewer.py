@@ -4,7 +4,14 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QVBoxLayout, QWidget, QScrollArea, QPushButton, QLabel, QFileDialog
+    QApplication,
+    QMainWindow,
+    QVBoxLayout,
+    QWidget,
+    QScrollArea,
+    QPushButton,
+    QLabel,
+    QFileDialog,
 )
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
@@ -15,8 +22,8 @@ class DistributionViewer(QMainWindow):
 
         cols = data.columns[3:]
 
-        self.data = data[cols] # DataFrame with data to plot
-        
+        self.data = data[cols]  # DataFrame with data to plot
+
         self.initUI()
 
     def initUI(self):
@@ -77,24 +84,32 @@ class DistributionViewer(QMainWindow):
         data = data[data.columns[3:]]
         self.plot_distributions(data)
 
+
 import pandas as pd
 
+
 def trim_outliers(data, method="iqr", factor=1.5):
     """
     Trims outliers from a DataFrame or Series.
-    
+
     Parameters:
         data (pd.DataFrame or pd.Series): The data to trim.
         method (str): The method to use for trimming ('iqr' or 'zscore').
         factor (float): The threshold for identifying outliers. Default is 1.5 for IQR.
-        
+
     Returns:
         pd.DataFrame or pd.Series: Data with outliers trimmed.
     """
     if isinstance(data, pd.Series):
         return _trim_outliers_series(data, method, factor)
     elif isinstance(data, pd.DataFrame):
-        return data.apply(lambda col: _trim_outliers_series(col, method, factor) if pd.api.types.is_numeric_dtype(col) else col)
+        return data.apply(
+            lambda col: (
+                _trim_outliers_series(col, method, factor)
+                if pd.api.types.is_numeric_dtype(col)
+                else col
+            )
+        )
     else:
         raise ValueError("Input must be a pandas DataFrame or Series.")
 
@@ -102,21 +117,28 @@ def trim_outliers(data, method="iqr", factor=1.5):
 def trim_outliers(data, method="iqr", factor=1.5):
     """
     Trims outliers from a DataFrame or Series.
-    
+
     Parameters:
         data (pd.DataFrame or pd.Series): The data to trim.
         method (str): The method to use for trimming ('iqr' or 'zscore').
         factor (float): The threshold for identifying outliers. Default is 1.5 for IQR.
-        
+
     Returns:
         pd.DataFrame or pd.Series: Data with outliers trimmed.
     """
     if isinstance(data, pd.Series):
         return _trim_outliers_series(data, method, factor)
     elif isinstance(data, pd.DataFrame):
-        return data.apply(lambda col: _trim_outliers_series(col, method, factor) if pd.api.types.is_numeric_dtype(col) else col)
+        return data.apply(
+            lambda col: (
+                _trim_outliers_series(col, method, factor)
+                if pd.api.types.is_numeric_dtype(col)
+                else col
+            )
+        )
     else:
         raise ValueError("Input must be a pandas DataFrame or Series.")
+
 
 def _trim_outliers_series(series, method="iqr", factor=1.5):
     """
@@ -124,7 +146,7 @@ def _trim_outliers_series(series, method="iqr", factor=1.5):
     """
     if not pd.api.types.is_numeric_dtype(series):
         return series  # Skip non-numeric data
-    
+
     if method == "iqr":
         q1 = series.quantile(0.25)
         q3 = series.quantile(0.75)
@@ -146,24 +168,18 @@ if __name__ == "__main__":
     # Example data for testing
     file_path = r"/Users/clark/Downloads/cell_data_8_8_Full_Dataset_Biopsy.xlsx"
     data = pd.read_excel(file_path).iloc[:, 3:7]
-    # data = 
+    # data =
     # print(data)
-    
-
-    
 
     app = QApplication(sys.argv)
     viewer = DistributionViewer(data)
-
-    
 
     viewer.show()
     sys.exit(app.exec())
 
 
-
 # if __name__ == "__main__":
-    
+
 
 #     app = QApplication(sys.argv)
 #     viewer = OverlayLinePlotViewer(data)

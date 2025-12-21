@@ -44,5 +44,5 @@ __all__ = [
     "TileMap",
     "Worker",
     "StarDist",
-    "UMAPHelper"
+    "UMAPHelper",
 ]

@@ -105,12 +105,12 @@ class CellIntensity(QThread):
         )  # assuming colors are 0-indexed
 
     def run(self):
-        
+
         # need the aligned and segmented cell image, bead_data, and color_code
-        
+
         for channel, color_code in self.channel_to_color_code.items():
             self.color_code = color_code
-            channel = int(channel.split(" ")[-1])-1
+            channel = int(channel.split(" ")[-1]) - 1
             print(f"generating channel {channel}")
             # this func expects channel to be zero-indexed integer.
             self.load_protein_signal_array_from_storage(None, channel)
@@ -160,7 +160,9 @@ class CellIntensity(QThread):
                     cell_id: [[] for _ in range(num_proteins)]
                     for cell_id in range(1, max_cell_id + 1)
                 }
-                cycle_cols = self.bead_data[:, 2 : 2 + self.params["num_decoding_cycles"]]
+                cycle_cols = self.bead_data[
+                    :, 2 : 2 + self.params["num_decoding_cycles"]
+                ]
                 data_modified = np.zeros((len(self.bead_data), 3))
                 data_modified[:, 0:2] = self.bead_data[:, 0:2].astype("uint16")
                 data_modified[:, 2] = np.array(
@@ -215,10 +217,9 @@ class CellIntensity(QThread):
                 # The final mask identifies beads that satisfy ALL conditions
                 valid_bead_mask = in_cell_mask & in_bounds_mask
 
-    # remove in_cell_mask and edit self.stardist_labels to include psuedo-cells, 
-    # note the labels should start with max(self.stardist_labels)+1;
-    # after editing self.stardist_labels, rest of code shouldn't need to be changed
-
+                # remove in_cell_mask and edit self.stardist_labels to include psuedo-cells,
+                # note the labels should start with max(self.stardist_labels)+1;
+                # after editing self.stardist_labels, rest of code shouldn't need to be changed
 
                 # --- 4. Filter the Data ---
                 # Create a much smaller array containing only the beads we need to process
@@ -234,7 +235,9 @@ class CellIntensity(QThread):
                     if i % 1000 == 0:
                         self.progress.emit(
                             50
-                            + int((i / len(valid_beads)) * 25),  # Progress from 50% to 75%
+                            + int(
+                                (i / len(valid_beads)) * 25
+                            ),  # Progress from 50% to 75%
                             f"Adjusting bead intensity {i+1}/{len(valid_beads)}",
                         )
 
@@ -249,7 +252,10 @@ class CellIntensity(QThread):
                     )
 
                     protein_idx = color_code_to_index.get(color_code)
-                    if protein_idx is not None and adjusted_median_intensity is not None:
+                    if (
+                        protein_idx is not None
+                        and adjusted_median_intensity is not None
+                    ):
                         cell_data_dict[cell_associated_id][protein_idx].append(
                             adjusted_median_intensity
                         )
@@ -259,9 +265,9 @@ class CellIntensity(QThread):
                 for i in range(num_proteins):
                     protein_code = index_to_color_code.get(i)
                     if protein_code is not None:
-                        protein_beads = data_modified[data_modified[:, 2] == protein_code][
-                            :, 0:2
-                        ].astype(int)
+                        protein_beads = data_modified[
+                            data_modified[:, 2] == protein_code
+                        ][:, 0:2].astype(int)
                         if len(protein_beads) > 0:
                             protein_kdtree_map[i] = KDTree(protein_beads)
                 # find centerpoint of every cell
@@ -291,8 +297,10 @@ class CellIntensity(QThread):
                                     and nn_x < (max_size - radius_bg)
                                     and nn_y < (max_size - radius_bg)
                                 ):
-                                    adjusted_intensity = self.get_adjusted_median_intensity(
-                                        int(nn_x), int(nn_y)
+                                    adjusted_intensity = (
+                                        self.get_adjusted_median_intensity(
+                                            int(nn_x), int(nn_y)
+                                        )
                                     )
                                     if adjusted_intensity is not None:
                                         cell_data_dict[cell_id][protein_idx].append(
@@ -318,7 +326,9 @@ class CellIntensity(QThread):
                         np.median(subarr) for subarr in array_of_subarrays
                     ]
 
-                    median_values_for_cell_data_dict[cell_id] = array_of_subarrays_medians
+                    median_values_for_cell_data_dict[cell_id] = (
+                        array_of_subarrays_medians
+                    )
                 self.progress.emit(
                     25,
                     f"Finishing Up",
@@ -370,24 +380,26 @@ class CellIntensity(QThread):
                     [v for k, v in median_values_for_cell_data_dict.items()]
                 )
                 # and all the centroid data
-                save_this = np.hstack(([v for k, v in cell_centroids.items()], save_this))
+                save_this = np.hstack(
+                    ([v for k, v in cell_centroids.items()], save_this)
+                )
                 # and finally save everything
                 if self.df_cell_data is None:
-                    
+
                     self.df_cell_data = pd.DataFrame(
                         save_this, columns=header
                     )  # --> use this to visualize
                 else:
-                    curr_cell_data = pd.DataFrame(
-                        save_this, columns=header
-                    ) 
-                    self.df_cell_data = self.df_cell_data.merge(curr_cell_data, on=["Global X", "Global Y"])
+                    curr_cell_data = pd.DataFrame(save_this, columns=header)
+                    self.df_cell_data = self.df_cell_data.merge(
+                        curr_cell_data, on=["Global X", "Global Y"]
+                    )
         self.progress.emit(100, "Cell Data is Generated")
 
     # !TODO: need to implement checking if self.isInterruptionRequested() inside run()
     def cancel(self):
         self.requestInterruption()
-    
+
     def set_color_codes(self, channel_to_code):
         assert isinstance(channel_to_code, dict)
         self.channel_to_color_code = channel_to_code.copy()

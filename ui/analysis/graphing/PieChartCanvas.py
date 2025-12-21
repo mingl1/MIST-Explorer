@@ -162,19 +162,19 @@ class PieChartCanvas(FigureCanvas):
         self.fig, self.ax = plt.subplots(figsize=(6, 6))  # Make the chart smaller
         super().__init__(self.fig)
         self.setParent(parent)
-        
+
         self.df = df
 
         self.plot_pie_chart()
 
     def plot_pie_chart(self):
 
-        plt.style.use('ggplot')
+        plt.style.use("ggplot")
         df = self.df
 
         # Process data
         df = df[df.columns[3:]]  # Exclude irrelevant columns
-        if len(self.df)==0:
+        if len(self.df) == 0:
             return
         dominant_counts = df.idxmax(axis=1).value_counts()
         labels = dominant_counts.index
@@ -183,15 +183,15 @@ class PieChartCanvas(FigureCanvas):
 
         # Modify labels: Hide slices under 2% and add raw counts
         final_labels = [
-            f"{label}\n({value})" if (value / total * 100) >= 2 else ''
+            f"{label}\n({value})" if (value / total * 100) >= 2 else ""
             for label, value in zip(labels, values)
         ]
 
         count = 0
         i_start = 0
         for i in range(len(final_labels)):
-            if final_labels[i] == '':
-                if i_start == 0: 
+            if final_labels[i] == "":
+                if i_start == 0:
                     i_start = i
                 count += 1
 
@@ -203,20 +203,28 @@ class PieChartCanvas(FigureCanvas):
             values,
             labels=final_labels,
             startangle=90,
-            wedgeprops={'edgecolor': 'black'},
-            autopct=lambda pct: f'{pct:.1f}%' if pct >= 2 else '',
+            wedgeprops={"edgecolor": "black"},
+            autopct=lambda pct: f"{pct:.1f}%" if pct >= 2 else "",
             pctdistance=0.85,  # Closer labels
             radius=1,  # Smaller chart
             labeldistance=1.15,
-            textprops={'fontsize': 9}
+            textprops={"fontsize": 9},
         )
 
         # Add white circle in the middle to create a donut effect
-        center_circle = plt.Circle((0, 0), 0.4, fc='white', ec='black', lw=1)
+        center_circle = plt.Circle((0, 0), 0.4, fc="white", ec="black", lw=1)
         self.ax.add_artist(center_circle)
 
         # Add total cell count in the center
-        self.ax.text(0, 0, f"Total Cells:\n{total}", ha='center', va='center', fontsize=10, weight="bold")
+        self.ax.text(
+            0,
+            0,
+            f"Total Cells:\n{total}",
+            ha="center",
+            va="center",
+            fontsize=10,
+            weight="bold",
+        )
 
         plt.subplots_adjust(bottom=0.2)
 
@@ -229,7 +237,9 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
         layout = QVBoxLayout(central_widget)
 
-        df = pd.read_excel(r"/Users/clark/Desktop/wang/protein_visualization_app/ui/graphing/Grouped Cells Biopsy Data.xlsx")
+        df = pd.read_excel(
+            r"/Users/clark/Desktop/wang/protein_visualization_app/ui/graphing/Grouped Cells Biopsy Data.xlsx"
+        )
 
         # Add the pie chart canvas
         self.canvas = PieChartCanvas(df, self)

@@ -1,5 +1,6 @@
-from PyQt6.QtWidgets import  QHBoxLayout, QGroupBox, QLineEdit, QWidget, QPushButton
+from PyQt6.QtWidgets import QHBoxLayout, QGroupBox, QLineEdit, QWidget, QPushButton
 from PyQt6.QtCore import QCoreApplication
+
 
 class RotateUI(QWidget):
     def __init__(self, parent=None):
@@ -24,5 +25,6 @@ class RotateUI(QWidget):
 
     def __retranslateUI(self):
         _translate = QCoreApplication.translate
-        self.rotate_line_edit.setToolTip(_translate("MainWindow", "Enter degrees of rotation"))
-
+        self.rotate_line_edit.setToolTip(
+            _translate("MainWindow", "Enter degrees of rotation")
+        )

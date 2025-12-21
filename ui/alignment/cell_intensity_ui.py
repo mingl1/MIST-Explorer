@@ -30,7 +30,9 @@ class CellIntensityUI(QWidget):
         self.setupUI(parent, containing_layout)
 
     def update_channels(self, channels: dict):
-        self.available_channels = sorted(channels.keys(), key=lambda x: int(x.replace("Channel ", "")))
+        self.available_channels = sorted(
+            channels.keys(), key=lambda x: int(x.replace("Channel ", ""))
+        )
         for row_widget in self.channel_rows:
             combo_box = row_widget.findChild(QComboBox)
             if combo_box:
@@ -112,6 +114,7 @@ class CellIntensityUI(QWidget):
 
         # Setup UI text and connections
         self.__retranslate_UI()
+
     def _handle_generate_cell_data(self):
         self.emitBeadData.emit(self.bead_data_file)
         self.emitColorCodes.emit(self.channel_to_color_code)

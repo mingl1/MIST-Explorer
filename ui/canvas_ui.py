@@ -5,17 +5,48 @@ import typing
 import numpy as np
 import pyqtgraph as pg
 import tifffile
-from PyQt6.QtCore import (QEasingCurve, QPoint, QPointF, QPropertyAnimation,
-                          QRect, QRectF, QSize, Qt, pyqtSignal)
-from PyQt6.QtGui import (QBrush, QColor, QCursor, QDragEnterEvent,
-                         QDragMoveEvent, QDropEvent, QFont, QIcon, QImage,
-                         QMouseEvent, QPainter, QPen, QPixmap)
-from PyQt6.QtWidgets import (QApplication, QFileDialog, QGraphicsItem,
-                             QGraphicsItemGroup, QGraphicsOpacityEffect,
-                             QGraphicsPixmapItem, QGraphicsRectItem,
-                             QGraphicsSimpleTextItem, QGraphicsView,
-                             QHBoxLayout, QLabel, QPushButton, QToolTip,
-                             QWidget)
+from PyQt6.QtCore import (
+    QEasingCurve,
+    QPoint,
+    QPointF,
+    QPropertyAnimation,
+    QRect,
+    QRectF,
+    QSize,
+    Qt,
+    pyqtSignal,
+)
+from PyQt6.QtGui import (
+    QBrush,
+    QColor,
+    QCursor,
+    QDragEnterEvent,
+    QDragMoveEvent,
+    QDropEvent,
+    QFont,
+    QIcon,
+    QImage,
+    QMouseEvent,
+    QPainter,
+    QPen,
+    QPixmap,
+)
+from PyQt6.QtWidgets import (
+    QApplication,
+    QFileDialog,
+    QGraphicsItem,
+    QGraphicsItemGroup,
+    QGraphicsOpacityEffect,
+    QGraphicsPixmapItem,
+    QGraphicsRectItem,
+    QGraphicsSimpleTextItem,
+    QGraphicsView,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QToolTip,
+    QWidget,
+)
 
 import utils
 from ui.lassos.CircleLasso import CircleLasso
@@ -810,9 +841,9 @@ class ImageGraphicsViewUI(QGraphicsView):
 
                 if self.begin_crop:
                     self.rubberBands.append(self.rubberBand)
-                    assert self.rubberBand is not None, (
-                        "Rubber band should be initialized"
-                    )
+                    assert (
+                        self.rubberBand is not None
+                    ), "Rubber band should be initialized"
                     self.rubberBandColors.append(self.rubberBand.color)
                     self.rubberBand.setGeometry(QRect(self.origin, QSize()))
                     self.rubberBand.show()

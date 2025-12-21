@@ -22,9 +22,9 @@ for point, vertices in regions.items():
 
 # Plot Voronoi diagram
 fig, ax = plt.subplots()
-voronoi_plot_2d(vor, ax=ax, show_vertices=False, line_colors='blue')
+voronoi_plot_2d(vor, ax=ax, show_vertices=False, line_colors="blue")
 
 # Plot original points
-ax.plot(points[:, 0], points[:, 1], 'ro')
+ax.plot(points[:, 0], points[:, 1], "ro")
 
 plt.show()

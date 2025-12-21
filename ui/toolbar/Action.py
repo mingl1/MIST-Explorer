@@ -11,8 +11,3 @@ class Action(QAction):
         tool_icon.addPixmap(QPixmap(icon_file_path), QIcon.Mode.Normal, QIcon.State.Off)
         self.setIcon(tool_icon)
         self.setToolTip(tool_name)
-
-
-
-
-

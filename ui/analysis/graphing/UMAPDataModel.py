@@ -79,12 +79,10 @@ class DataModel:
         sc.pp.filter_cells(self.adata, min_genes=1)
         self.adata.layers["counts"] = self.adata.X.copy()
 
-        # Populate adata.raw with log-normalized data for DE analysis
-        # This prevents issues with negative values from scaling in adata.X
-        raw_adata = self.adata.copy()
-        sc.pp.normalize_total(raw_adata)
-        sc.pp.log1p(raw_adata)
-        self.adata.raw = raw_adata
+        # raw_adata = self.adata.copy()
+        # sc.pp.normalize_total(raw_adata)
+        # sc.pp.log1p(raw_adata)
+        # self.adata.raw = raw_adata
 
         # 5. Apply Selected Normalization
         self._apply_normalization()

@@ -15,19 +15,19 @@ class HeatmapWindow(QMainWindow):
 
         super().__init__(parent)
 
-
         # Filter the dataset to include only cells within the specified region
         filtered_data = data
 
         # Extract the list of all proteins dynamically based on the column range
-        protein_columns = filtered_data.columns[3:]  # Assuming proteins start at the 4th column
+        protein_columns = filtered_data.columns[
+            3:
+        ]  # Assuming proteins start at the 4th column
         proteins = protein_columns
 
         # Dummy interaction matrix and correlation matrix for demonstration
         interaction_matrix = np.random.rand(len(proteins), len(proteins)) * 300
-        correlation_matrix = filtered_data[proteins].corr(method='spearman')
+        correlation_matrix = filtered_data[proteins].corr(method="spearman")
 
-       
         # self.setWindowTitle("Protein Correlation Heatmap")
         # self.resize(1200, 800)
 
@@ -41,8 +41,11 @@ class HeatmapWindow(QMainWindow):
         # Create the Matplotlib figure and axes
         self.figure, self.ax = plt.subplots(figsize=(12, 10))
 
-        self.figure.suptitle("Heatmap indicates protein-protein correlation; \nSize indicates spatial distances between protein expression cells", fontsize=7)
-        
+        self.figure.suptitle(
+            "Heatmap indicates protein-protein correlation; \nSize indicates spatial distances between protein expression cells",
+            fontsize=7,
+        )
+
         # self.ax.text(0, -2.0, "Heatmap indicates protein-protein correlation; \nSize indicates spatial distances between protein expression cells", fontsize=7, weight="bold")
 
         # Plot the heatmap on the axes
@@ -51,8 +54,6 @@ class HeatmapWindow(QMainWindow):
         # Create a canvas to embed the Matplotlib figure into the PyQt6 application
         canvas = FigureCanvas(self.figure)
         layout.addWidget(canvas)
-
-        
 
     def plot_heatmap(self, data, interaction_matrix, proteins, correlation_matrix):
 
@@ -79,7 +80,9 @@ class HeatmapWindow(QMainWindow):
         # Add circles proportional to the interaction strengths (edge lengths)
         for i in range(len(proteins)):
             for j in range(len(proteins)):
-                if interaction_matrix[i, j] > 0:  # Only add circles for actual interactions
+                if (
+                    interaction_matrix[i, j] > 0
+                ):  # Only add circles for actual interactions
                     self.ax.add_patch(
                         plt.Circle(
                             (j + 0.5, i + 0.5),
@@ -96,7 +99,6 @@ class HeatmapWindow(QMainWindow):
         # )
 
 
-
 def main():
     app = QApplication(sys.argv)
 
@@ -105,7 +107,6 @@ def main():
     data = pd.read_excel(file_path)
 
     # Example parameters
-    
 
     # Create and show the main window
     window = HeatmapWindow(data)
