@@ -18,7 +18,7 @@ from core import (CellIntensity, ImageGraphicsView, ImageWrapper,
 from ui.alignment.alignment_preview_dialog import AlignmentPreviewDialog
 
 if typing.TYPE_CHECKING:
-    from ui.app import Ui_MainWindow
+    from ui.app import MainWindow
 
 
 # pylint: disable=too-many-instance-attributes
@@ -75,7 +75,7 @@ class Controller:
             raise RuntimeError("Controller not initialized")
         return cls._instance
 
-    def __init__(self, app: "Ui_MainWindow"):
+    def __init__(self, app: "MainWindow"):
         self._initialized = True
         self.image_count = 0
         self.prev_tab_index = 0
@@ -171,7 +171,7 @@ class Controller:
     # add new image to storage
     def handle_new_image(self, data, file_name, metadata=None):
         """Handles a new image by adding it to storage."""
-        self.view.toolBarUI.enable_actions()
+        self.view.tool_bar.enable_actions()
         storage_item = {}
         storage_item["name"] = os.path.basename(file_name)
         storage_item["metadata"] = metadata
@@ -342,30 +342,30 @@ class SignalConnectionManager:
 
     def _setup_menubar_connections(self):
         """Menu bar signal connections"""
-        self.c.view.menuBarUI.open_reference.triggered.connect(
+        self.c.view.menu_bar.open_reference.triggered.connect(
             self.c.on_action_reference_triggered
         )
-        self.c.view.menuBarUI.open_image.triggered.connect(
+        self.c.view.menu_bar.open_image.triggered.connect(
             self.c.on_action_open_triggered
         )
 
     def _setup_toolbar_connections(self):
         """Toolbar signal connections"""
-        self.c.view.toolBarUI.actionReset.triggered.connect(
+        self.c.view.tool_bar.actionReset.triggered.connect(
             self.c.model_canvas.reset_image
         )
-        self.c.view.toolBarUI.channelChanged.connect(self.c.model_canvas.swap_channel)
-        self.c.view.toolBarUI.contrast_slider.valueChanged.connect(
+        self.c.view.tool_bar.channelChanged.connect(self.c.model_canvas.swap_channel)
+        self.c.view.tool_bar.contrast_slider.valueChanged.connect(
             self.c.model_canvas.update_contrast
         )
-        self.c.view.toolBarUI.cmapChanged.connect(self.c.model_canvas.update_image)
-        self.c.view.toolBarUI.auto_contrast_button.clicked.connect(
+        self.c.view.tool_bar.cmapChanged.connect(self.c.model_canvas.update_image)
+        self.c.view.tool_bar.auto_contrast_button.clicked.connect(
             self.c.model_canvas.auto_contrast
         )
-        self.c.view.toolBarUI.tabChanged.connect(
-            self.c.view.stackedWidget.setCurrentIndex
+        self.c.view.tool_bar.tabChanged.connect(
+            self.c.view.stacked_widget.setCurrentIndex
         )
-        self.c.view.toolBarUI.tabChanged.connect(self.c.handle_tab_change)
+        self.c.view.tool_bar.tabChanged.connect(self.c.handle_tab_change)
 
     def _setup_img_handling_conns(self):
         """Image loading and display connections"""
@@ -378,7 +378,7 @@ class SignalConnectionManager:
         )
         self.c.model_canvas.update_canvas.connect(self.c.view.canvas.update_canvas)
         self.c.model_canvas.update_channel.connect(
-            self.c.view.toolBarUI.setChannelSelector
+            self.c.view.tool_bar.setChannelSelector
         )
 
         self.c.model_canvas.update_sidebar.connect(
@@ -416,10 +416,10 @@ class SignalConnectionManager:
         self.c.model_canvas.error_signal.connect(self.c.handle_error)
         self.c.view.canvas.show_crop.connect(self.c.model_canvas.crop)
         self.c.model_canvas.update_cmap.connect(
-            self.c.view.toolBarUI.update_cmap_selector
+            self.c.view.tool_bar.update_cmap_selector
         )
         self.c.model_canvas.change_slider.connect(
-            self.c.view.toolBarUI.update_contrast_slider
+            self.c.view.tool_bar.update_contrast_slider
         )
         self.c.model_canvas.fill_metadata.connect(self.c.view.get_metadata)
 
@@ -566,31 +566,31 @@ class SignalConnectionManager:
             self.c.model_cell_intensity.load_stardist_labels_from_storage
         )
 
-        self.c.view.cellIntensity_groupbox.bead_data.clicked.connect(
-            self.c.view.cellIntensity_groupbox.loadBeadData
+        self.c.view.cell_intensity_groupbox.bead_data.clicked.connect(
+            self.c.view.cell_intensity_groupbox.loadBeadData
         )
 
-        self.c.view.cellIntensity_groupbox.emitBeadData.connect(
+        self.c.view.cell_intensity_groupbox.emitBeadData.connect(
             self.c.model_cell_intensity.set_bead_data
         )
-        self.c.view.cellIntensity_groupbox.emitColorCodes.connect(
+        self.c.view.cell_intensity_groupbox.emitColorCodes.connect(
             self.c.model_cell_intensity.set_color_codes
         )
-        self.c.view.cellIntensity_groupbox.radius_fg.valueChanged.connect(
+        self.c.view.cell_intensity_groupbox.radius_fg.valueChanged.connect(
             self.c.model_cell_intensity.set_radius_fg
         )
-        self.c.view.cellIntensity_groupbox.radius_bg.valueChanged.connect(
+        self.c.view.cell_intensity_groupbox.radius_bg.valueChanged.connect(
             self.c.model_cell_intensity.set_radius_bg
         )
-        self.c.view.cellIntensity_groupbox.generate_cell_data.connect(
+        self.c.view.cell_intensity_groupbox.generate_cell_data.connect(
             self.c.model_cell_intensity.generate_cell_intensity_table
         )
         self.c.model_cell_intensity.error_signal.connect(self.c.handle_error)
-        self.c.view.cellIntensity_groupbox.save_button.clicked.connect(
+        self.c.view.cell_intensity_groupbox.save_button.clicked.connect(
             self.c.model_cell_intensity.save_cell_data
         )
         self.c.model_cell_intensity.progress.connect(self.c.view.update_progress_bar)
-        self.c.view.cellIntensity_groupbox.cancel_button.clicked.connect(
+        self.c.view.cell_intensity_groupbox.cancel_button.clicked.connect(
             self.c.model_cell_intensity.cancel
         )
 
@@ -598,14 +598,14 @@ class SignalConnectionManager:
         """Image signal broadcast to multiple targets"""
 
         image_signal = self.c.model_canvas.image_signal
-        image_signal.connect(self.c.view.toolBarUI.updateChannelSelector)
+        image_signal.connect(self.c.view.tool_bar.updateChannelSelector)
         image_signal.connect(self.c.view.register_groupbox.updateChannelSelector)
         image_signal.connect(self.c.view.canvas.loadChannels)
         image_signal.connect(self.c.model_stardist.update_channels)
         image_signal.connect(self.c.view.stardist_groupbox.updateChannelSelector)
         image_signal.connect(self.c.view.gaussian_blur.updateChannelSelector)
         image_signal.connect(self.c.model_register.update_moving_image)
-        image_signal.connect(self.c.view.cellIntensity_groupbox.update_channels)
+        image_signal.connect(self.c.view.cell_intensity_groupbox.update_channels)
 
         ref_image = self.c.model_reference_canvas.image_signal
         ref_image.connect(self.c.model_register.update_reference_channels)
@@ -618,7 +618,7 @@ class SignalConnectionManager:
     def _setup_misc_connections(self):
         """Miscellaneous connections"""
         self.c.view.view_tab.progress.connect(self.c.view.update_progress_bar)
-        self.c.view.stackedWidget.currentChanged.connect(
+        self.c.view.stacked_widget.currentChanged.connect(
             lambda x: self.c.view.small_view.setVisible(
                 x == 0 and not self.c.view.small_view.is_empty()
             )

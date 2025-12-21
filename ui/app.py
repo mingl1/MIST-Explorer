@@ -1,11 +1,17 @@
+"""
+Main application window module.
+"""
 import argparse
-import os
 import sys
+from typing import Optional
 
-import numpy as np
-from PyQt6.QtCore import *
-from PyQt6.QtGui import *
-from PyQt6.QtWidgets import *
+# pylint: disable=no-name-in-module
+from PyQt6.QtCore import (QCoreApplication, QEvent, QMetaObject, QPoint, Qt)
+from PyQt6.QtGui import QImageReader, QKeySequence, QShortcut
+from PyQt6.QtWidgets import (QGroupBox, QHBoxLayout, QLabel, QMainWindow,
+                             QProgressBar, QPushButton, QScrollArea,
+                             QSizePolicy, QSplitter, QStackedWidget,
+                             QStatusBar, QTabWidget, QVBoxLayout, QWidget)
 
 from core import MetaData
 from ui.alignment.cell_intensity_ui import CellIntensityUI
@@ -23,14 +29,20 @@ from ui.toolbar.toolbar_ui import ToolBarUI
 from ui.view_tab import ImageOverlay
 
 
-class Ui_MainWindow(QMainWindow):
+class MainWindow(QMainWindow):
+    """
+    Main Application Window.
+    """
 
+    # pylint: disable=too-many-instance-attributes, attribute-defined-outside-init
     def __init__(self, parent=None):
         QImageReader.setAllocationLimit(0)
-        super().__init__()
+        super().__init__(parent)
+
+        self._init_attributes()
 
         if sys.platform == "win32":
-            self.dragPos = QPoint()
+            self.drag_pos = QPoint()
 
         self.args = (
             self._parse_arguments()
@@ -54,8 +66,43 @@ class Ui_MainWindow(QMainWindow):
         self._setup_layout()
 
         self._connect_signals()
-        self._retranslate_UI()
+        self._retranslate_ui()
         QMetaObject.connectSlotsByName(self)
+
+    def _init_attributes(self):
+        """Initialize instance attributes."""
+        self.drag_pos: Optional[QPoint] = None
+        self.menu_bar: Optional[MenuBarUI] = None
+        self.tool_bar: Optional[ToolBarUI] = None
+        self.central_widget_layout: Optional[QHBoxLayout] = None
+        self.main_layout: Optional[QHBoxLayout] = None
+        self.side_panel_container: Optional[QHBoxLayout] = None
+        self.side_panel: Optional[QWidget] = None
+        self.side_panel_layout: Optional[QVBoxLayout] = None
+        self.toggle_button: Optional[QPushButton] = None
+        self.stacked_widget: Optional[QStackedWidget] = None
+        self.canvas: Optional[ImageGraphicsViewUI] = None
+        self.small_view: Optional[ReferenceGraphicsViewUI] = None
+        self.images_tab_container: Optional[QWidget] = None
+        self.images_tab: Optional[Manager] = None
+        self.processing_tabs: Optional[QTabWidget] = None
+        self.crop_groupbox: Optional[CropUI] = None
+        self.rotate_groupbox: Optional[RotateUI] = None
+        self.flip_groupbox: Optional[QGroupBox] = None
+        self.flip_horizontal_btn: Optional[QPushButton] = None
+        self.flip_vertical_btn: Optional[QPushButton] = None
+        self.cell_layer_alignment: Optional[CellLayerAlignmentUI] = None
+        self.register_groupbox: Optional[RegisterUI] = None
+        self.gaussian_blur: Optional[GaussianBlur] = None
+        self.stardist_groupbox: Optional[StarDistUI] = None
+        self.cell_intensity_groupbox: Optional[CellIntensityUI] = None
+        self.view_tab: Optional[ImageOverlay] = None
+        self.analysis_tab: Optional[AnalysisTab] = None
+        self.metadata_tab: Optional[MetaData] = None
+        self.statusbar: Optional[QStatusBar] = None
+        self.progress_bar_label: Optional[QLabel] = None
+        self.progress_bar: Optional[QProgressBar] = None
+        self.metadata: Optional[dict] = None
 
     def _parse_arguments(self):
         """Parse command line arguments"""
@@ -76,30 +123,33 @@ class Ui_MainWindow(QMainWindow):
         self.setMinimumSize(1200, 800)
 
     def toggle_maximize(self):
+        """Toggle between maximized and normal window state"""
         if self.isMaximized():
             self.showNormal()
         else:
             self.showMaximized()
 
+    # pylint: disable=invalid-name
     def eventFilter(self, obj, event):
+        """Event filter for handling window dragging"""
         if sys.platform == "win32":
-            if obj == self.menuBarUI:
+            if obj == self.menu_bar:
                 if event.type() == QEvent.Type.MouseButtonPress:
-                    self.dragPos = event.globalPosition().toPoint()
+                    self.drag_pos = event.globalPosition().toPoint()
                     return False  # Allow the event to propagate for clicks
-                elif event.type() == QEvent.Type.MouseMove:
+                if event.type() == QEvent.Type.MouseMove:
                     if (
                         event.buttons() == Qt.MouseButton.LeftButton
-                        and hasattr(self, "dragPos")
-                        and self.dragPos is not None
+                        and hasattr(self, "drag_pos")
+                        and self.drag_pos is not None
                     ):
                         self.move(
-                            self.pos() + event.globalPosition().toPoint() - self.dragPos
+                            self.pos() + event.globalPosition().toPoint() - self.drag_pos
                         )
-                        self.dragPos = event.globalPosition().toPoint()
+                        self.drag_pos = event.globalPosition().toPoint()
                         return True  # Consume the event if dragging
-                elif event.type() == QEvent.Type.MouseButtonRelease:
-                    self.dragPos = QPoint()  # Reset dragPos
+                if event.type() == QEvent.Type.MouseButtonRelease:
+                    self.drag_pos = QPoint()  # Reset dragPos
                     return False  # Allow the event to propagate
         return super().eventFilter(obj, event)
 
@@ -124,34 +174,34 @@ class Ui_MainWindow(QMainWindow):
         self.setCentralWidget(widget)
 
     def _setup_menubar_and_toolbar(self):
-        self.menuBarUI = MenuBarUI(self)
+        self.menu_bar = MenuBarUI(self)
 
-        self.toolBarUI = ToolBarUI(self)
-        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.toolBarUI)
-        self.setMenuBar(self.menuBarUI)
+        self.tool_bar = ToolBarUI(self)
+        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.tool_bar)
+        self.setMenuBar(self.menu_bar)
         if sys.platform == "win32":
-            self.menuBarUI.installEventFilter(self)
+            self.menu_bar.installEventFilter(self)
 
     def _setup_side_panel(self):
         """Setup the collapsible side panel"""
 
-        self.sidePanelContainer = QHBoxLayout()
+        self.side_panel_container = QHBoxLayout()
         # self.sidePanelContainer.setContentsMargins(10, 5, 10, 5)
-        self.sidePanelContainer.setSpacing(10)
+        self.side_panel_container.setSpacing(10)
 
-        self.sidePanel = QWidget(self.centralWidget())
-        self.sidePanelLayout = QVBoxLayout(self.sidePanel)
+        self.side_panel = QWidget(self.centralWidget())
+        self.side_panel_layout = QVBoxLayout(self.side_panel)
         # self.sidePanelLayout.setSpacing(10)
-        self.sidePanel.setMinimumWidth(400)
-        self.sidePanel.setMaximumWidth(500)
-        self.sidePanel.setSizePolicy(
+        self.side_panel.setMinimumWidth(400)
+        self.side_panel.setMaximumWidth(500)
+        self.side_panel.setSizePolicy(
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding
         )
 
-        self.toggleButton = QPushButton("◀", self.sidePanel)
-        self.toggleButton.setFixedSize(20, 60)
-        self.toggleButton.clicked.connect(self.toggleSidePanel)
-        self.toggleButton.setStyleSheet(
+        self.toggle_button = QPushButton("◀", self.side_panel)
+        self.toggle_button.setFixedSize(20, 60)
+        self.toggle_button.clicked.connect(self.toggle_side_panel)
+        self.toggle_button.setStyleSheet(
             """
             QPushButton:hover {
                 background-color: #e0e0e0;
@@ -160,12 +210,12 @@ class Ui_MainWindow(QMainWindow):
         )
 
         # Create stacked widget for tabs
-        self.stackedWidget = QStackedWidget(self.sidePanel)
-        self.sidePanelLayout.addWidget(self.stackedWidget)
+        self.stacked_widget = QStackedWidget(self.side_panel)
+        self.side_panel_layout.addWidget(self.stacked_widget)
 
         # Add to container
-        self.sidePanelContainer.addWidget(self.sidePanel)
-        self.sidePanelContainer.addWidget(self.toggleButton)
+        self.side_panel_container.addWidget(self.side_panel)
+        self.side_panel_container.addWidget(self.toggle_button)
 
     def _setup_canvas(self):
         """Setup the main canvas and reference view"""
@@ -183,17 +233,17 @@ class Ui_MainWindow(QMainWindow):
         images_scroll = self._create_scroll_area()
 
         # The main widget for the "Images" tab, containing the manager and the processing tabs
-        self.images_tab_container = QWidget(self.sidePanel)
+        self.images_tab_container = QWidget(self.side_panel)
         images_tab_layout = QVBoxLayout(self.images_tab_container)
 
         # Image Manager (the file tree)
         self.images_tab = Manager(self.canvas)
 
         # Processing Tabs
-        self.processing_tabs = QTabWidget(self.sidePanel)
-        processing_tab_layout = QVBoxLayout(self.processing_tabs)
+        self.processing_tabs = QTabWidget(self.side_panel)
+        # processing_tab_layout = QVBoxLayout(self.processing_tabs) # unused
         # Create a splitter to allow resizing of the image manager and processing tabs
-        splitter = QSplitter(Qt.Orientation.Vertical, self.sidePanel)
+        splitter = QSplitter(Qt.Orientation.Vertical, self.side_panel)
         splitter.addWidget(self.images_tab)
         splitter.setStretchFactor(0, 1)
         splitter.addWidget(self.processing_tabs)
@@ -208,7 +258,7 @@ class Ui_MainWindow(QMainWindow):
         self._setup_quantification_tab()
 
         images_scroll.setWidget(self.images_tab_container)
-        self.stackedWidget.addWidget(images_scroll)
+        self.stacked_widget.addWidget(images_scroll)
 
     def _setup_transform_tab(self):
         """Sets up the 'Transform' tab with Crop, Rotate, and Flip tools."""
@@ -282,7 +332,7 @@ class Ui_MainWindow(QMainWindow):
         quantification_layout = QVBoxLayout(quantification_tab)
         quantification_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        self.cellIntensity_groupbox = CellIntensityUI(
+        self.cell_intensity_groupbox = CellIntensityUI(
             quantification_tab, quantification_layout
         )
 
@@ -299,7 +349,7 @@ class Ui_MainWindow(QMainWindow):
         )
 
         view_scroll.setWidget(self.view_tab)
-        self.stackedWidget.addWidget(view_scroll)
+        self.stacked_widget.addWidget(view_scroll)
 
     def _setup_analysis_tab(self):
         """Setup the analysis tab"""
@@ -312,7 +362,7 @@ class Ui_MainWindow(QMainWindow):
         self.analysis_tab.setObjectName("analysis_tab")
 
         analysis_scroll.setWidget(self.analysis_tab)
-        self.stackedWidget.addWidget(analysis_scroll)
+        self.stacked_widget.addWidget(analysis_scroll)
 
     def _setup_metadata_tab(self):
         """Setup the metadata tab"""
@@ -324,7 +374,7 @@ class Ui_MainWindow(QMainWindow):
         )
 
         metadata_scroll.setWidget(self.metadata_tab)
-        self.stackedWidget.addWidget(metadata_scroll)
+        self.stacked_widget.addWidget(metadata_scroll)
 
     def _create_scroll_area(self):
         """Create a standardized scroll area for tabs"""
@@ -340,19 +390,19 @@ class Ui_MainWindow(QMainWindow):
         self.statusbar = QStatusBar(self)
         self.setStatusBar(self.statusbar)
 
-        self.progressBarLabel = QLabel("")
-        self.progressBar = QProgressBar()
-        self.progressBar.setMaximum(100)
+        self.progress_bar_label = QLabel("")
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setMaximum(100)
 
-        progressBarLayout = QHBoxLayout()
-        progressBarLayout.addWidget(self.progressBarLabel)
-        progressBarLayout.addWidget(self.progressBar)
-        container.setLayout(progressBarLayout)
+        progress_bar_layout = QHBoxLayout()
+        progress_bar_layout.addWidget(self.progress_bar_label)
+        progress_bar_layout.addWidget(self.progress_bar)
+        container.setLayout(progress_bar_layout)
 
         self.statusbar.addPermanentWidget(container)
 
         # Style the progress bar
-        progressBarStyle = """
+        progress_bar_style = """
             QProgressBar {
                 border: 2px solid grey;
                 border-radius: 2px;
@@ -365,12 +415,12 @@ class Ui_MainWindow(QMainWindow):
                 width: 20px;
             }
         """
-        self.progressBar.setStyleSheet(progressBarStyle)
+        self.progress_bar.setStyleSheet(progress_bar_style)
 
     def _setup_layout(self):
         """Setup the final layout structure"""
         # Add components to main layout
-        self.main_layout.addLayout(self.sidePanelContainer)
+        self.main_layout.addLayout(self.side_panel_container)
         self.main_layout.addWidget(self.canvas)
 
         # Add main layout to central widget
@@ -380,28 +430,28 @@ class Ui_MainWindow(QMainWindow):
         """Connect remaining signals"""
         # Connect toolbar tab change signal
         # Start with Images tab
-        self.stackedWidget.setCurrentIndex(0)
+        self.stacked_widget.setCurrentIndex(0)
 
-    def _retranslate_UI(self):
+    def _retranslate_ui(self):
         """Set UI text and translations"""
         _translate = QCoreApplication.translate
         self.setWindowTitle(_translate("MainWindow", "MIST-Explorer"))
 
     # Event handlers and utility methods
-    def updateMousePositionLabel(self, text):
+    def update_mouse_position_label(self, text):
         """Update mouse position in toolbar"""
-        self.toolBarUI.statusLine.setText(text)
+        self.tool_bar.statusLine.setText(text)
 
     def update_progress_bar(self, value, text):
         """Update progress bar with value and text"""
-        self.progressBar.setValue(value)
-        self.progressBarLabel.setText(text + " ...")
+        self.progress_bar.setValue(value)
+        self.progress_bar_label.setText(text + " ...")
         if value >= 100:
-            self.progressBar.hide()
-            self.progressBarLabel.hide()
+            self.progress_bar.hide()
+            self.progress_bar_label.hide()
         else:
-            self.progressBar.show()
-            self.progressBarLabel.show()
+            self.progress_bar.show()
+            self.progress_bar_label.show()
 
     def select(self):
         """Set rectangle selection mode"""
@@ -420,14 +470,14 @@ class Ui_MainWindow(QMainWindow):
             return
         self.canvas.select = "poly"
 
-    def toggleSidePanel(self):
+    def toggle_side_panel(self):
         """Toggle side panel visibility"""
-        if self.sidePanel.isVisible():
-            self.sidePanel.hide()
-            self.toggleButton.setText("▶")
+        if self.side_panel.isVisible():
+            self.side_panel.hide()
+            self.toggle_button.setText("▶")
         else:
-            self.sidePanel.show()
-            self.toggleButton.setText("◀")
+            self.side_panel.show()
+            self.toggle_button.setText("◀")
 
     def get_metadata(self, metadata: dict):
         """Update metadata tab with new metadata"""

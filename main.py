@@ -30,7 +30,7 @@ if os.path.exists(font_cache_file):
 
 if __name__ == "__main__":
     __app = QApplication(sys.argv)
-    window = app.Ui_MainWindow()
+    window = app.MainWindow()
 
     Controller.init(window)
     window.show()
