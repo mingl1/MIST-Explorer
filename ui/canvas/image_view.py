@@ -697,30 +697,29 @@ class ImageGraphicsViewUI(QGraphicsView):
 
             x = int(image_pos.x())
             y = int(image_pos.y())
-            # Get the bounding rectangle of the entire scene
-            scene = self.get_scene()
-            scene_rect = scene.sceneRect()
+            
+            # Check bounds against the underlying image
+            pixmap = self.pixmap_item.pixmap()
+            if pixmap and not pixmap.isNull() and \
+               0 <= x < pixmap.width() and 0 <= y < pixmap.height():
+                
+                # Create a 1x1 QImage to render the pixel onto
+                img = QImage(1, 1, QImage.Format.Format_ARGB32_Premultiplied)
+                img.fill(Qt.GlobalColor.black)  # Fill with transparent background
 
-            # Create a QImage to render the scene onto
-            # Use ARGB32_Premultiplied for transparency support
-            img = QImage(
-                scene_rect.size().toSize(), QImage.Format.Format_ARGB32_Premultiplied
-            )
-            img.fill(Qt.GlobalColor.black)  # Fill with transparent background
+                # Create a QPainter to draw on the QImage
+                painter = QPainter(img)
 
-            # Create a QPainter to draw on the QImage
-            painter = QPainter(img)
+                # Render just the 1x1 pixel area from the scene
+                # The target is the full 1x1 image (0,0,1,1)
+                # The source is the 1x1 rect in scene coordinates
+                scene = self.get_scene()
+                scene.render(painter, QRectF(0, 0, 1, 1), QRectF(scene_pos.x(), scene_pos.y(), 1, 1))
 
-            # Render the scene onto the QImage
-            # The first QRectF is the target rect on the image,
-            # the second QRectF is the source rect from the scene.
-            scene.render(painter, QRectF(img.rect()), scene_rect)
+                # End the painter
+                painter.end()
 
-            # End the painter
-            painter.end()
-            # Show pixel info in tooltip
-            if 0 <= x < img.width() and 0 <= y < img.height():
-                color = QColor(img.pixel(x, y))
+                color = QColor(img.pixel(0, 0))
                 r, g, b = color.red(), color.green(), color.blue()
 
                 global_pos = self.mapToGlobal(event.pos())
@@ -873,9 +872,6 @@ class ImageGraphicsViewUI(QGraphicsView):
 
     def highlight_pixel(self, x, y):
         """Highlight the pixel at the given coordinates"""
-        # Remove existing pixel highlight if any
-        if hasattr(self, "pixel_highlight") and self.pixel_highlight:
-            self.get_scene().removeItem(self.pixel_highlight)
         if self.pixmap_item is None:
             return
 
@@ -884,24 +880,32 @@ class ImageGraphicsViewUI(QGraphicsView):
         pixel_rect = QRectF(x, y, 1, 1)  # 1x1 pixel
         scene_rect = self.pixmap_item.mapRectToScene(pixel_rect)
 
-        # Create highlight rectangle
-        self.pixel_highlight = QGraphicsRectItem(scene_rect)
+        # Reuse existing item if possible
+        if hasattr(self, "pixel_highlight") and self.pixel_highlight:
+            # Ensure it's in the scene
+            if self.pixel_highlight.scene() != self.get_scene():
+                self.get_scene().addItem(self.pixel_highlight)
+            
+            self.pixel_highlight.setRect(scene_rect)
+            self.pixel_highlight.show()
+        else:
+            # Create highlight rectangle
+            self.pixel_highlight = QGraphicsRectItem(scene_rect)
 
-        # Style the highlight (you can customize this)
-        pen = QPen(QColor(255, 255, 0, 180))  # Yellow with transparency
-        pen.setWidth(0)  # Cosmetic pen (always 1 pixel wide regardless of zoom)
-        pen.setCosmetic(True)
-        self.pixel_highlight.setPen(pen)
+            # Style the highlight (you can customize this)
+            pen = QPen(QColor(255, 255, 0, 180))  # Yellow with transparency
+            pen.setWidth(0)  # Cosmetic pen (always 1 pixel wide regardless of zoom)
+            pen.setCosmetic(True)
+            self.pixel_highlight.setPen(pen)
 
-        # Optional: Add a semi-transparent fill
-        brush = QBrush(QColor(255, 255, 0, 50))  # Light yellow fill
-        self.pixel_highlight.setBrush(brush)
+            # Optional: Add a semi-transparent fill
+            brush = QBrush(QColor(255, 255, 0, 50))  # Light yellow fill
+            self.pixel_highlight.setBrush(brush)
 
-        # Add to scene
-        self.get_scene().addItem(self.pixel_highlight)
+            # Add to scene
+            self.get_scene().addItem(self.pixel_highlight)
 
     def hide_pixel_highlight(self):
         """Hide the pixel highlight"""
         if hasattr(self, "pixel_highlight") and self.pixel_highlight:
-            self.get_scene().removeItem(self.pixel_highlight)
-            self.pixel_highlight = None
+            self.pixel_highlight.hide()
