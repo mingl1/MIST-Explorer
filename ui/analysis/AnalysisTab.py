@@ -78,6 +78,43 @@ class AnalysisTab(QWidget):
     def __init__(self, pixmap_label, enc: "Ui_MainWindow"):
         super().__init__()
         self.enc = enc
+        
+        main_layout = QVBoxLayout(self)
+        self.tabs = QTabWidget()
+        
+        self.roi_view = ROIAnalysisView(pixmap_label, enc)
+        self.full_view = FullImageAnalysisView(pixmap_label, enc)
+        
+        self.tabs.addTab(self.roi_view, "ROI Analysis")
+        self.tabs.addTab(self.full_view, "Full Image Analysis")
+        
+        self.tabs.currentChanged.connect(self.on_tab_changed)
+        
+        main_layout.addWidget(self.tabs)
+        self.setLayout(main_layout)
+
+    def analyze_region(self, rubberband, region):
+        # Switch to ROI tab and delegate
+        self.tabs.setCurrentWidget(self.roi_view)
+        return self.roi_view.analyze_region(rubberband, region)
+
+    def on_tab_changed(self, index):
+        # Index 0 is ROI Analysis, 1 is Full Image
+        # Show canvas buttons only for ROI Analysis
+        is_roi_tab = (index == 0)
+        if hasattr(self.enc, 'canvas'):
+            self.enc.canvas.set_buttons_visible(is_roi_tab)
+
+    def showEvent(self, event):
+        # Sync button visibility when tab is shown
+        self.on_tab_changed(self.tabs.currentIndex())
+        super().showEvent(event)
+
+
+class ROIAnalysisView(QWidget):
+    def __init__(self, pixmap_label, enc: "Ui_MainWindow"):
+        super().__init__()
+        self.enc = enc
 
         # roi management
         self.rois = []  # List to hold views
@@ -739,6 +776,218 @@ class AnalysisTab(QWidget):
             self.graphs[self.current_view_index][index] = graph
 
         return graph
+
+
+class FullImageAnalysisView(QWidget):
+    def __init__(self, pixmap_label, enc: "Ui_MainWindow"):
+        super().__init__()
+        self.enc = enc
+        self.columns = []
+        self.graphs = []
+        self.current_graph_index = 0
+        self.initUI()
+
+    def initUI(self):
+        self.layout = QVBoxLayout(self)
+        
+        # Controls (Protein Selection)
+        self.multiComboBox = MultiComboBox()
+        self.multiComboBox.addItem("Select All")
+        self.multiComboBox.addItem("Deselect All")
+        
+        try:
+            data = self.enc.view_tab.get_df()
+            self.columns = data.columns[2:-1]
+            self.multiComboBox.addItems(list(self.columns))
+            for i in range(len(self.columns)):
+                self.multiComboBox.model().item(i).setCheckState(Qt.CheckState.Checked)
+        except:
+            pass # Data might not be loaded yet
+
+        apply_button = QPushButton("Apply")
+        apply_button.clicked.connect(
+            lambda: self.handleComboBoxChanged(self.multiComboBox.get_checked_items())
+        )
+        
+        combo_layout = QVBoxLayout()
+        combo_layout.addWidget(QLabel("Select Proteins:"))
+        combo_layout.addWidget(self.multiComboBox)
+        combo_layout.addWidget(apply_button)
+        self.layout.addLayout(combo_layout)
+
+        # Graph Area
+        self.stacked_widget = QStackedWidget()
+        
+        self.icon_list = [
+            "Boxplot",
+            "Z-Scores Heatmap",
+            "Spatial Heatmap",
+            "Pi Chart",
+            "Histogram",
+            "UMAP",
+        ]
+
+        self.icon_paths = [
+            "ui/graphing/icons/linechart.png",
+            "ui/graphing/icons/heatmap.png",
+            "ui/graphing/icons/heatmap.png",
+            "ui/graphing/icons/piechart.png",
+            "ui/graphing/icons/barchart.png",
+            "ui/graphing/icons/scatter.png",
+        ]
+
+        self.icon_list_page = GraphsList(
+            icon_list=self.icon_list,
+            navigate_to_page=self.show_icon_detail_page,
+            icon_paths=self.icon_paths,
+            result_details_layout=None,
+        )
+        self.icon_detail_page = GraphInDetail(
+            navigate_back=self.show_icon_grid_page,
+            open_in_new_window=self.open_in_new_window,
+            parent=self,
+        )
+
+        self.stacked_widget.addWidget(self.icon_list_page)
+        self.stacked_widget.addWidget(self.icon_detail_page)
+        
+        self.layout.addWidget(self.stacked_widget)
+        
+        # Try to generate initial graphs if data exists
+        if len(self.columns) > 0:
+             self.generate_analysis_graphs()
+
+    def handleComboBoxChanged(self, checked_items):
+        if not checked_items:
+            QMessageBox.warning(self, "Alert", "Please select at least one protein.")
+            return
+        
+        # Check if data is available (it might have been loaded after init)
+        try:
+            data = self.enc.view_tab.get_df()
+            # If we didn't have columns before, we should update the combobox now?
+            # But the user just interacted with it, so we probably have items.
+            pass
+        except:
+             QMessageBox.warning(self, "Alert", "No data loaded yet.")
+             return
+
+        self.columns = checked_items
+        self.generate_analysis_graphs()
+        self.show_icon_grid_page()
+
+    def generate_analysis_graphs(self):
+        try:
+            data = self.enc.view_tab.get_df()
+        except:
+            return
+
+        self.graphs = []
+        
+        # Create graphs similar to ROI view but for full data
+        box_plot = self.create_box_plot(data)
+        self.graphs.append(box_plot)
+
+        graph_generators = [
+            lambda: ZScoreHeatmapWindow(self.get_z_heatmap_data(data)),
+            lambda: HeatmapWindow(data[self.columns]),
+            lambda: PieChartCanvas(data[self.columns]),
+            lambda: DistributionViewer(data[self.columns]),
+            lambda: UMAPVisualizer(self.get_z_heatmap_data(data)),
+        ]
+
+        for generator in graph_generators:
+            self.graphs.append(generator)
+
+    def create_box_plot(self, data):
+        """Create a box plot widget"""
+        result_widget = QWidget()
+        layout = QVBoxLayout(result_widget)
+        filtered_data = data.loc[:, self.columns]
+        filtered_data = filtered_data.melt(var_name="Protein", value_name="Expression")
+
+        fig, ax = plt.subplots(figsize=(12, 8))
+        sns.boxplot(
+            x="Expression",
+            y="Protein",
+            data=filtered_data,
+            ax=ax,
+            palette="Set2",
+            flierprops=dict(marker="o", markersize=4, alpha=0.3),
+        )
+
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=45)
+        ax.set_title("Protein Expression Box Plot")
+        plt.subplots_adjust(bottom=0.3, left=0.4)
+
+        canvas = FigureCanvas(fig)
+        layout.addWidget(canvas)
+        result_widget.figure = fig
+
+        return result_widget
+
+    def get_z_heatmap_data(self, data):
+        t = list(self.columns)
+        t = ["Global X", "Global Y"] + t
+        t = pd.Series(t)
+        return data[t]
+
+    def show_icon_detail_page(self, index):
+        self.current_graph_index = index
+        self.icon_detail_page.set_icon_index(index)
+        self.stacked_widget.setCurrentWidget(self.icon_detail_page)
+
+    def show_icon_grid_page(self):
+        self.stacked_widget.setCurrentWidget(self.icon_list_page)
+
+    def get_graph(self, index):
+        if not self.graphs:
+            return QLabel("No graphs available")
+        if index >= len(self.graphs):
+            return QLabel("Graph index out of range")
+        
+        graph = self.graphs[index]
+        if callable(graph):
+            graph = graph()
+            self.graphs[index] = graph
+        return graph
+
+    def open_in_new_window(self):
+        # Create a new window to display the current graph
+        new_window = RegenerateOnCloseWindow(
+            regenerate_callback=self._on_new_window_closed
+        )
+        new_window.setWindowTitle("Icon Detail - New Window")
+        layout = QVBoxLayout()
+
+        # Retrieve the current graph widget
+        widget = self.get_graph(self.current_graph_index)
+        widget.setSizePolicy(
+            widget.sizePolicy().Policy.Expanding, widget.sizePolicy().Policy.Expanding
+        )
+        layout.addWidget(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        new_window.setLayout(layout)
+        new_window.resize(300, 200)
+        new_window.show()
+        
+        # Simple hack to remove from current view while in new window
+        # (similar to ROIView implementation)
+        for i in reversed(range(self.icon_detail_page.content_layout.count())):
+            widget_to_remove = self.icon_detail_page.content_layout.itemAt(i).widget()
+            if widget_to_remove is not None:
+                widget_to_remove.setParent(None)
+        self.icon_detail_page.content_layout.addWidget(QLabel("visible in new window"))
+
+    def _on_new_window_closed(self):
+        # Regenerate/restore graph
+        new_graph = self.get_graph(self.current_graph_index)
+        for i in reversed(range(self.icon_detail_page.content_layout.count())):
+            widget_to_remove = self.icon_detail_page.content_layout.itemAt(i).widget()
+            if widget_to_remove is not None:
+                widget_to_remove.setParent(None)
+        self.icon_detail_page.content_layout.addWidget(new_graph)
 
 
 class MultiComboBox(QComboBox):
