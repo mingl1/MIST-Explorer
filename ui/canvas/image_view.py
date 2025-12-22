@@ -701,17 +701,42 @@ class ImageGraphicsViewUI(QGraphicsView):
             self.current_polygon.set_temp_point(polygon_pos)
 
         # # Handle pixel info display
-        if self.pixmap_item:
+        # Determine reference item for coordinates and bounds
+        reference_item = self.pixmap_item
+        has_main_pixmap = self.pixmap_item is not None and not self.pixmap_item.pixmap().isNull()
+        
+        # If main pixmap is invalid but we have view layers, use the first view layer as reference
+        if not has_main_pixmap and self.view_pixmaps:
+            reference_item = self.view_pixmaps[0]
+
+        if reference_item:
             scene_pos = self.mapToScene(event.pos())
-            image_pos = self.pixmap_item.mapFromScene(scene_pos)
+            
+            # Map scene position to image coordinates relative to the reference item
+            # QGraphicsItem.mapFromScene works for both QGraphicsPixmapItem and pg.ImageItem
+            image_pos = reference_item.mapFromScene(scene_pos)
 
             x = int(image_pos.x())
             y = int(image_pos.y())
             
-            # Check bounds against the underlying image
-            pixmap = self.pixmap_item.pixmap()
-            if pixmap and not pixmap.isNull() and \
-               0 <= x < pixmap.width() and 0 <= y < pixmap.height():
+            # Determine dimensions of the reference item
+            width = 0
+            height = 0
+            
+            if isinstance(reference_item, QGraphicsPixmapItem) and not reference_item.pixmap().isNull():
+                pixmap = reference_item.pixmap()
+                width = pixmap.width()
+                height = pixmap.height()
+            elif isinstance(reference_item, pg.ImageItem):
+                # pg.ImageItem stores image data in .image
+                if reference_item.image is not None:
+                    # Shape is usually (h, w) or (w, h) depending on axis order, 
+                    # but ImageItem exposes width() and height() methods usually
+                    width = reference_item.width()
+                    height = reference_item.height()
+
+            # Check bounds
+            if width > 0 and height > 0 and 0 <= x < width and 0 <= y < height:
                 
                 # Create a 1x1 QImage to render the pixel onto
                 img = QImage(1, 1, QImage.Format.Format_ARGB32_Premultiplied)
