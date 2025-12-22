@@ -46,7 +46,6 @@ class ImageGraphicsViewUI(QGraphicsView):
         super().__init__(parent)
         self.enc = enc
         self.show_buttons = show_buttons
-        self.setup_ui()
 
         self.pixmap_item = QGraphicsPixmapItem(QPixmap())
         self.rubber_band = None
@@ -78,9 +77,7 @@ class ImageGraphicsViewUI(QGraphicsView):
 
         # self.get_scene().addItem(self.view_pixmap_item)
         self.view_mode = False
-        self.get_scene().addItem(self.pixmap_item)
-        # self.view_pixmap_item.hide()
-        self.pixmap_item.show()
+        
         
         # Attributes initialized
         self.floating_container = None
@@ -95,6 +92,9 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.initial_crop_rect = None
         self.np_channels = None
         self.pixel_highlight = None
+        self.setup_ui()
+        self.get_scene().addItem(self.pixmap_item)
+        self.pixmap_item.show()
 
     def show_view_tab_image(self):
         """Show the view tab image."""
@@ -163,6 +163,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         # Create floating selection buttons
         if self.show_buttons:
             self.create_floating_buttons()
+            self.set_buttons_visible(False)
 
     def create_floating_buttons(self):
         """Create floating selection buttons that appear over the canvas"""
@@ -223,9 +224,15 @@ class ImageGraphicsViewUI(QGraphicsView):
         # Position the container at the top-right of the view
         self.update_buttons_position()
 
+    def set_buttons_visible(self, visible: bool):
+        """Set the visibility of the floating buttons"""
+        if self.floating_container:
+            self.floating_container.setVisible(visible)
+            self.update_buttons_position()
+
     def update_buttons_position(self):
         """Update the position of the floating buttons"""
-        if self.floating_container:
+        if self.floating_container and self.floating_container.isVisible():
             # Position at the top-right of the view with some padding
             self.floating_container.move(
                 self.width() - self.floating_container.width() - 20,
@@ -336,9 +343,11 @@ class ImageGraphicsViewUI(QGraphicsView):
             self.view_pixmaps.append(new_layer)
             self.get_scene().addItem(new_layer)
             self._center_view_tab_image(layer_idx)
+            self.set_buttons_visible(True)
         else:
             print(f"layer {layer_idx}")
             print(f"pixmap shape {pixmap.shape}")
+            self.set_buttons_visible(False)
             if pixmap.shape == (0,):
                 removed_item = self.view_pixmaps.pop(layer_idx)
                 self.get_scene().removeItem(removed_item)
