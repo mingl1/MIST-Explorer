@@ -385,9 +385,7 @@ class AlignmentPreviewDialog(QDialog):
         final_transformation = self.image_view.moving_item.transform()
         transf_matrix = transform_to_matrix(final_transformation)
         h, w = self.target_image.shape[:2]
-        final_image = cv2.warpAffine(
-            self.original_aligned_image, transf_matrix, (w, h)
-        )
+        final_image = cv2.warpAffine(self.original_aligned_image, transf_matrix, (w, h))
         self.transformation_matrix.emit(transf_matrix)
         self.moving_image_changed.emit(final_image)
         self.accept()

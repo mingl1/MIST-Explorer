@@ -916,9 +916,9 @@ class RankedGenesView(QWidget):
                 canvas.setMinimumSize(350, 350)  # Ensure minimum size per plot
 
                 ax = fig.add_subplot(111)
-                
+
                 is_categorical = color_key == self.key
-                
+
                 sc.pl.umap(
                     self.adata,
                     color=color_key,
@@ -949,11 +949,7 @@ class RankedGenesView(QWidget):
                     text_obj.set_weight("bold")
                     text_obj.set_color(fg_color)
                     text_obj.set_path_effects(
-                        [
-                            PathEffects.withStroke(
-                                linewidth=3, foreground=c["bg_dark"]
-                            )
-                        ]
+                        [PathEffects.withStroke(linewidth=3, foreground=c["bg_dark"])]
                     )
 
                 # Legend styling
@@ -970,7 +966,7 @@ class RankedGenesView(QWidget):
                     ax.axis("off")
 
                 fig.tight_layout()
-                
+
                 # Add to Grid Layout
                 row = i // ncols
                 col = i % ncols
@@ -1359,10 +1355,12 @@ class UMAPVisualizer(QMainWindow):
         self.status_bar.setStyleSheet(
             f"background: {c['bg_panel']}; color: {c['accent']}; border-top: 2px solid {c['grid']}"
         )
-        self.progress.setStyleSheet(f"""
+        self.progress.setStyleSheet(
+            f"""
             QProgressBar {{ border: 1px solid {c["accent_dim"]}; background-color: {c["bg_dark"]}; text-align: center; }}
             QProgressBar::chunk {{ background-color: {c["accent"]}; width: 5px; }}
-        """)
+        """
+        )
 
 
 if __name__ == "__main__":

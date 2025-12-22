@@ -1,33 +1,33 @@
 import sys
+from itertools import combinations
+
+import matplotlib
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-import matplotlib
-import matplotlib.pyplot as plt
-from scipy.cluster.hierarchy import linkage
-from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from itertools import combinations
+from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
+from scipy.cluster.hierarchy import linkage
 
 # implement 1
+
 
 class ZScoreHeatmapWindow(QMainWindow):
     def __init__(self, data, parent=None):
         super().__init__(parent)
 
-        font = {
-        
-        'size'   : 8}
+        font = {"size": 8}
 
-        matplotlib.rc('font', **font)
-        matplotlib.rcParams['figure.figsize'] = [3, 3]
+        matplotlib.rc("font", **font)
+        matplotlib.rcParams["figure.figsize"] = [3, 3]
 
-                # Define region of interest and filter dataset
-        # x_min, y_min, x_max, y_max = region
         filtered_data = data
-        
+
         # Extract proteins and calculate centroids
-        protein_columns = filtered_data.columns[2:]  # Assuming proteins start at the 4th column
+        protein_columns = filtered_data.columns[
+            2:
+        ]  # Assuming proteins start at the 4th column
         proteins = protein_columns
         print(proteins)
 
@@ -37,14 +37,12 @@ class ZScoreHeatmapWindow(QMainWindow):
                 protein_cells = data[data[protein] >= signal_threshold]
                 if len(protein_cells) > 0:
                     weights = protein_cells[protein]
-                    avg_x = np.average(protein_cells['Global X'], weights=weights)
-                    avg_y = np.average(protein_cells['Global Y'], weights=weights)
+                    avg_x = np.average(protein_cells["Global X"], weights=weights)
+                    avg_y = np.average(protein_cells["Global Y"], weights=weights)
                     centroids[protein] = (avg_x, avg_y)
             return centroids
 
-
         centroids = calculate_weighted_centroids(filtered_data, proteins)
-
 
         def calculate_pairwise_distances(centroids):
             distances = {}
@@ -57,7 +55,6 @@ class ZScoreHeatmapWindow(QMainWindow):
                     distances[(protein2, protein1)] = distance
             return distances
 
-
         observed_distances = calculate_pairwise_distances(centroids)
 
         num_simulations = 1000
@@ -65,13 +62,13 @@ class ZScoreHeatmapWindow(QMainWindow):
 
         for _ in range(num_simulations):
             # Randomly shuffle the cell coordinates
-            shuffled_x = np.random.permutation(filtered_data['Global X'].values)
-            shuffled_y = np.random.permutation(filtered_data['Global Y'].values)
+            shuffled_x = np.random.permutation(filtered_data["Global X"].values)
+            shuffled_y = np.random.permutation(filtered_data["Global Y"].values)
 
             # Update centroids with shuffled locations
             shuffled_data = filtered_data.copy()
-            shuffled_data['Global X'] = shuffled_x
-            shuffled_data['Global Y'] = shuffled_y
+            shuffled_data["Global X"] = shuffled_x
+            shuffled_data["Global Y"] = shuffled_y
 
             # Recalculate centroids with shuffled data
             shuffled_centroids = calculate_weighted_centroids(shuffled_data, proteins)
@@ -96,9 +93,13 @@ class ZScoreHeatmapWindow(QMainWindow):
 
                 # Handle the case where standard deviation is zero to avoid NaNs
                 if std_random_dist == 0:
-                    z_scores[(protein1, protein2)] = 0  # Set to neutral z-score for self-pairs
+                    z_scores[(protein1, protein2)] = (
+                        0  # Set to neutral z-score for self-pairs
+                    )
                 else:
-                    z_scores[(protein1, protein2)] = (observed_distance - mean_random_dist) / std_random_dist
+                    z_scores[(protein1, protein2)] = (
+                        observed_distance - mean_random_dist
+                    ) / std_random_dist
 
         # Create z-score matrix for heatmap, filling diagonal with neutral z-score
         z_score_matrix = pd.DataFrame(index=proteins, columns=proteins)
@@ -125,8 +126,12 @@ class ZScoreHeatmapWindow(QMainWindow):
         # self.fig.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=0, hspace=0)
 
         # Create and plot the clustermap, no ax passed
-        row_linkage = linkage(z_score_matrix.fillna(0), method="average", metric="euclidean")
-        col_linkage = linkage(z_score_matrix.fillna(0).T, method="average", metric="euclidean")
+        row_linkage = linkage(
+            z_score_matrix.fillna(0), method="average", metric="euclidean"
+        )
+        col_linkage = linkage(
+            z_score_matrix.fillna(0).T, method="average", metric="euclidean"
+        )
 
         # Create the clustered heatmap
         g = sns.clustermap(
@@ -154,7 +159,6 @@ class ZScoreHeatmapWindow(QMainWindow):
         canvas = FigureCanvas(self.figure)
         layout.addWidget(canvas)
 
-        
 
 def main():
     app = QApplication(sys.argv)

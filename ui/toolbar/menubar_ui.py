@@ -25,7 +25,7 @@ class MenuBarUI(QMenuBar):
         self.open_reference = open_reference
         self.menuOpen.addAction(open_reference)
 
-        if sys.platform == 'win32':
+        if sys.platform == "win32":
             # Window controls
             self.controls_widget = QWidget()
             self.controls_layout = QHBoxLayout(self.controls_widget)

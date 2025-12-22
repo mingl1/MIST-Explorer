@@ -6,26 +6,12 @@ import qtrangeslider
 import tifffile as tiff
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QImage
-from PyQt6.QtWidgets import (
-    QDialog,
-    QDialogButtonBox,
-    QFileDialog,
-    QFormLayout,
-    QGroupBox,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QListWidget,
-    QListWidgetItem,
-    QMessageBox,
-    QPushButton,
-    QScrollArea,
-    QSizePolicy,
-    QSlider,
-    QSplitter,
-    QVBoxLayout,
-    QWidget,
-)
+from PyQt6.QtWidgets import (QDialog, QDialogButtonBox, QFileDialog,
+                             QFormLayout, QGroupBox, QHBoxLayout, QLabel,
+                             QLineEdit, QListWidget, QListWidgetItem,
+                             QMessageBox, QPushButton, QScrollArea,
+                             QSizePolicy, QSlider, QSplitter, QVBoxLayout,
+                             QWidget)
 
 from controller import Controller
 from utils import auto_contrast_helper, create_lut, scale_adjust
@@ -370,7 +356,7 @@ class ImageOverlay(QWidget):
 
         # reduced_cell_img = cv2.resize(stardist_labels.astype("float32"), (3000, 3000), interpolation = cv2.INTER_NEAREST_EXACT)
 
-        self.scale_down_factor = 1 / self.scale_down.value()
+        self.scale_down_factor = 1
 
         reduced_cell_img = cv2.resize(
             stardist_labels,
@@ -452,7 +438,7 @@ class ImageOverlay(QWidget):
             import ui.app
 
             QMessageBox.critical(
-                ui.app.Ui_MainWindow(), "Error", "Please an load image first!"
+                ui.app.MainWindow(), "Error", "Please an load image first!"
             )
             return
 
@@ -460,7 +446,7 @@ class ImageOverlay(QWidget):
             import ui.app
 
             QMessageBox.critical(
-                ui.app.Ui_MainWindow(), "Error", "Please load data first!"
+                ui.app.MainWindow(), "Error", "Please load data first!"
             )
             return
 
@@ -477,7 +463,7 @@ class ImageOverlay(QWidget):
         self.progress.emit(30, "Associating cells with data...")
         # --- NEW: Associate DF with Cell IDs ---
         if "CellID" not in df.columns:  # Perform this expensive operation only once
-            scale_factor = 1 / self.scale_down.value()
+            scale_factor = 1
 
             # Vectorized coordinate scaling
             scaled_x = (df["Global X"] * scale_factor).astype(int)
@@ -523,8 +509,6 @@ class ImageOverlay(QWidget):
         self.open_image_label.setVisible(False)
         self.open_df.setVisible(False)
         self.open_df_label.setVisible(False)
-        self.scale_down_label.setVisible(False)
-        self.scale_down.setVisible(False)
         self.apply_button.setVisible(False)
         self.cancel_reset.setVisible(True)
         self.export_tif_button.setVisible(True)
@@ -594,9 +578,6 @@ class ImageOverlay(QWidget):
             self.open_df_label.setVisible(False)
 
             self.apply_button.setVisible(True)
-
-            self.scale_down_label.setVisible(True)
-            self.scale_down.setVisible(True)
 
             self.add_layer_button.setVisible(False)
             self.cancel_reset.setVisible(False)
@@ -749,11 +730,6 @@ class ImageOverlay(QWidget):
         self.build_all_worker.finished.connect(self.build_all_worker.deleteLater)
         # self.threadpool.start(self.build_all_worker)
 
-    def scale_slider_update(self, value):
-        if value == 1:
-            self.scale_down_label.setText("Scale Down Factor: original size")
-            return
-        self.scale_down_label.setText(f"Scale Down Factor: 1/{value} of original size")
 
     def less_than_15_chars(self, string):
         if len(string) > 50:
@@ -797,7 +773,7 @@ class ImageOverlay(QWidget):
             import ui.app
 
             QMessageBox.critical(
-                ui.app.Ui_MainWindow(),
+                ui.app.MainWindow(),
                 "Error",
                 "Empty canvas, please an load image first",
             )
@@ -821,14 +797,13 @@ class ImageOverlay(QWidget):
                             self.layers[selected_index]["image"],
                             self.layers[selected_index]["cell_data"],
                         ) = self.generate_image(selected_index)
-                except:
-                    pass
+                except Exception as e:
+                    QMessageBox.critical(
+                        self,
+                        "Error",
+                        "Error generating image for layer. Please ensure number of instances in segmentation and match number of cells.\n\n" + str(e),
+                    )
                 reduced_cell_img = np.array(self.layers[selected_index]["image"])
-                print(
-                    reduced_cell_img.min(),
-                    reduced_cell_img.max(),
-                    reduced_cell_img.dtype,
-                )
                 # reduced_cellImg = reduced_cell_img/255.0
                 c.image = reduced_cell_img.copy()
                 c.cell_image = np.array(self.layers[selected_index]["cell_data"])

@@ -1,0 +1,21 @@
+[MASTER]
+ignore=venv,tests,build
+
+[MESSAGES CONTROL]
+# Enable refactoring suggestions
+enable=too-many-lines,too-many-branches,too-many-locals,invalid-name
+
+[REPORTS]
+output-format=colorized
+
+[BASIC]
+# Enforcing the naming conventions we discussed
+class-rgx=[A-Z_][a-zA-Z0-9]+$
+function-rgx=[a-z_][a-z0-9_]{2,30}$
+method-rgx=[a-z_][a-z0-9_]{2,30}$
+variable-rgx=[a-z_][a-z0-9_]{2,30}$
+
+[DESIGN]
+max-args=5
+max-attributes=7
+max-locals=15

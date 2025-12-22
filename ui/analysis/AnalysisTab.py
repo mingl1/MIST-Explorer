@@ -332,7 +332,7 @@ class AnalysisTab(QWidget):
 
         # Store selection data
         region = (region[0], tuple(int(i) for i in region[1]))
-        assert len(region[1]) == 4, 'invalid region definition'
+        assert len(region[1]) == 4, "invalid region definition"
         self.rubberbands.append(rubberband)
         self.regions.append(region)
 
@@ -488,7 +488,7 @@ class AnalysisTab(QWidget):
         if self.regions[self.current_view_index][0] == "rect":
             data = self.get_rect_data(region[1])
         elif self.regions[self.current_view_index][0] == "circle":
-            
+
             data = self.get_circle_data(region[1])
         elif self.regions[self.current_view_index][0] == "poly":
             data = self.get_poly_data(region[1])
@@ -496,7 +496,7 @@ class AnalysisTab(QWidget):
         # Create and add graphs
         box_plot = self.create_box_plot(data)
         self.add_graph_to_current_view(box_plot)
-        
+
         graph_generators = [
             lambda: ZScoreHeatmapWindow(self.get_z_heatmap_data(data)),
             lambda: HeatmapWindow(data[self.columns]),
@@ -507,12 +507,13 @@ class AnalysisTab(QWidget):
 
         for generator in graph_generators:
             self.add_graph_to_current_view(generator)
-    def get_z_heatmap_data(self,data):
+
+    def get_z_heatmap_data(self, data):
         t = list(self.columns)
-        t = ["Global X","Global Y"] + t
+        t = ["Global X", "Global Y"] + t
         t = pd.Series(t)
         return data[t]
-    
+
     def create_box_plot(self, data):
         """Create a box plot widget"""
         result_widget = QWidget()
@@ -563,9 +564,8 @@ class AnalysisTab(QWidget):
         # Apply circular filter
         return data[
             ((data["Global X"] - center_x) ** 2 + (data["Global Y"] - center_y) ** 2)
-            <= radius ** 2
+            <= radius**2
         ]
-
 
     def get_poly_data(self, region):
         """Get data filtered by the selected polygon region using ray casting algorithm"""

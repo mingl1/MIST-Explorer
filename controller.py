@@ -12,20 +12,15 @@ from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
-from core import (
-    CellIntensity,
-    ImageGraphicsView,
-    ImageWrapper,
-    ReferenceGraphicsView,
-    Register,
-    StarDist,
-)
+from core import (CellIntensity, ImageGraphicsView, ImageWrapper,
+                  ReferenceGraphicsView, Register, StarDist)
 from ui.alignment.alignment_preview_dialog import AlignmentPreviewDialog
 
 if typing.TYPE_CHECKING:
-    from ui.app import Ui_MainWindow
+    from ui.app import MainWindow
 
 
+# pylint: disable=too-many-instance-attributes
 class Controller:
     """
     Controller class implements the Singleton pattern for managing the MIST-Explorer application.
@@ -68,16 +63,18 @@ class Controller:
 
     @classmethod
     def init(cls, app):
+        """Initializes the controller."""
         if cls._instance is None:
             cls._instance = cls(app)
 
     @classmethod
     def get(cls):
+        """Returns the singleton instance of the controller."""
         if cls._instance is None:
             raise RuntimeError("Controller not initialized")
         return cls._instance
 
-    def __init__(self, app: "Ui_MainWindow"):
+    def __init__(self, app: "MainWindow"):
         self._initialized = True
         self.image_count = 0
         self.prev_tab_index = 0
@@ -110,9 +107,11 @@ class Controller:
         self.model_register.error.connect(self.handle_error)
 
     def handle_error(self, error_message):
+        """Displays an error message."""
         QMessageBox.critical(self.view, "Error", error_message)
 
     def pixmap_to_image(self, pixmap: QPixmap):
+        """Converts a QPixmap to a numpy array."""
         if pixmap is None:
             raise ValueError("No pixmap provided")
         qimage = pixmap.toImage()
@@ -133,25 +132,27 @@ class Controller:
         return arr
 
     def control_save(self):
-        im = self.model_canvas.image_wrapper.data
-        if im.dtype != np.uint8:
-            im = (im * 255).astype(np.uint8)
+        """Saves the current canvas image."""
+        img = self.model_canvas.image_wrapper.data
+        if img.dtype != np.uint8:
+            img = (img * 255).astype(np.uint8)
         # qimage = pm.toImage()
-        if im is not None:
+        if img is not None:
             file_name, _ = QFileDialog.getSaveFileName(
                 None, "Save File", "image.png", "*.png;;*.jpg;;*.tif;; All Files(*)"
             )
             if file_name:
                 print(file_name)
-                Image.fromarray(im).save(file_name)
+                Image.fromarray(img).save(file_name)
+                return True
 
-            else:
-                return False
+            return False
 
-        else:
-            self.handle_error("No image in canvas, please load image")
+        self.handle_error("No image in canvas, please load image")
+        return False
 
     def open_file_dialog(self, viewer):
+        """Opens a file dialog to select an image."""
         file_name, _ = QFileDialog.getOpenFileName(
             None, "Open Image File", "", "Images (*.png *.jpg *.tif);;All Files (*)"
         )
@@ -159,14 +160,17 @@ class Controller:
             viewer.add_to_canvas(file_name)
 
     def on_action_reference_triggered(self):
+        """Handles the reference image open action."""
         self.open_file_dialog(self.model_reference_canvas)
 
     def on_action_open_triggered(self):
+        """Handles the main image open action."""
         self.open_file_dialog(self.model_canvas)
 
     # add new image to storage
     def handle_new_image(self, data, file_name, metadata=None):
-        self.view.toolBarUI.enable_actions()
+        """Handles a new image by adding it to storage."""
+        self.view.tool_bar.enable_actions()
         storage_item = {}
         storage_item["name"] = os.path.basename(file_name)
         storage_item["metadata"] = metadata
@@ -179,6 +183,7 @@ class Controller:
         self.view.images_tab.add_item(my_uuid)
 
     def handle_new_reference_image(self, data, file_name):
+        """Handles a new reference image by adding it to storage."""
         storage_item = {}
         storage_item["name"] = os.path.basename(file_name)
         self.image_count += 1
@@ -212,29 +217,29 @@ class Controller:
                 # treat moving_image as transformation matrix
                 transf_matrix = moving_image
                 # print(transf_matrix)
-                for L in layer:
+                for layer_key in layer:
                     # print(L)
-                    h, w = data[L].data.shape[-2:]
+                    height, width = data[layer_key].data.shape[-2:]
                     # print(h,w)
-                    aligned_data["data"][L] = cv2.warpAffine(
-                        item["data"][L].data, transf_matrix, (w, h)
+                    aligned_data["data"][layer_key] = cv2.warpAffine(  # pylint: disable=no-member
+                        item["data"][layer_key].data, transf_matrix, (width, height)
                     )
             filename = item["name"]
             if isinstance(layer, list):
                 # handles register.py
-                assert len(aligned_data["data"].keys()) == len(layer), (
-                    "Aligned data keys do not match the expected layers"
-                )
+                assert len(aligned_data["data"].keys()) == len(
+                    layer
+                ), "Aligned data keys do not match the expected layers"
                 data = {}
-                for L in layer:
-                    d = (
-                        aligned_data["data"][L]
-                        if aligned_data["data"][L] is not None
+                for layer_key in layer:
+                    img_data = (
+                        aligned_data["data"][layer_key]
+                        if aligned_data["data"][layer_key] is not None
                         else moving_image
                     )
-                    wrapped_image = ImageWrapper(d, L)
+                    wrapped_image = ImageWrapper(img_data, layer_key)
                     # data[L].data = aligned_data["data"][L]
-                    data[L] = wrapped_image
+                    data[layer_key] = wrapped_image
                 aligned_name = "Registered_" + filename
             else:
                 wrapped_image = ImageWrapper(aligned_image, layer)
@@ -256,7 +261,7 @@ class Controller:
             else:
                 preview_dialog = AlignmentPreviewDialog(snapshot, can_edit=True)
             preview_dialog.moving_image_changed.connect(handle_accepted_image)
-            result = preview_dialog.exec()
+            preview_dialog.exec()
 
     def _show_preview_dialog(self, target_small, aligned_small):
         """Show the preview dialog with red/green overlay"""
@@ -274,9 +279,10 @@ class Controller:
         return result == 1 and preview_dialog.result_accepted
 
     def need_canvas_change(self, new_index):
+        """Handles the canvas change when the tab is changed."""
         if self.prev_tab_index != 0 and new_index == 0:
             # self.view.canvas.pixmap_item.show()
-            self.view.canvas._show_images_tab_image()
+            self.view.canvas.show_images_tab_image()
             if self.model_canvas.uuid:
                 print("swapping channel")
                 self.model_canvas.swap_channel(self.model_canvas.current_channel)
@@ -284,37 +290,49 @@ class Controller:
                 print("clearing canvas")
                 self.model_canvas.clear_canvas()
         else:
-            self.view.canvas._show_view_tab_image()
+            self.view.canvas.show_view_tab_image()
             self.view.view_tab.process_images()
             # self.view.canvas.pixmap_item.hide()
 
     def handle_tab_change(self, index):
+        """Handles the tab change."""
         self.need_canvas_change(index)
         self.prev_tab_index = index
 
+    def update_small_view_visibility(self, *args):
+        """Updates the visibility of the small view (reference view)."""
+        # args can be ignored (either index from tab change or pixmap from update_reference)
+        index = self.view.stacked_widget.currentIndex()
+        is_images_tab = index == 0
+        has_content = not self.view.small_view.is_empty()
+        self.view.small_view.setVisible(is_images_tab and has_content)
+
     def handle_cancel_registration(self):
+        """Cancels the registration."""
         self.model_register.cancel()
 
 
+# pylint: disable=too-few-public-methods
 class SignalConnectionManager:
     """Manages signal connections"""
 
     def __init__(self, controller: Controller):
         self.c = controller
+        self.blur_timer = None
 
     def setup_all_connections(self):
         """Set up all signal-slot connections with full IntelliSense support"""
         self._setup_alignment_connections()
         self._setup_menubar_connections()
         self._setup_toolbar_connections()
-        self._setup_image_handling_connections()
+        self._setup_img_handling_conns()
         self._setup_canvas_connections()
         self._setup_crop_connections()
         self._setup_transform_connections()
         self._setup_stardist_connections()
         self._setup_registration_connections()
-        self._setup_cell_intensity_connections()
-        self._setup_image_broadcast_connections()
+        self._setup_cell_intensity_conns()
+        self._setup_img_broadcast_conns()
         self._setup_misc_connections()
 
     def _setup_alignment_connections(self):
@@ -331,32 +349,32 @@ class SignalConnectionManager:
 
     def _setup_menubar_connections(self):
         """Menu bar signal connections"""
-        self.c.view.menuBarUI.open_reference.triggered.connect(
+        self.c.view.menu_bar.open_reference.triggered.connect(
             self.c.on_action_reference_triggered
         )
-        self.c.view.menuBarUI.open_image.triggered.connect(
+        self.c.view.menu_bar.open_image.triggered.connect(
             self.c.on_action_open_triggered
         )
 
     def _setup_toolbar_connections(self):
         """Toolbar signal connections"""
-        self.c.view.toolBarUI.actionReset.triggered.connect(
+        self.c.view.tool_bar.actionReset.triggered.connect(
             self.c.model_canvas.reset_image
         )
-        self.c.view.toolBarUI.channelChanged.connect(self.c.model_canvas.swap_channel)
-        self.c.view.toolBarUI.contrast_slider.valueChanged.connect(
+        self.c.view.tool_bar.channelChanged.connect(self.c.model_canvas.swap_channel)
+        self.c.view.tool_bar.contrast_slider.valueChanged.connect(
             self.c.model_canvas.update_contrast
         )
-        self.c.view.toolBarUI.cmapChanged.connect(self.c.model_canvas.update_image)
-        self.c.view.toolBarUI.auto_contrast_button.clicked.connect(
+        self.c.view.tool_bar.cmapChanged.connect(self.c.model_canvas.update_image)
+        self.c.view.tool_bar.auto_contrast_button.clicked.connect(
             self.c.model_canvas.auto_contrast
         )
-        self.c.view.toolBarUI.tabChanged.connect(
-            self.c.view.stackedWidget.setCurrentIndex
+        self.c.view.tool_bar.tabChanged.connect(
+            self.c.view.stacked_widget.setCurrentIndex
         )
-        self.c.view.toolBarUI.tabChanged.connect(self.c.handle_tab_change)
+        self.c.view.tool_bar.tabChanged.connect(self.c.handle_tab_change)
 
-    def _setup_image_handling_connections(self):
+    def _setup_img_handling_conns(self):
         """Image loading and display connections"""
         self.c.view.canvas.image_dropped.connect(self.c.model_canvas.add_to_canvas)
         self.c.view.small_view.image_dropped.connect(
@@ -365,9 +383,12 @@ class SignalConnectionManager:
         self.c.model_reference_canvas.update_reference.connect(
             self.c.view.small_view.display
         )
+        self.c.model_reference_canvas.update_reference.connect(
+            self.c.update_small_view_visibility
+        )
         self.c.model_canvas.update_canvas.connect(self.c.view.canvas.update_canvas)
         self.c.model_canvas.update_channel.connect(
-            self.c.view.toolBarUI.setChannelSelector
+            self.c.view.tool_bar.setChannelSelector
         )
 
         self.c.model_canvas.update_sidebar.connect(
@@ -405,10 +426,10 @@ class SignalConnectionManager:
         self.c.model_canvas.error_signal.connect(self.c.handle_error)
         self.c.view.canvas.show_crop.connect(self.c.model_canvas.crop)
         self.c.model_canvas.update_cmap.connect(
-            self.c.view.toolBarUI.update_cmap_selector
+            self.c.view.tool_bar.update_cmap_selector
         )
         self.c.model_canvas.change_slider.connect(
-            self.c.view.toolBarUI.update_contrast_slider
+            self.c.view.tool_bar.update_contrast_slider
         )
         self.c.model_canvas.fill_metadata.connect(self.c.view.get_metadata)
 
@@ -545,7 +566,7 @@ class SignalConnectionManager:
 
         # Results
 
-    def _setup_cell_intensity_connections(self):
+    def _setup_cell_intensity_conns(self):
         """Cell intensity-related connections"""
 
         self.c.view.images_tab.image_tree_view.protein_data.connect(
@@ -555,46 +576,47 @@ class SignalConnectionManager:
             self.c.model_cell_intensity.load_stardist_labels_from_storage
         )
 
-        self.c.view.cellIntensity_groupbox.bead_data.clicked.connect(
-            self.c.view.cellIntensity_groupbox.loadBeadData
+        self.c.view.cell_intensity_groupbox.bead_data.clicked.connect(
+            self.c.view.cell_intensity_groupbox.load_bead_data
         )
 
-        self.c.view.cellIntensity_groupbox.emitBeadData.connect(
+        self.c.view.cell_intensity_groupbox.emitBeadData.connect(
             self.c.model_cell_intensity.set_bead_data
         )
-        self.c.view.cellIntensity_groupbox.emitColorCodes.connect(
+        self.c.view.cell_intensity_groupbox.emitColorCodes.connect(
             self.c.model_cell_intensity.set_color_codes
         )
-        self.c.view.cellIntensity_groupbox.radius_fg.valueChanged.connect(
+        self.c.view.cell_intensity_groupbox.radius_fg.valueChanged.connect(
             self.c.model_cell_intensity.set_radius_fg
         )
-        self.c.view.cellIntensity_groupbox.radius_bg.valueChanged.connect(
+        self.c.view.cell_intensity_groupbox.radius_bg.valueChanged.connect(
             self.c.model_cell_intensity.set_radius_bg
         )
-        self.c.view.cellIntensity_groupbox.generate_cell_data.connect(
+        self.c.view.cell_intensity_groupbox.generate_cell_data.connect(
             self.c.model_cell_intensity.generate_cell_intensity_table
         )
         self.c.model_cell_intensity.error_signal.connect(self.c.handle_error)
-        self.c.view.cellIntensity_groupbox.save_button.clicked.connect(
+        self.c.view.cell_intensity_groupbox.save_button.clicked.connect(
             self.c.model_cell_intensity.save_cell_data
         )
         self.c.model_cell_intensity.progress.connect(self.c.view.update_progress_bar)
-        self.c.view.cellIntensity_groupbox.cancel_button.clicked.connect(
+        self.c.view.cell_intensity_groupbox.cancel_button.clicked.connect(
             self.c.model_cell_intensity.cancel
         )
 
-    def _setup_image_broadcast_connections(self):
+    def _setup_img_broadcast_conns(self):
         """Image signal broadcast to multiple targets"""
+        # ensure all the relevant UI components are not None
 
         image_signal = self.c.model_canvas.image_signal
-        image_signal.connect(self.c.view.toolBarUI.updateChannelSelector)
+        image_signal.connect(self.c.view.tool_bar.updateChannelSelector)
         image_signal.connect(self.c.view.register_groupbox.updateChannelSelector)
-        image_signal.connect(self.c.view.canvas.loadChannels)
+        image_signal.connect(self.c.view.canvas.load_channels)
         image_signal.connect(self.c.model_stardist.update_channels)
         image_signal.connect(self.c.view.stardist_groupbox.updateChannelSelector)
         image_signal.connect(self.c.view.gaussian_blur.updateChannelSelector)
         image_signal.connect(self.c.model_register.update_moving_image)
-        image_signal.connect(self.c.view.cellIntensity_groupbox.update_channels)
+        image_signal.connect(self.c.view.cell_intensity_groupbox.update_channels)
 
         ref_image = self.c.model_reference_canvas.image_signal
         ref_image.connect(self.c.model_register.update_reference_channels)
@@ -607,8 +629,6 @@ class SignalConnectionManager:
     def _setup_misc_connections(self):
         """Miscellaneous connections"""
         self.c.view.view_tab.progress.connect(self.c.view.update_progress_bar)
-        self.c.view.stackedWidget.currentChanged.connect(
-            lambda x: self.c.view.small_view.setVisible(
-                x == 0 and not self.c.view.small_view.is_empty()
-            )
+        self.c.view.stacked_widget.currentChanged.connect(
+            self.c.update_small_view_visibility
         )

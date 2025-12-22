@@ -1,8 +1,15 @@
+"""
+Image Manager module.
+"""
 import os
 import uuid
 from uuid import UUID
+from typing import Optional
 
 import numpy as np
+import tifffile  # pylint: disable=import-error
+
+# pylint: disable=no-name-in-module
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QActionGroup
 from PyQt6.QtWidgets import (
@@ -19,8 +26,12 @@ from core.canvas import ReferenceGraphicsView
 from models.image_list_model import ImageTreeItem, ImageTreeModel
 
 
-class Manager(QWidget):
-    def __init__(self, parent):
+class ImageManager(QWidget):
+    """
+    Widget to manage the list of loaded images.
+    """
+    # pylint: disable=too-many-instance-attributes
+    def __init__(self, parent=None):
         super().__init__(parent)
 
         self.setWindowTitle("Image List")
@@ -35,55 +46,64 @@ class Manager(QWidget):
         self.storage = ImageStorage()
         self.__layout.addWidget(self.image_tree_view)
 
+        # Initialize attributes
+        self.model_canvas: Optional[ImageGraphicsView] = None
+        self.model_stardist: Optional[StarDist] = None
+        self.model_reference_canvas: Optional[ReferenceGraphicsView] = None
+
     def set_model_canvas(self, model):
+        """Set the model canvas."""
         self.model_canvas = model
         self.image_tree_view.model_canvas = model
 
     def set_model_stardist(self, model):
+        """Set the stardist model."""
         self.model_stardist = model
         self.image_tree_view.model_stardist = model
 
     def set_model_reference_canvas(self, model):
+        """Set the reference canvas model."""
         self.model_reference_canvas = model
         self.image_tree_view.model_reference_canvas = model
 
-    def add_item(self, uuid):
+    def add_item(self, item_uuid):
+        """Add an item to the tree."""
         print("adding item")
         assert self.root_node is not None, "Root node is not initialized"
-        main_item = ImageTreeItem(uuid, channel="Channel 1", useItemName=True)
-        item = self.storage.get_data(uuid)
-        assert item is not None, f"No data found for UUID: {uuid}"
+        main_item = ImageTreeItem(item_uuid, channel="Channel 1", useItemName=True)
+        item = self.storage.get_data(item_uuid)
+        assert item is not None, f"No data found for UUID: {item_uuid}"
         item_data = item["data"]
         channels = item_data.keys()
         channels = sorted(channels, key=lambda x: int(x.replace("Channel ", "")))
         if len(channels) > 1:
             for channel in channels:
-                channel_item = ImageTreeItem(uuid, channel=channel, useItemName=False)
+                channel_item = ImageTreeItem(item_uuid, channel=channel, useItemName=False)
                 main_item.appendRow(channel_item)
         self.root_node.appendRow(main_item)
 
-    def set_channel_icon(self, uuid, channel):
+    def set_channel_icon(self, item_uuid, channel):
         """Set the icon for the channel item"""
         assert self.root_node is not None, "Root node is not initialized"
         main_item = None
-        image_data = self.storage.get_data(uuid)
+        image_data = self.storage.get_data(item_uuid)
         if image_data is None:
-            raise ValueError(f"No image data found for UUID: {uuid}")
+            raise ValueError(f"No image data found for UUID: {item_uuid}")
         image_data = image_data.get("data", {})
         if channel not in image_data:
             raise ValueError(
-                f"Channel {channel} not found in image data for UUID: {uuid}"
+                f"Channel {channel} not found in image data for UUID: {item_uuid}"
             )
         model = self.image_tree_model
         for i in range(model.rowCount()):
             item = model.item(i)
             if item is None:
                 continue
-            if item.data(Qt.ItemDataRole.UserRole) == uuid:
+            if item.data(Qt.ItemDataRole.UserRole) == item_uuid:
                 main_item = item
                 break
         if main_item is None:
-            raise ValueError(f"No main item found for UUID: {uuid}")
+            raise ValueError(f"No main item found for UUID: {item_uuid}")
         channel_item = None
         if main_item.data(Qt.ItemDataRole.WhatsThisRole) == channel:
             if isinstance(main_item, ImageTreeItem):
@@ -98,19 +118,21 @@ class Manager(QWidget):
         if isinstance(channel_item, ImageTreeItem):
             channel_item.set_icon(image_data)
 
-    def add_to_storage(self, uuid, obj):
-        print(f"adding {uuid} to storage")
-        self.storage.add_data(uuid, obj)
+    def add_to_storage(self, item_uuid, obj):
+        """Add data to storage."""
+        print(f"adding {item_uuid} to storage")
+        self.storage.add_data(item_uuid, obj)
 
 
 class ImageTreeWidget(QTreeView):
+    """
+    Tree view widget for displaying images.
+    """
     tissue_target_selected = pyqtSignal(UUID, bool, int)
     tissue_unaligned_selected = pyqtSignal(UUID, bool, int)
     protein_data = pyqtSignal(UUID, int)
     stardist_label = pyqtSignal(UUID, int)
-    item_deleted = pyqtSignal(
-        UUID
-    )  # !TODO: implement this to make all other components reset to default if the deleted item is currently being used
+    item_deleted = pyqtSignal(UUID)
 
     def __init__(self, parent):
         super().__init__(parent)
@@ -122,6 +144,7 @@ class ImageTreeWidget(QTreeView):
 
     @property
     def model_canvas(self):
+        """Get the model canvas."""
         return self._model_canvas
 
     @model_canvas.setter
@@ -130,6 +153,7 @@ class ImageTreeWidget(QTreeView):
 
     @property
     def model_reference_canvas(self):
+        """Get the reference canvas model."""
         return self._model_reference_canvas
 
     @model_reference_canvas.setter
@@ -138,6 +162,7 @@ class ImageTreeWidget(QTreeView):
 
     @property
     def model_stardist(self):
+        """Get the stardist model."""
         return self._model_stardist
 
     @model_stardist.setter
@@ -145,10 +170,11 @@ class ImageTreeWidget(QTreeView):
         self._model_stardist = value
 
     def show_on_canvas(self, item):
+        """Show selected item on canvas."""
         assert self.model_canvas is not None, "model_canvas is not set"
         print("show on canvas")
         model_canvas = self.model_canvas
-        name, my_uuid = self._name_and_uuid_from_item(item, tooltip=True)
+        _, my_uuid = self._name_and_uuid_from_item(item, tooltip=True)
         different = str(my_uuid) != str(model_canvas.uuid)
         if not different:
             channel = self._get_channel_from_item(item)
@@ -159,18 +185,21 @@ class ImageTreeWidget(QTreeView):
                 my_uuid, as_new_image=False, target_channel=str(channel)
             )
 
-    def show_on_reference_canvas(self, uuid: UUID, channel: int):
-        assert self.model_reference_canvas is not None, (
-            "model_reference_canvas is not set"
-        )
+    def show_on_reference_canvas(self, item_uuid: UUID, channel: int):
+        """Show selected item on reference canvas."""
+        assert (
+            self.model_reference_canvas is not None
+        ), "model_reference_canvas is not set"
         cname = f"Channel {channel + 1}"
-        self.model_reference_canvas.add_to_canvas(uuid, cname)
+        self.model_reference_canvas.add_to_canvas(item_uuid, cname)
 
+    # pylint: disable=invalid-name, too-many-locals, too-many-statements
     def contextMenuEvent(self, event):  # type: ignore
+        """Handle context menu event."""
         menu = QMenu(self)
         item = self.indexAt(event.pos())
         if item:
-            _, uuid = self._name_and_uuid_from_item(item)
+            _, item_uuid = self._name_and_uuid_from_item(item)
             channel = int(self._get_channel_from_item(item))
             is_leaf = self._is_leaf(item)
             set_reference = QAction("Reference")
@@ -183,17 +212,17 @@ class ImageTreeWidget(QTreeView):
             save_as_tiff = QAction("Save as TIF")
 
             set_reference.triggered.connect(
-                lambda: self.show_on_reference_canvas(uuid, channel)
+                lambda: self.show_on_reference_canvas(item_uuid, channel)
             )
             set_cell_image.triggered.connect(lambda: self.set_for_stardist(item))
             set_tissue_target_image.triggered.connect(
-                lambda: self.set_as_tissue_target(uuid, is_leaf, channel)
+                lambda: self.set_as_tissue_target(item_uuid, is_leaf, channel)
             )
             set_tissue_unaligned_image.triggered.connect(
-                lambda: self.set_as_tissue_unaligned(uuid, is_leaf, channel)
+                lambda: self.set_as_tissue_unaligned(item_uuid, is_leaf, channel)
             )
             set_stardist_label.triggered.connect(
-                lambda: self.set_as_stardist_label(uuid, is_leaf, channel)
+                lambda: self.set_as_stardist_label(item_uuid, channel)
             )
 
             save_as_tiff.triggered.connect(lambda: self.save_as(item, "tif"))
@@ -266,24 +295,27 @@ class ImageTreeWidget(QTreeView):
             menu.exec(event.globalPos())
 
     def set_for_stardist(self, item):
+        """Set the image for stardist model."""
         assert isinstance(self.model_stardist, StarDist), "model_stardist is not set"
-        name, uuid = self._name_and_uuid_from_item(item)
-        item = self.storage.get_data(uuid)
-        assert item is not None, f"No data found for UUID: {uuid}"
+        name, item_uuid = self._name_and_uuid_from_item(item)
+        item = self.storage.get_data(item_uuid)
+        assert item is not None, f"No data found for UUID: {item_uuid}"
         data = item["data"]
         self.model_stardist.set_protein_image(data, name=name)
 
     def show_message(self, message):
+        """Show a message box."""
         QMessageBox.information(self, "Selection", message)
 
     def delete_item(self, index):
+        """Delete an item from the tree."""
         model = self.model()
         assert isinstance(model, ImageTreeModel), "Model is not set"
         item = model.itemFromIndex(index)
-        _, uuid = self._name_and_uuid_from_item(index)
+        _, item_uuid = self._name_and_uuid_from_item(index)
         assert item is not None, "Item is None"
         row = model.indexFromItem(item).row()
-        self.item_deleted.emit(uuid)
+        self.item_deleted.emit(item_uuid)
         model.removeRow(row)
 
     def _name_and_uuid_from_item(self, item, tooltip=False) -> tuple[str, uuid.UUID]:
@@ -309,8 +341,8 @@ class ImageTreeWidget(QTreeView):
         try:
             channel = int(channel.replace("Channel ", "")) - 1
             print(channel)
-        except ValueError:
-            raise ValueError("Invalid default channel format.")
+        except ValueError as exc:
+            raise ValueError("Invalid default channel format.") from exc
         return channel
 
     def _is_leaf(self, item):
@@ -320,15 +352,14 @@ class ImageTreeWidget(QTreeView):
         assert item is not None, "Item is None"
         return not item.hasChildren()
 
-    def save_as(self, item, type):
-        name, uuid = self._name_and_uuid_from_item(item)
+    def save_as(self, item, file_type):
+        """Save the item to file."""
+        name, item_uuid = self._name_and_uuid_from_item(item)
         name = os.path.splitext(name)[0]
-        item = self.storage.get_data(uuid)
-        assert item is not None, f"No data found for UUID: {uuid}"
+        item = self.storage.get_data(item_uuid)
+        assert item is not None, f"No data found for UUID: {item_uuid}"
         channel_dict = item["data"]
-        if type == "tif":
-            import tifffile
-
+        if file_type == "tif":
             print("inside")
             folder_path = QFileDialog.getExistingDirectory(
                 self, "Select Folder to Save TIFF"
@@ -352,6 +383,6 @@ class ImageTreeWidget(QTreeView):
         """Set the selected image as the tissue unaligned image for alignment"""
         self.tissue_unaligned_selected.emit(i_uuid, is_leaf, channel)
 
-    def set_as_stardist_label(self, i_uuid: UUID, is_leaf: bool, channel: int):
+    def set_as_stardist_label(self, i_uuid: UUID, channel: int):
         """Set the selected image as the StarDist label image for alignment"""
         self.stardist_label.emit(i_uuid, channel)

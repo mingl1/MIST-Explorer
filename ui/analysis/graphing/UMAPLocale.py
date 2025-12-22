@@ -23,8 +23,6 @@ class Locale:
         "BTN_SCAN": "Search",
         "BTN_ALL": "All",
         "BTN_CLR": "Clear",
-        # "BTN_UPLOAD": "Load Configuration",
-        # --- Analysis Controls ---
         "GRP_PCA": "PCA Parameters",
         "LBL_COMPONENTS": "Principal Components [{:02d}]",
         "GRP_UMAP": "UMAP Settings",

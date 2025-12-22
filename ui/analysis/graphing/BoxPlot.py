@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+
+
 class BoxPlotCanvas(FigureCanvas):
     def __init__(self, parent=None):
         fig, self.ax = plt.subplots(figsize=(12, 8))
@@ -21,28 +23,55 @@ class BoxPlotCanvas(FigureCanvas):
         x_max, y_max = 12000, 12000
 
         # Filter the dataset to include only cells within the specified region
-        filtered_data = data[(data['Global X'] >= x_min) & (data['Global X'] <= x_max) &
-                             (data['Global Y'] >= y_min) & (data['Global Y'] <= y_max)]
+        filtered_data = data[
+            (data["Global X"] >= x_min)
+            & (data["Global X"] <= x_max)
+            & (data["Global Y"] >= y_min)
+            & (data["Global Y"] <= y_max)
+        ]
 
         # Extract the list of all proteins dynamically based on the column range
-        protein_columns = filtered_data.columns[13:15]  # Assuming proteins start at the 4th column
+        protein_columns = filtered_data.columns[
+            13:15
+        ]  # Assuming proteins start at the 4th column
 
         # Filter data to include only the protein expression columns
         protein_data = filtered_data[protein_columns]
 
         # Reshape the data for seaborn boxplot (melt to "long" format)
-        protein_data_melted = protein_data.melt(var_name='Protein', value_name='Expression')
+        protein_data_melted = protein_data.melt(
+            var_name="Protein", value_name="Expression"
+        )
 
         # Plot the boxplot
-        sns.boxplot(x='Protein', y='Expression', data=protein_data_melted, palette='Set2', showfliers=False, ax=self.ax)
+        sns.boxplot(
+            x="Protein",
+            y="Expression",
+            data=protein_data_melted,
+            palette="Set2",
+            showfliers=False,
+            ax=self.ax,
+        )
 
         # Customize the plot
-        self.ax.set_xticklabels(self.ax.get_xticklabels(), rotation=90, )
-        self.ax.set_yticklabels(self.ax.get_yticklabels(), )
-        self.ax.set_xlabel('Protein', )
-        self.ax.set_ylabel('Expression Level', )
-        self.ax.set_title(f'Prot. Exp. Box Plot', )
+        self.ax.set_xticklabels(
+            self.ax.get_xticklabels(),
+            rotation=90,
+        )
+        self.ax.set_yticklabels(
+            self.ax.get_yticklabels(),
+        )
+        self.ax.set_xlabel(
+            "Protein",
+        )
+        self.ax.set_ylabel(
+            "Expression Level",
+        )
+        self.ax.set_title(
+            f"Prot. Exp. Box Plot",
+        )
         plt.subplots_adjust(bottom=0.25)
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
