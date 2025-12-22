@@ -3,16 +3,14 @@ import typing
 
 import numpy as np
 import pyqtgraph as pg
-import tifffile  # pylint: disable=import-error
-from PyQt6.QtCore import (QPoint, QRect,  # pylint: disable=no-name-in-module
-                          QRectF, QSize, Qt, pyqtSignal)
-from PyQt6.QtGui import (QBrush, QColor,  # pylint: disable=no-name-in-module
-                         QCursor, QDragEnterEvent, QDragMoveEvent, QIcon,
-                         QImage, QMouseEvent, QPainter, QPen, QPixmap)
-from PyQt6.QtWidgets import QFileDialog  # pylint: disable=no-name-in-module
-from PyQt6.QtWidgets import (QGraphicsPixmapItem, QGraphicsRectItem,
-                             QGraphicsView, QHBoxLayout, QLabel, QPushButton,
-                             QToolTip, QWidget)
+import tifffile
+from PyQt6.QtCore import QPoint, QRect, QRectF, QSize, Qt, pyqtSignal
+from PyQt6.QtGui import (QBrush, QColor, QCursor, QDragEnterEvent,
+                         QDragMoveEvent, QIcon, QImage, QMouseEvent, QPainter,
+                         QPen, QPixmap)
+from PyQt6.QtWidgets import (QFileDialog, QGraphicsPixmapItem,
+                             QGraphicsRectItem, QGraphicsView, QHBoxLayout,
+                             QLabel, QPushButton, QToolTip, QWidget)
 
 from ui.canvas.items import CropRectItem, ResizableRect
 from ui.lassos.CircleLasso import CircleLasso
