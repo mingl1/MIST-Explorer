@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (QDialog, QDialogButtonBox, QFileDialog,
                              QWidget)
 
 from controller import Controller
-from utils import auto_contrast_helper, create_lut, scale_adjust
+from core.image_utils import auto_contrast_helper, create_lut, scale_adjust
 
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 import os
@@ -513,7 +513,6 @@ class ImageOverlay(QWidget):
         self.cancel_reset.setVisible(True)
         self.export_tif_button.setVisible(True)
         self.export_png_button.setVisible(True)
-        self.umap_button.setVisible(True)
         self.splitter.setStretchFactor(0, 1)  # Give more space to the layer list
         self.splitter.setStretchFactor(1, 0)  # Give more space to the layer list
 
@@ -545,6 +544,11 @@ class ImageOverlay(QWidget):
         for c in self.controls:
             if c.current_visibility == False:
                 continue
+            
+            # Skip if this is an "other image" (RGB) which has no cell data
+            if c.cell_image.size == 0:
+                continue
+                
             value = c.cell_image[y, x]
             layer_values.append((c.name, value))
 
@@ -559,8 +563,8 @@ class ImageOverlay(QWidget):
 
         resp = reply.exec()
 
-        for i in range(len(self.controls)):
-            self.delete_layer(0)
+        while len(self.controls) > 0:
+            self.delete_layer(self.controls[0].layout)
 
         self.enc.analysis_tab.view_index = 0
 
@@ -584,7 +588,6 @@ class ImageOverlay(QWidget):
             self.add_other_image_button.setVisible(False)
             self.export_tif_button.setVisible(False)
             self.export_png_button.setVisible(False)
-            self.umap_button.setVisible(False)
         self.reset_view_tab.emit()
 
     def initUI(self):
@@ -677,11 +680,6 @@ class ImageOverlay(QWidget):
         self.export_png_button.clicked.connect(self.export_to_png)
         self.export_png_button.setVisible(False)
         bottom_controls_layout.addWidget(self.export_png_button)
-
-        self.umap_button = QPushButton("UMAP Analysis")
-        self.umap_button.clicked.connect(self.open_umap_analysis)
-        self.umap_button.setVisible(False)
-        bottom_controls_layout.addWidget(self.umap_button)
 
         # Add a spacer to ensure content can scroll all the way down
         bottom_controls_layout.addStretch(

@@ -38,3 +38,12 @@ python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true # This forces the agent to use type hints
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q"
+testpaths = [
+    "tests",
+]
+qt_api = "pyqt6"
+python_files = "test_*.py"

@@ -76,7 +76,7 @@ class MainWindow(QMainWindow):
         self.tool_bar: Optional[ToolBarUI] = None
         self.central_widget_layout: Optional[QHBoxLayout] = None
         self.main_layout: Optional[QHBoxLayout] = None
-        self.side_panel_container: Optional[QHBoxLayout] = None
+        self.side_panel_container: Optional[QWidget] = None
         self.side_panel: Optional[QWidget] = None
         self.side_panel_layout: Optional[QVBoxLayout] = None
         self.toggle_button: Optional[QPushButton] = None
@@ -103,6 +103,8 @@ class MainWindow(QMainWindow):
         self.progress_bar_label: Optional[QLabel] = None
         self.progress_bar: Optional[QProgressBar] = None
         self.metadata: Optional[dict] = None
+        self.splitter: Optional[QSplitter] = None
+        self.last_sidebar_width: int = 400
 
     def _parse_arguments(self):
         """Parse command line arguments"""
@@ -185,20 +187,21 @@ class MainWindow(QMainWindow):
     def _setup_side_panel(self):
         """Setup the collapsible side panel"""
 
-        self.side_panel_container = QHBoxLayout()
-        # self.sidePanelContainer.setContentsMargins(10, 5, 10, 5)
-        self.side_panel_container.setSpacing(10)
+        self.side_panel_container = QWidget(self.centralWidget())
+        container_layout = QHBoxLayout(self.side_panel_container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(10)
 
-        self.side_panel = QWidget(self.centralWidget())
+        self.side_panel = QWidget(self.side_panel_container)
         self.side_panel_layout = QVBoxLayout(self.side_panel)
         # self.sidePanelLayout.setSpacing(10)
         self.side_panel.setMinimumWidth(400)
-        self.side_panel.setMaximumWidth(500)
+        
         self.side_panel.setSizePolicy(
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding
         )
 
-        self.toggle_button = QPushButton("◀", self.side_panel)
+        self.toggle_button = QPushButton("◀", self.side_panel_container)
         self.toggle_button.setFixedSize(20, 60)
         self.toggle_button.clicked.connect(self.toggle_side_panel)
         self.toggle_button.setStyleSheet(
@@ -214,8 +217,8 @@ class MainWindow(QMainWindow):
         self.side_panel_layout.addWidget(self.stacked_widget)
 
         # Add to container
-        self.side_panel_container.addWidget(self.side_panel)
-        self.side_panel_container.addWidget(self.toggle_button)
+        container_layout.addWidget(self.side_panel)
+        container_layout.addWidget(self.toggle_button)
 
     def _setup_canvas(self):
         """Setup the main canvas and reference view"""
@@ -419,9 +422,19 @@ class MainWindow(QMainWindow):
 
     def _setup_layout(self):
         """Setup the final layout structure"""
-        # Add components to main layout
-        self.main_layout.addLayout(self.side_panel_container)
-        self.main_layout.addWidget(self.canvas)
+        # Create a horizontal splitter
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        
+        # Add sidebar container and canvas to splitter
+        # Note: side_panel_container now contains both the panel and the toggle button
+        self.splitter.addWidget(self.side_panel_container)
+        self.splitter.addWidget(self.canvas)
+        
+        # Set stretch factors so canvas takes available space
+        self.splitter.setStretchFactor(1, 1)
+
+        # Add splitter to main layout
+        self.main_layout.addWidget(self.splitter)
 
         # Add main layout to central widget
         self.central_widget_layout.addLayout(self.main_layout)
@@ -431,6 +444,7 @@ class MainWindow(QMainWindow):
         # Connect toolbar tab change signal
         # Start with Images tab
         self.stacked_widget.setCurrentIndex(0)
+
 
     def _retranslate_ui(self):
         """Set UI text and translations"""
@@ -473,11 +487,27 @@ class MainWindow(QMainWindow):
     def toggle_side_panel(self):
         """Toggle side panel visibility"""
         if self.side_panel.isVisible():
+            # Save width before hiding, if it's substantial
+            current_sizes = self.splitter.sizes()
+            if current_sizes[0] > 100:
+                self.last_sidebar_width = current_sizes[0]
+            
             self.side_panel.hide()
             self.toggle_button.setText("▶")
+            
+            # Collapse splitter to just the button width
+            # We add a small buffer for margins/spacing
+            btn_width = self.toggle_button.width() + 15 
+            self.splitter.setSizes([btn_width, sum(current_sizes) - btn_width])
         else:
             self.side_panel.show()
             self.toggle_button.setText("◀")
+            
+            # Restore previous width
+            current_sizes = self.splitter.sizes()
+            total = sum(current_sizes)
+            target = getattr(self, "last_sidebar_width", 400)
+            self.splitter.setSizes([target, total - target])
 
     def get_metadata(self, metadata: dict):
         """Update metadata tab with new metadata"""
