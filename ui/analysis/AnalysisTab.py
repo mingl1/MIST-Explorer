@@ -425,6 +425,20 @@ class ROIAnalysisView(QWidget):
             
         # Navigate back to this ROI (updates UI)
         self.navigate_to_roi(index)
+
+        # If we were viewing a specific graph, refresh it
+        try:
+            if hasattr(self, "view_graph_interfaces") and index in self.view_graph_interfaces:
+                interface = self.view_graph_interfaces[index]
+                stacked_widget = interface["stacked_widget"]
+                detail_page = interface["icon_detail_page"]
+                
+                # Check if detail page is the current widget
+                if stacked_widget.currentWidget() == detail_page:
+                    # Refresh the detail page with the current graph index
+                    detail_page.set_icon_index(self.current_graph_index)
+        except Exception as e:
+            print(f"Error refreshing graph display: {e}")
         
         return True
 

@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import QRubberBand
 from PyQt6.QtGui import QPainter, QPen, QColor
-from PyQt6.QtCore import QPoint
+from PyQt6.QtCore import QPoint, pyqtSignal
 import random
 
 
@@ -21,6 +21,8 @@ class Lasso(QRubberBand):
             random.randint(0, 255),
             50,
         )
+
+    roi_moved = pyqtSignal()
 
     def mousePressEvent(self, event):
         self.mouse_press_pos = event.pos()
@@ -45,6 +47,7 @@ class Lasso(QRubberBand):
             and (event.pos() - self.mouse_press_pos).manhattanLength()
             > self.dragging_threshold
         ):
+            self.roi_moved.emit()
             event.ignore()
         self.mouse_press_pos = None
         self.mouse_move_pos = None
