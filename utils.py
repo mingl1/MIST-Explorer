@@ -8,7 +8,6 @@ from numpy.typing import NDArray
 from PyQt6.QtGui import QImage, QPixmap
 
 # Import extracted functions from core.image_utils
-from core.image_utils import scale_adjust, create_lut, auto_contrast_helper
 
 def numpy_to_qimage(array: np.ndarray) -> QImage:
     if not array.data.contiguous:
@@ -267,8 +266,6 @@ def grayscale_to_agrb(img_2d: np.ndarray) -> np.ndarray:
 # if arr.dtype == np.uint16:
 
 
-def auto_contrast(img):
-    return adjustContrast(scale_adjust(img))
 
 
 def gaussian_kernel_1d(sigma, radius=None):

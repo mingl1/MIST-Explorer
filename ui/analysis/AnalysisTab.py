@@ -76,6 +76,11 @@ class AnalysisTab(QWidget):
         self.tabs.setCurrentWidget(self.roi_view)
         return self.roi_view.analyze_region(rubberband, region)
 
+    def update_roi_region(self, rubberband, region):
+        """Update existing ROI region"""
+        self.tabs.setCurrentWidget(self.roi_view)
+        return self.roi_view.update_roi_region(rubberband, region)
+
     def on_tab_changed(self, index):
         # Index 0 is ROI Analysis, 1 is Full Image
         # Show canvas buttons only for ROI Analysis
@@ -385,6 +390,44 @@ class ROIAnalysisView(QWidget):
         self.rubberbands[-1].set_filled(True)
         return True
 
+    def update_roi_region(self, rubberband, region):
+        """Update the region of an existing ROI and regenerate graphs"""
+        # Formulate tuple region
+        region = (region[0], tuple(int(i) for i in region[1]))
+        assert len(region[1]) == 4, "invalid region definition"
+
+        # Find the ROI index for this rubberband
+        try:
+            index = self.rubberbands.index(rubberband)
+        except ValueError:
+            print("Rubberband not found in analysis view")
+            return False
+
+        # Update the region
+        self.regions[index] = region
+        
+        # Save current view index
+        old_index = self.current_view_index
+        
+        # Set current index to the one being updated
+        self.current_view_index = index
+        
+        # Clear existing graphs for this ROI
+        self.graphs[index] = []
+        
+        # Regenerate graphs with new region data
+        try:
+            self.generate_analysis_graphs(region)
+        except Exception as e:
+            print(f"Error updating ROI analysis: {e}")
+            traceback.print_exc()
+            return False
+            
+        # Navigate back to this ROI (updates UI)
+        self.navigate_to_roi(index)
+        
+        return True
+
     def create_analysis_result_widget(self, rubberband, region):
         """Create the widget to display analysis results"""
         result_widget = QWidget()
@@ -426,7 +469,7 @@ class ROIAnalysisView(QWidget):
         self.multiComboBox.addItems(list(self.columns))
 
         for i in range(len(self.columns)):
-            self.multiComboBox.model().item(i).setCheckState(Qt.CheckState.Checked)
+            self.multiComboBox.model().item(i + 2).setCheckState(Qt.CheckState.Checked)
 
         # Add buttons
         apply_button = QPushButton("Apply")
@@ -473,12 +516,10 @@ class ROIAnalysisView(QWidget):
             "Spatial Heatmap",
             "Pi Chart",
             "Histogram",
-            "UMAP",
         ]
 
         self.icon_paths = [
             "ui/graphing/icons/linechart.png",
-            "ui/graphing/icons/heatmap.png",
             "ui/graphing/icons/heatmap.png",
             "ui/graphing/icons/piechart.png",
             "ui/graphing/icons/barchart.png",
@@ -524,7 +565,6 @@ class ROIAnalysisView(QWidget):
             lambda: HeatmapWindow(data[self.columns]),
             lambda: PieChartCanvas(data[self.columns]),
             lambda: DistributionViewer(data[self.columns]),
-            lambda: UMAPVisualizer(self.get_z_heatmap_data(data)),
         ]
 
         for generator in graph_generators:
