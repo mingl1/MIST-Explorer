@@ -4,9 +4,15 @@ import typing
 import numpy as np
 import pyqtgraph as pg
 import tifffile  # pylint: disable=import-error
-from PyQt6.QtCore import QPoint, QRect, QRectF, QSize, Qt, pyqtSignal  # pylint: disable=no-name-in-module
-from PyQt6.QtGui import QBrush, QColor, QCursor, QDragEnterEvent, QDragMoveEvent, QIcon, QImage, QMouseEvent, QPainter, QPen, QPixmap  # pylint: disable=no-name-in-module
-from PyQt6.QtWidgets import QFileDialog, QGraphicsPixmapItem, QGraphicsRectItem, QGraphicsView, QHBoxLayout, QLabel, QPushButton, QToolTip, QWidget  # pylint: disable=no-name-in-module
+from PyQt6.QtCore import (QPoint, QRect,  # pylint: disable=no-name-in-module
+                          QRectF, QSize, Qt, pyqtSignal)
+from PyQt6.QtGui import (QBrush, QColor,  # pylint: disable=no-name-in-module
+                         QCursor, QDragEnterEvent, QDragMoveEvent, QIcon,
+                         QImage, QMouseEvent, QPainter, QPen, QPixmap)
+from PyQt6.QtWidgets import QFileDialog  # pylint: disable=no-name-in-module
+from PyQt6.QtWidgets import (QGraphicsPixmapItem, QGraphicsRectItem,
+                             QGraphicsView, QHBoxLayout, QLabel, QPushButton,
+                             QToolTip, QWidget)
 
 from ui.canvas.items import CropRectItem, ResizableRect
 from ui.lassos.CircleLasso import CircleLasso
@@ -33,6 +39,7 @@ class ImageGraphicsViewUI(QGraphicsView):
     vertical_flip = pyqtSignal()  # Signal to request vertical flip
     clear_canvas = pyqtSignal()
     sigRangeChanged = pyqtSignal(object)  # placeholder for pyqtgraph compatibility
+    sigTransformChanged = pyqtSignal()  # placeholder for pyqtgraph compatibility
 
     # pylint: disable=too-many-instance-attributes
     def __init__(self, parent, enc: "MainWindow", show_buttons=True):
@@ -279,7 +286,9 @@ class ImageGraphicsViewUI(QGraphicsView):
 
     def is_empty(self) -> bool:
         """Check if canvas is empty."""
-        return self.pixmap_item is None or self.pixmap_item.pixmap().isNull()
+        has_pixmap = self.pixmap_item is not None and not self.pixmap_item.pixmap().isNull()
+        has_view_layers = len(self.view_pixmaps) > 0
+        return not (has_pixmap or has_view_layers)
 
     # pylint: disable=invalid-name, unused-argument
     def mouseDoubleClickEvent(self, event):
@@ -487,6 +496,7 @@ class ImageGraphicsViewUI(QGraphicsView):
 
             # Handle regular selection modes
             if self.begin_crop or self.select:
+                print("beginning selection")
                 self.origin = event.pos()
                 self.update_starting_position(event)
                 scene_pos = self.mapToScene(event.pos())
