@@ -77,12 +77,15 @@ class DataModel:
 
         # 4. Standard Filtering
         sc.pp.filter_cells(self.adata, min_genes=1)
-        self.adata.layers["counts"] = self.adata.X.copy()
+        logger.info(f"Data range before uint16 conversion: min={self.adata.X.min()}, max={self.adata.X.max()}")
+        if self.adata.X.max() > 65535:
+            logger.warning(f"Data contains values > 65535, uint16 conversion will overflow!")
+        self.adata.layers["counts"] = self.adata.X.astype(np.uint16).copy()
 
-        # raw_adata = self.adata.copy()
-        # sc.pp.normalize_total(raw_adata)
-        # sc.pp.log1p(raw_adata)
-        # self.adata.raw = raw_adata
+        raw_adata = self.adata.copy()
+        sc.pp.normalize_total(raw_adata)
+        sc.pp.log1p(raw_adata)
+        self.adata.raw = raw_adata
 
         # 5. Apply Selected Normalization
         self._apply_normalization()

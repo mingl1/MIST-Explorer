@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 from numpy.typing import NDArray
+from PyQt6.QtGui import QImage, QPixmap
 
 
 def scale_adjust(arr: np.ndarray) -> NDArray[np.uint8]:
@@ -91,3 +92,55 @@ def adjustContrast(img, alpha=5, beta=15):
     alpha = 5  # Contrast control
     beta = 15  # Brightness control
     return cv2.convertScaleAbs(img, alpha=alpha, beta=beta)
+
+def auto_contrast(img):
+    return adjustContrast(scale_adjust(img))
+def to_pixmap(data: QPixmap | np.ndarray | QImage):
+    """Sends a pixmap to the canvas for display"""
+    # convert pixmap to pixmapItem
+    pixmap = None
+    if isinstance(data, QPixmap):
+        pixmap = data
+    elif isinstance(data, QImage):
+        pixmap = QPixmap(data)
+    elif isinstance(data, np.ndarray):
+        pixmap = QPixmap(numpy_to_qimage(data))
+    assert pixmap is not None
+    return pixmap
+def numpy_to_qimage(array: np.ndarray) -> QImage:
+    if not array.data.contiguous:
+        array = np.ascontiguousarray(array)
+
+    qimage = None
+    if len(array.shape) == 2:
+        # Grayscale image
+        height, width = array.shape
+        format = (
+            QImage.Format.Format_Grayscale16
+            if array.dtype == np.uint16
+            else QImage.Format.Format_Grayscale8
+        )
+        bytes_per_pixel = 2 if array.dtype == np.uint16 else 1
+        bytes_per_line = width * bytes_per_pixel  # uint8
+        qimage = QImage(array.data, width, height, bytes_per_line, format)
+    elif len(array.shape) == 3:
+        height, width, channels = array.shape
+        if channels == 3:
+            # RGB image
+            qimage = QImage(
+                array.data, width, height, width * channels, QImage.Format.Format_RGB888
+            )
+        elif channels == 4:
+            # RGBA image
+            qimage = QImage(
+                array.data,
+                width,
+                height,
+                width * channels,
+                QImage.Format.Format_RGBA8888,
+            )
+    else:
+        raise ValueError("Unsupported array shape: {}".format(array.shape))
+    if qimage is None:
+        raise ValueError("Failed to create QImage from numpy array")
+    return qimage if qimage is not None else QImage()

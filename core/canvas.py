@@ -34,7 +34,7 @@ from skimage.color import label2rgb as sk_label2rgb
 # Local/project imports
 from core.metadata_utils import parse_metadata
 from core.worker import Worker
-from utils import (adjustContrast, auto_contrast_helper, create_lut,
+from core.image_utils import (adjustContrast, auto_contrast_helper, create_lut,
                    numpy_to_qimage, scale_adjust, to_pixmap)
 
 if typing.TYPE_CHECKING:

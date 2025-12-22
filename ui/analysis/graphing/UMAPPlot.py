@@ -124,6 +124,15 @@ class ThemeManager:
     @classmethod
     def get_stylesheet(cls):
         c = cls.get_current()
+        
+        # Resolve icon path
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        icons_dir = os.path.join(base_dir, "icons").replace("\\", "/")
+        
+        # Select icon based on theme
+        tick_icon = "checkbox_tick_dark.svg" if cls.current_mode == "DARK" else "checkbox_tick_light.svg"
+        tick_path = f"{icons_dir}/{tick_icon}"
+
         return f"""
         /* GLOBAL RESET */
         QWidget {{
@@ -254,6 +263,23 @@ class ThemeManager:
         QScrollBar::handle:vertical {{
             background: {c["accent_dim"]};
             min-height: 20px;
+        }}
+
+        /* CHECKBOX INDICATORS */
+        QCheckBox::indicator, QListWidget::indicator {{
+            width: 14px;
+            height: 14px;
+            background-color: {c["bg_panel"]};
+            border: 1px solid {c["text_main"]};
+            border-radius: 3px;
+        }}
+        QCheckBox::indicator:checked, QListWidget::indicator:checked {{
+            background-color: {c["accent"]};
+            border: 1px solid {c["accent"]};
+            image: url({tick_path});
+        }}
+        QCheckBox::indicator:hover, QListWidget::indicator:hover {{
+            border: 1px solid {c["accent"]};
         }}
         
         /* SPECIFIC OVERRIDES */
@@ -844,7 +870,9 @@ class RankedGenesView(QWidget):
             cats = self.adata.obs[self.key].cat.categories
             self.cluster_combo.blockSignals(True)
             self.cluster_combo.clear()
-            self.cluster_combo.addItems([str(c) for c in cats])
+            for c in cats:
+                name = str(c)
+                self.cluster_combo.addItem(name, name)
             self.cluster_combo.blockSignals(False)
 
             # Check validity of existing rank_genes_groups
@@ -870,11 +898,27 @@ class RankedGenesView(QWidget):
                 except Exception as e:
                     logger.error(f"Failed to rank genes: {e}")
 
+    def update_cluster_names(self, renames):
+        """
+        Updates the displayed names in the combo box based on the dictionary
+        renames: { int_code : str_new_name }
+        """
+        self.cluster_combo.blockSignals(True)
+        for i in range(self.cluster_combo.count()):
+            # Assuming the combo box items were added in order of codes (which they are in set_data)
+            if i in renames:
+                self.cluster_combo.setItemText(i, renames[i])
+        self.cluster_combo.blockSignals(False)
+
     def on_update(self):
         if self.adata is None or self.key is None:
             return
 
-        group = self.cluster_combo.currentText()
+        # Use the UserData (original name) for data lookup
+        group = self.cluster_combo.currentData()
+        if not group:
+            # Fallback for safety
+            group = self.cluster_combo.currentText()
         n_genes = self.genes_spin.value()
 
         if not group:
@@ -1236,6 +1280,9 @@ class UMAPVisualizer(QMainWindow):
             return
         if visible is None or renames is None:
             visible, renames = self.seg_view.get_state()
+        
+        self.ranked_genes_view.update_cluster_names(renames)
+        
         selected_features = self.controls.get_selected_features()
         self.heatmap_view.update_heatmap(
             self.model.adata, "leiden", visible, renames, selected_features

@@ -3,16 +3,14 @@ import typing
 
 import numpy as np
 import pyqtgraph as pg
-import tifffile  # pylint: disable=import-error
-from PyQt6.QtCore import (QPoint, QRect,  # pylint: disable=no-name-in-module
-                          QRectF, QSize, Qt, pyqtSignal)
-from PyQt6.QtGui import (QBrush, QColor,  # pylint: disable=no-name-in-module
-                         QCursor, QDragEnterEvent, QDragMoveEvent, QIcon,
-                         QImage, QMouseEvent, QPainter, QPen, QPixmap)
-from PyQt6.QtWidgets import QFileDialog  # pylint: disable=no-name-in-module
-from PyQt6.QtWidgets import (QGraphicsPixmapItem, QGraphicsRectItem,
-                             QGraphicsView, QHBoxLayout, QLabel, QPushButton,
-                             QToolTip, QWidget)
+import tifffile
+from PyQt6.QtCore import QPoint, QRect, QRectF, QSize, Qt, pyqtSignal
+from PyQt6.QtGui import (QBrush, QColor, QCursor, QDragEnterEvent,
+                         QDragMoveEvent, QIcon, QImage, QMouseEvent, QPainter,
+                         QPen, QPixmap)
+from PyQt6.QtWidgets import (QFileDialog, QGraphicsPixmapItem,
+                             QGraphicsRectItem, QGraphicsView, QHBoxLayout,
+                             QLabel, QPushButton, QToolTip, QWidget)
 
 from ui.canvas.items import CropRectItem, ResizableRect
 from ui.lassos.CircleLasso import CircleLasso
@@ -66,6 +64,10 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.crop_start_pos = None
         self.active_crop_rect = None
         self.is_resizing = False
+        
+        # Move ROI state
+        self.moving_lasso = None
+        self.last_mouse_pos = None
 
         self.reference_view = None
 
@@ -498,10 +500,18 @@ class ImageGraphicsViewUI(QGraphicsView):
                 # Style the crop rectangle
                 pen = QPen(QColor(255, 255, 255), 2, Qt.PenStyle.DashLine)
                 self.active_crop_rect.setPen(pen)
-                self.active_crop_rect.setBrush(QBrush(QColor(255, 255, 255, 30)))
-
                 self.get_scene().addItem(self.active_crop_rect)
                 self.is_resizing = True
+
+            # Handle Shift+Click to move ROI
+            if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+                # Find the top-most lasso under the mouse
+                for r in reversed(self.rubber_bands):
+                    if r.geometry().contains(event.pos()):
+                        self.moving_lasso = r
+                        self.last_mouse_pos = event.pos()
+                        event.accept()
+                        return
 
             # Handle regular selection modes
             if self.begin_crop or self.select:
@@ -699,7 +709,15 @@ class ImageGraphicsViewUI(QGraphicsView):
             width = abs(x2 - x1)
             height = abs(y2 - y1)
             r = QRectF(left, top, width, height)
+            r = QRectF(left, top, width, height)
             self.active_crop_rect.setRect(r)
+            
+        # Handle moving lasso
+        if self.moving_lasso and self.last_mouse_pos:
+            delta = event.pos() - self.last_mouse_pos
+            self.moving_lasso.move(self.moving_lasso.pos() + delta)
+            self.last_mouse_pos = event.pos()
+            event.accept()
 
         # Store current mouse position for polygon preview
         if self.current_polygon and len(self.current_polygon.points) > 0:
@@ -849,6 +867,69 @@ class ImageGraphicsViewUI(QGraphicsView):
             return
 
         super().mouseReleaseEvent(event)
+
+        # Handle moving lasso release
+        if self.moving_lasso:
+            # Update analysis with new position
+            scene_pos = self.mapToScene(self.moving_lasso.geometry().topLeft())
+            # For CircleLasso, topLeft might not be start_pos in the same sense, but region calc depends on type
+            # We need to reconstruct the region defined by the lasso geometry
+            
+            # Determine region type
+            region_type = "rect"
+            if isinstance(self.moving_lasso, CircleLasso):
+                region_type = "circle"
+            # PolyLasso is not in rubber_bands, so not handled here
+            
+            # Helper to get image pos from view pos
+            def get_img_pos(view_pos):
+                scene_p = self.mapToScene(view_pos)
+                return self.pixmap_item.mapFromScene(scene_p)
+            
+            lasso_rect = self.moving_lasso.geometry()
+            
+            if region_type == "rect":
+                p1 = get_img_pos(lasso_rect.topLeft())
+                p2 = get_img_pos(lasso_rect.bottomRight())
+                x1, y1 = p1.x(), p1.y()
+                x2, y2 = p2.x(), p2.y()
+                image_rect = (
+                    region_type,
+                    (min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2))
+                )
+            elif region_type == "circle":
+                # For circle, we stored (center_x, center_y, edge_x, edge_y) or similar?
+                # Actually existing code uses (start_x, start_y, end_x, end_y) where start is top-left of rect?
+                # No, look at create_rubber_band: center = starting_x, starting_y.
+                # In mouseReleaseEvent (original):
+                # image_pos dist to initial left click pos is radius.
+                # initial pos is self.select_start_pos.
+                
+                # We need to emulate this. The CircleLasso widget is a square/rect bounding the circle.
+                # Center of circle = Center of widget.
+                # Radius = width / 2.
+                
+                center_view = lasso_rect.center()
+                center_img = get_img_pos(center_view)
+                
+                # We need a 2nd point to define radius. (center_x + r, center_y)
+                radius_view = lasso_rect.width() / 2
+                # Assuming isotropic scaling (zoom uniform), we can map a point at radius distance.
+                # But safer to map edge point.
+                edge_view = QPoint(lasso_rect.right(), lasso_rect.center().y())
+                edge_img = get_img_pos(edge_view)
+                
+                image_rect = (
+                    region_type,
+                    (center_img.x(), center_img.y(), edge_img.x(), edge_img.y())
+                )
+
+            # Update the analysis
+            self.enc.analysis_tab.update_roi_region(self.moving_lasso, image_rect)
+
+            self.moving_lasso = None
+            self.last_mouse_pos = None
+            return
 
         self.rubber_band_positions = []
         # Handle crop mode mouse release

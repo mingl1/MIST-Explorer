@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+from enum import IntEnum
 from matplotlib.colors import ListedColormap
 from PyQt6.QtCore import QCoreApplication, QSize, Qt, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QIcon, QImage, QPixmap
@@ -18,6 +19,12 @@ from qtrangeslider import QRangeSlider
 
 from ui.toolbar.Action import Action
 from utils import resource_path
+
+
+class TabIndices(IntEnum):
+    EXTRACT = 0
+    VIEW = 1
+    ANALYZE = 2
 
 
 class ToolBarUI(QToolBar):
@@ -79,20 +86,19 @@ class ToolBarUI(QToolBar):
     @pyqtSlot(int)
     def onTabButtonClicked(self, index):
         self.tabChanged.emit(index)
-        if index == 2 or index == 3:  # View or Analysis tab
+        if index == TabIndices.EXTRACT:
+            self.actionReset.setVisible(True)
+            self.channel_selector_action.setVisible(True)
+            self.cmap_action.setVisible(True)
+            self.auto_contrast_button_action.setVisible(True)
+            self.contrast_slider_action.setVisible(True)
+        else:
             # hide all actions
             self.actionReset.setVisible(False)
             self.channel_selector_action.setVisible(False)
             self.cmap_action.setVisible(False)
             self.auto_contrast_button_action.setVisible(False)
             self.contrast_slider_action.setVisible(False)
-
-        else:
-            self.actionReset.setVisible(True)
-            self.channel_selector_action.setVisible(True)
-            self.cmap_action.setVisible(True)
-            self.auto_contrast_button_action.setVisible(True)
-            self.contrast_slider_action.setVisible(True)
 
     def _init_actions(self, parent):
         self.actionRotate = Action(
