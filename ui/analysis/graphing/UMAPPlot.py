@@ -124,6 +124,15 @@ class ThemeManager:
     @classmethod
     def get_stylesheet(cls):
         c = cls.get_current()
+        
+        # Resolve icon path
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        icons_dir = os.path.join(base_dir, "icons").replace("\\", "/")
+        
+        # Select icon based on theme
+        tick_icon = "checkbox_tick_dark.svg" if cls.current_mode == "DARK" else "checkbox_tick_light.svg"
+        tick_path = f"{icons_dir}/{tick_icon}"
+
         return f"""
         /* GLOBAL RESET */
         QWidget {{
@@ -254,6 +263,23 @@ class ThemeManager:
         QScrollBar::handle:vertical {{
             background: {c["accent_dim"]};
             min-height: 20px;
+        }}
+
+        /* CHECKBOX INDICATORS */
+        QCheckBox::indicator, QListWidget::indicator {{
+            width: 14px;
+            height: 14px;
+            background-color: {c["bg_panel"]};
+            border: 1px solid {c["text_main"]};
+            border-radius: 3px;
+        }}
+        QCheckBox::indicator:checked, QListWidget::indicator:checked {{
+            background-color: {c["accent"]};
+            border: 1px solid {c["accent"]};
+            image: url({tick_path});
+        }}
+        QCheckBox::indicator:hover, QListWidget::indicator:hover {{
+            border: 1px solid {c["accent"]};
         }}
         
         /* SPECIFIC OVERRIDES */

@@ -17,65 +17,43 @@ Features:
         The code to navigate between the ROIs is a little complex
 """
 
-from multiprocessing import Value
-from PyQt6.QtWidgets import *
-from PyQt6.QtCore import pyqtSignal, QPoint
-from PyQt6.QtGui import (
-    QColor,
-    QIcon,
-    QTextCursor,
-    QSyntaxHighlighter,
-    QTextCharFormat,
-    QFont,
-)
-from PyQt6.QtCore import pyqtSlot, Qt, QRegularExpression
-
-from PyQt6.QtWidgets import (
-    QApplication,
-    QWidget,
-    QGridLayout,
-    QPushButton,
-    QLabel,
-    QVBoxLayout,
-    QStackedWidget,
-    QHBoxLayout,
-)
-
-from PyQt6.QtGui import QStandardItemModel, QStandardItem
-from PyQt6.QtWidgets import QComboBox
-from PyQt6.QtCore import Qt
-from PyQt6.QtCore import Qt
-import sys
-
-
-import sys
-import pandas as pd
-import matplotlib.pyplot as plt
-import numpy as np
-import seaborn as sns
 import io
+import sys
 import traceback
 from contextlib import redirect_stdout
-from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.figure import Figure
-
-from ui.analysis.graphing.ZScoreHeatmapWindow import ZScoreHeatmapWindow
-from ui.analysis.graphing.SpatialHeatmapUpdated import HeatmapWindow
-from ui.analysis.graphing.CellDensityPlot import CellDensityPlot
-from ui.analysis.graphing.DistributionViewer import DistributionViewer
-from ui.analysis.graphing.PieChartCanvas import PieChartCanvas
-from ui.analysis.graphing.UMAPPlot import UMAPVisualizer
-
+from multiprocessing import Value
 # Use TYPE_CHECKING to avoid circular imports
 from typing import TYPE_CHECKING, Tuple
 
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
+from matplotlib.backends.backend_qt5agg import \
+    FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
+from PyQt6.QtCore import QPoint, QRegularExpression, Qt, pyqtSignal, pyqtSlot
+from PyQt6.QtGui import (QColor, QFont, QIcon, QStandardItem,
+                         QStandardItemModel, QSyntaxHighlighter,
+                         QTextCharFormat, QTextCursor)
+from PyQt6.QtWidgets import *
+from PyQt6.QtWidgets import (QApplication, QComboBox, QGridLayout, QHBoxLayout,
+                             QLabel, QMainWindow, QPushButton, QStackedWidget,
+                             QVBoxLayout, QWidget)
+
+from ui.analysis.graphing.CellDensityPlot import CellDensityPlot
+from ui.analysis.graphing.DistributionViewer import DistributionViewer
+from ui.analysis.graphing.PieChartCanvas import PieChartCanvas
+from ui.analysis.graphing.SpatialHeatmapUpdated import HeatmapWindow
+from ui.analysis.graphing.UMAPPlot import UMAPVisualizer
+from ui.analysis.graphing.ZScoreHeatmapWindow import ZScoreHeatmapWindow
+
 if TYPE_CHECKING:
-    from app import Ui_MainWindow
+    from app import MainWindow
 
 
 class AnalysisTab(QWidget):
-    def __init__(self, pixmap_label, enc: "Ui_MainWindow"):
+    def __init__(self, pixmap_label, enc: "MainWindow"):
         super().__init__()
         self.enc = enc
         
@@ -266,7 +244,14 @@ class ROIAnalysisView(QWidget):
 
         # Update rubberband visibility
         if self.rubberbands:
-            self.rubberbands[self.current_view_index].set_filled(False)
+            if self.current_view_index < len(self.rubberbands):
+                self.rubberbands[self.current_view_index].set_filled(False)
+            else:
+                print("Warning: current_view_index out of bounds for rubberbands")
+                self.current_view_index = len(self.rubberbands) - 1
+                if self.current_view_index < 0:
+                    self.current_view_index = 0
+                    
 
         # Clear current content
         self.clear_scroll_content()
@@ -779,7 +764,7 @@ class ROIAnalysisView(QWidget):
 
 
 class FullImageAnalysisView(QWidget):
-    def __init__(self, pixmap_label, enc: "Ui_MainWindow"):
+    def __init__(self, pixmap_label, enc: "MainWindow"):
         super().__init__()
         self.enc = enc
         self.columns = []
@@ -788,51 +773,15 @@ class FullImageAnalysisView(QWidget):
         self.initUI()
 
     def initUI(self):
-        self.layout = QVBoxLayout(self)
-        
-        # Controls (Protein Selection)
-        self.multiComboBox = MultiComboBox()
-        self.multiComboBox.addItem("Select All")
-        self.multiComboBox.addItem("Deselect All")
-        
-        try:
-            data = self.enc.view_tab.get_df()
-            self.columns = data.columns[2:-1]
-            self.multiComboBox.addItems(list(self.columns))
-            for i in range(len(self.columns)):
-                self.multiComboBox.model().item(i).setCheckState(Qt.CheckState.Checked)
-        except:
-            pass # Data might not be loaded yet
-
-        apply_button = QPushButton("Apply")
-        apply_button.clicked.connect(
-            lambda: self.handleComboBoxChanged(self.multiComboBox.get_checked_items())
-        )
-        
-        combo_layout = QVBoxLayout()
-        combo_layout.addWidget(QLabel("Select Proteins:"))
-        combo_layout.addWidget(self.multiComboBox)
-        combo_layout.addWidget(apply_button)
-        self.layout.addLayout(combo_layout)
-
+        self.setLayout(QVBoxLayout())
         # Graph Area
         self.stacked_widget = QStackedWidget()
         
         self.icon_list = [
-            "Boxplot",
-            "Z-Scores Heatmap",
-            "Spatial Heatmap",
-            "Pi Chart",
-            "Histogram",
             "UMAP",
         ]
 
         self.icon_paths = [
-            "ui/graphing/icons/linechart.png",
-            "ui/graphing/icons/heatmap.png",
-            "ui/graphing/icons/heatmap.png",
-            "ui/graphing/icons/piechart.png",
-            "ui/graphing/icons/barchart.png",
             "ui/graphing/icons/scatter.png",
         ]
 
@@ -842,100 +791,30 @@ class FullImageAnalysisView(QWidget):
             icon_paths=self.icon_paths,
             result_details_layout=None,
         )
-        self.icon_detail_page = GraphInDetail(
-            navigate_back=self.show_icon_grid_page,
-            open_in_new_window=self.open_in_new_window,
-            parent=self,
-        )
 
         self.stacked_widget.addWidget(self.icon_list_page)
-        self.stacked_widget.addWidget(self.icon_detail_page)
         
-        self.layout.addWidget(self.stacked_widget)
+        self.layout().addWidget(self.stacked_widget)
         
         # Try to generate initial graphs if data exists
-        if len(self.columns) > 0:
-             self.generate_analysis_graphs()
-
-    def handleComboBoxChanged(self, checked_items):
-        if not checked_items:
-            QMessageBox.warning(self, "Alert", "Please select at least one protein.")
-            return
-        
-        # Check if data is available (it might have been loaded after init)
-        try:
-            data = self.enc.view_tab.get_df()
-            # If we didn't have columns before, we should update the combobox now?
-            # But the user just interacted with it, so we probably have items.
-            pass
-        except:
-             QMessageBox.warning(self, "Alert", "No data loaded yet.")
-             return
-
-        self.columns = checked_items
         self.generate_analysis_graphs()
-        self.show_icon_grid_page()
+
 
     def generate_analysis_graphs(self):
-        try:
-            data = self.enc.view_tab.get_df()
-        except:
-            return
-
         self.graphs = []
         
         # Create graphs similar to ROI view but for full data
-        box_plot = self.create_box_plot(data)
-        self.graphs.append(box_plot)
-
         graph_generators = [
-            lambda: ZScoreHeatmapWindow(self.get_z_heatmap_data(data)),
-            lambda: HeatmapWindow(data[self.columns]),
-            lambda: PieChartCanvas(data[self.columns]),
-            lambda: DistributionViewer(data[self.columns]),
-            lambda: UMAPVisualizer(self.get_z_heatmap_data(data)),
+            lambda: self.enc.view_tab.open_umap_analysis(),
         ]
 
         for generator in graph_generators:
             self.graphs.append(generator)
 
-    def create_box_plot(self, data):
-        """Create a box plot widget"""
-        result_widget = QWidget()
-        layout = QVBoxLayout(result_widget)
-        filtered_data = data.loc[:, self.columns]
-        filtered_data = filtered_data.melt(var_name="Protein", value_name="Expression")
-
-        fig, ax = plt.subplots(figsize=(12, 8))
-        sns.boxplot(
-            x="Expression",
-            y="Protein",
-            data=filtered_data,
-            ax=ax,
-            palette="Set2",
-            flierprops=dict(marker="o", markersize=4, alpha=0.3),
-        )
-
-        ax.set_xticklabels(ax.get_xticklabels(), rotation=45)
-        ax.set_title("Protein Expression Box Plot")
-        plt.subplots_adjust(bottom=0.3, left=0.4)
-
-        canvas = FigureCanvas(fig)
-        layout.addWidget(canvas)
-        result_widget.figure = fig
-
-        return result_widget
-
-    def get_z_heatmap_data(self, data):
-        t = list(self.columns)
-        t = ["Global X", "Global Y"] + t
-        t = pd.Series(t)
-        return data[t]
-
     def show_icon_detail_page(self, index):
         self.current_graph_index = index
-        self.icon_detail_page.set_icon_index(index)
-        self.stacked_widget.setCurrentWidget(self.icon_detail_page)
+        if index==0:
+            self.enc.view_tab.open_umap_analysis()
 
     def show_icon_grid_page(self):
         self.stacked_widget.setCurrentWidget(self.icon_list_page)
@@ -1088,15 +967,9 @@ class MultiComboBox(QComboBox):
             if self.model().item(i).checkState() == Qt.CheckState.Checked
         ]
 
-    from PyQt6.QtWidgets import (
-        QApplication,
-        QWidget,
-        QGridLayout,
-        QPushButton,
-        QLabel,
-        QVBoxLayout,
-        QStackedWidget,
-    )
+    from PyQt6.QtWidgets import (QApplication, QGridLayout, QLabel,
+                                 QPushButton, QStackedWidget, QVBoxLayout,
+                                 QWidget)
 
 
 class GraphInDetail(QWidget):

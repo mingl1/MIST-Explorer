@@ -559,8 +559,8 @@ class ImageOverlay(QWidget):
 
         resp = reply.exec()
 
-        for i in range(len(self.controls)):
-            self.delete_layer(0)
+        while len(self.controls) > 0:
+            self.delete_layer(self.controls[0].layout)
 
         self.enc.analysis_tab.view_index = 0
 
