@@ -88,6 +88,12 @@ class AnalysisTab(QWidget):
         if hasattr(self.enc, 'canvas'):
             self.enc.canvas.set_buttons_visible(is_roi_tab)
 
+    def hideEvent(self, event):
+        # Hide ROI buttons when leaving the Analysis tab
+        if hasattr(self.enc, 'canvas'):
+            self.enc.canvas.set_buttons_visible(False)
+        super().hideEvent(event)
+
     def showEvent(self, event):
         # Sync button visibility when tab is shown
         self.on_tab_changed(self.tabs.currentIndex())
