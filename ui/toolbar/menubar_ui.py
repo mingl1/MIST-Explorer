@@ -25,6 +25,12 @@ class MenuBarUI(QMenuBar):
         self.open_reference = open_reference
         self.menuOpen.addAction(open_reference)
 
+        self.menuFile.addSeparator()
+
+        self.open_project_folder = QAction("Open Project Folder", self.menuFile)
+        self.open_project_folder.triggered.connect(parent.open_project_folder)
+        self.menuFile.addAction(self.open_project_folder)
+
         if sys.platform == "win32":
             # Window controls
             self.controls_widget = QWidget()

@@ -3,30 +3,21 @@ Main application window module.
 """
 import argparse
 import sys
+from pathlib import Path
 from typing import Optional
 
 # pylint: disable=no-name-in-module
-from PyQt6.QtCore import QCoreApplication, QEvent, QMetaObject, QPoint, Qt
+from PyQt6.QtCore import QCoreApplication, QEvent, QMetaObject, QPoint, Qt, QTimer
 from PyQt6.QtGui import QImageReader, QKeySequence, QShortcut
-from PyQt6.QtWidgets import (QGroupBox, QHBoxLayout, QLabel, QMainWindow,
-                             QProgressBar, QPushButton, QScrollArea,
-                             QSizePolicy, QSplitter, QStackedWidget,
+from PyQt6.QtWidgets import (QFileDialog, QGroupBox, QHBoxLayout, QLabel,
+                             QMainWindow, QMenu, QProgressBar, QPushButton,
+                             QScrollArea, QSizePolicy, QSplitter, QStackedWidget,
                              QStatusBar, QTabWidget, QVBoxLayout, QWidget)
 
 from core import MetaData
-from ui.alignment.cell_intensity_ui import CellIntensityUI
-from ui.alignment.cell_layer_alignment_ui import CellLayerAlignmentUI
-from ui.alignment.register_ui import RegisterUI
-from ui.analysis.AnalysisTab import AnalysisTab
-from ui.canvas import ImageGraphicsViewUI, ReferenceGraphicsViewUI
-from ui.image_manager import ImageManager
-from ui.processing.crop_ui import CropUI
-from ui.processing.gaussian_blur import GaussianBlur
-from ui.processing.rotation_ui import RotateUI
-from ui.stardist.stardist_ui import StarDistUI
+from core.project_manager import ProjectManager
 from ui.toolbar.menubar_ui import MenuBarUI
 from ui.toolbar.toolbar_ui import ToolBarUI
-from ui.view_tab import ImageOverlay
 
 
 class MainWindow(QMainWindow):
@@ -35,11 +26,13 @@ class MainWindow(QMainWindow):
     """
 
     # pylint: disable=too-many-instance-attributes, attribute-defined-outside-init
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, project_path: Optional[Path] = None):
         QImageReader.setAllocationLimit(0)
         super().__init__(parent)
 
         self._init_attributes()
+
+        self.current_project_path = project_path
 
         if sys.platform == "win32":
             self.drag_pos = QPoint()
@@ -68,6 +61,9 @@ class MainWindow(QMainWindow):
         self._connect_signals()
         self._retranslate_ui()
         QMetaObject.connectSlotsByName(self)
+
+        if self.current_project_path:
+            self._load_project(self.current_project_path)
 
     def _init_attributes(self):
         """Initialize instance attributes."""
@@ -105,6 +101,7 @@ class MainWindow(QMainWindow):
         self.metadata: Optional[dict] = None
         self.splitter: Optional[QSplitter] = None
         self.last_sidebar_width: int = 400
+        self.current_project_path: Optional[Path] = None
 
     def _parse_arguments(self):
         """Parse command line arguments"""
@@ -130,6 +127,58 @@ class MainWindow(QMainWindow):
             self.showNormal()
         else:
             self.showMaximized()
+
+    def _load_project(self, project_path: Path):
+        """Load an existing project."""
+        from models.workspace import ImageMetadata
+        from core.canvas import ImageWrapper
+
+        self.current_project_path = project_path
+
+        metadata = ProjectManager.load_project(project_path)
+        if metadata is None:
+            return
+
+        self.setWindowTitle(f"MIST-Explorer - {metadata.name}")
+
+        if self.images_tab:
+            self.images_tab.set_project_path(project_path)
+
+        for image_meta in metadata.images:
+            image_data = {}
+            for channel_num in range(1, image_meta.channel_count + 1):
+                channel_name = f"Channel {channel_num}"
+                channel_array = ProjectManager.load_image(
+                    project_path, image_meta.uuid, channel_name
+                )
+                if channel_array is not None:
+                    contrast = image_meta.contrast_settings.get(channel_name, (0, 255))
+                    wrapper = ImageWrapper(
+                        channel_array,
+                        name=channel_name,
+                        cmap="gray",
+                    )
+                    wrapper.contrast_min = contrast[0]
+                    wrapper.contrast_max = contrast[1]
+                    image_data[channel_name] = wrapper
+
+            if image_data:
+                from uuid import UUID
+                image_uuid = UUID(image_meta.uuid)
+                self.images_tab.storage.add_data(
+                    str(image_uuid),
+                    {
+                        "name": image_meta.name,
+                        "data": image_data,
+                        "original_filename": image_meta.original_filename,
+                    }
+                )
+                self.images_tab.add_item(image_uuid)
+
+    def open_project_folder(self):
+        """Open the current project folder in file explorer."""
+        if self.current_project_path:
+            ProjectManager.open_project_folder(self.current_project_path)
 
     # pylint: disable=invalid-name
     def eventFilter(self, obj, event): # type: ignore
@@ -222,6 +271,8 @@ class MainWindow(QMainWindow):
 
     def _setup_canvas(self):
         """Setup the main canvas and reference view"""
+        from ui.canvas import ImageGraphicsViewUI, ReferenceGraphicsViewUI
+
         self.canvas = ImageGraphicsViewUI(self.centralWidget(), enc=self)
         self.canvas.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
@@ -233,6 +284,8 @@ class MainWindow(QMainWindow):
 
     def _setup_images_tab(self):
         """Setup the images workspace tab with an image manager and processing tabs."""
+        from ui.image_manager import ImageManager
+
         images_scroll = self._create_scroll_area()
 
         # The main widget for the "Images" tab, containing the manager and the processing tabs
@@ -241,6 +294,9 @@ class MainWindow(QMainWindow):
 
         # Image Manager (the file tree)
         self.images_tab = ImageManager(self.canvas)
+
+        if self.current_project_path:
+            self.images_tab.set_project_path(self.current_project_path)
 
         # Processing Tabs
         self.processing_tabs = QTabWidget(self.side_panel)
@@ -265,6 +321,10 @@ class MainWindow(QMainWindow):
 
     def _setup_transform_tab(self):
         """Sets up the 'Transform' tab with Crop, Rotate, and Flip tools."""
+        from ui.processing.crop_ui import CropUI
+        from ui.processing.rotation_ui import RotateUI
+        from ui.alignment.cell_layer_alignment_ui import CellLayerAlignmentUI
+
         transform_tab = QWidget()
         transform_layout = QVBoxLayout(transform_tab)
         transform_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -306,6 +366,8 @@ class MainWindow(QMainWindow):
 
     def _setup_alignment_tab(self):
         """Sets up the 'Alignment' tab with Register tools."""
+        from ui.alignment.register_ui import RegisterUI
+
         alignment_tab = QWidget()
         alignment_layout = QVBoxLayout(alignment_tab)
         alignment_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -317,6 +379,9 @@ class MainWindow(QMainWindow):
 
     def _setup_segmentation_tab(self):
         """Sets up the 'Segmentation' tab with Gaussian Blur and StarDist."""
+        from ui.processing.gaussian_blur import GaussianBlur
+        from ui.stardist.stardist_ui import StarDistUI
+
         segmentation_tab = QWidget()
         segmentation_layout = QVBoxLayout(segmentation_tab)
         segmentation_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -331,6 +396,8 @@ class MainWindow(QMainWindow):
 
     def _setup_quantification_tab(self):
         """Sets up the 'Quantification' tab with Cell Intensity."""
+        from ui.alignment.cell_intensity_ui import CellIntensityUI
+
         quantification_tab = QWidget()
         quantification_layout = QVBoxLayout(quantification_tab)
         quantification_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -343,6 +410,8 @@ class MainWindow(QMainWindow):
 
     def _setup_view_tab(self):
         """Setup the view tab"""
+        from ui.view_tab import ImageOverlay
+
         view_scroll = self._create_scroll_area()
 
         self.view_tab = ImageOverlay(self.canvas, enc=self)
@@ -356,6 +425,8 @@ class MainWindow(QMainWindow):
 
     def _setup_analysis_tab(self):
         """Setup the analysis tab"""
+        from ui.analysis.AnalysisTab import AnalysisTab
+
         analysis_scroll = self._create_scroll_area()
 
         self.analysis_tab = AnalysisTab(self.canvas, self)

@@ -22,7 +22,7 @@ import os
 import cv2
 from PIL import Image
 
-from core import Worker
+from core.Worker import Worker
 from ui.analysis.graphing.UMAPPlot import UMAPVisualizer
 
 Image.MAX_IMAGE_PIXELS = None
