@@ -2,20 +2,28 @@
 Expose main classes and functions for easy import from the core package
 """
 
-from .canvas import (ImageGraphicsView, ImageStorage, ImageWrapper,
-                     MemoryEfficientImageCache, MetaData,
-                     ReferenceGraphicsView)
+from .canvas import (
+    ImageGraphicsView,
+    ImageStorage,
+    ImageWrapper,
+    MemoryEfficientImageCache,
+    MetaData,
+    ReferenceGraphicsView,
+)
 from .cell_intensity import CellIntensity
-from .cell_layer_alignment import (CellLayerAligner,
-                                   calculate_alignment_metrics,
-                                   combine_transforms,
-                                   create_preprocessing_matrix,
-                                   extract_complete_transformation, morph_open,
-                                   register_combination)
+from .cell_layer_alignment import (
+    CellLayerAligner,
+    calculate_alignment_metrics,
+    combine_transforms,
+    create_preprocessing_matrix,
+    extract_complete_transformation,
+    morph_open,
+    register_combination,
+)
 from .registeration import Register, TileMap
 from .stardist import StarDist
 from .umap import UMAPHelper
-from .worker import Worker
+from .Worker import Worker
 
 __all__ = [
     "MemoryEfficientImageCache",
