@@ -195,3 +195,19 @@ class ProjectManager:
             subprocess.run(["xdg-open", str(project_path)])
         elif system == "Windows":
             subprocess.run(["explorer", str(project_path)])
+
+    @staticmethod
+    def get_folder_size(path: Path) -> int:
+        total = 0
+        for entry in path.rglob("*"):
+            if entry.is_file():
+                total += entry.stat().st_size
+        return total
+
+    @staticmethod
+    def format_size(size_bytes: int) -> str:
+        for unit in ["B", "KB", "MB", "GB", "TB"]:
+            if size_bytes < 1024:
+                return f"{size_bytes:.1f} {unit}"
+            size_bytes /= 1024
+        return f"{size_bytes:.1f} PB"

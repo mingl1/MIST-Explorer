@@ -66,9 +66,18 @@ class ProjectCard(QWidget):
         count_label.setFont(font)
         count_label.setStyleSheet("color: dimgray;")
 
+        size_bytes = ProjectManager.get_folder_size(self.metadata.path)
+        size_str = ProjectManager.format_size(size_bytes)
+        size_label = QLabel(size_str)
+        font = size_label.font()
+        font.setPointSize(10)
+        size_label.setFont(font)
+        size_label.setStyleSheet("color: dimgray;")
+
         info_layout.addWidget(name_label)
         info_layout.addWidget(date_label)
         info_layout.addWidget(count_label)
+        info_layout.addWidget(size_label)
         layout.addLayout(info_layout)
 
         layout.addStretch()
@@ -85,7 +94,7 @@ class ProjectCard(QWidget):
         delete_btn.clicked.connect(self._on_delete)
         layout.addWidget(delete_btn)
 
-        self.setFixedHeight(60)
+        self.setFixedHeight(80)
 
     def _on_open(self):
         self.launcher.set_selected_project(self.metadata.path)
@@ -182,7 +191,7 @@ class ProjectLauncher(QDialog):
             card = ProjectCard(project, self, self.recent_list)
             item = QListWidgetItem()
             item.setFlags(Qt.ItemFlag.NoItemFlags)
-            item.setSizeHint(QSize(0, 60))
+            item.setSizeHint(QSize(0, 80))
             self.recent_list.addItem(item)
             self.recent_list.setItemWidget(item, card)
 

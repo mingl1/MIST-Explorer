@@ -12,8 +12,14 @@ from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
-from core import (CellIntensity, ImageGraphicsView, ImageWrapper,
-                  ReferenceGraphicsView, Register, StarDist)
+from core import (
+    CellIntensity,
+    ImageGraphicsView,
+    ImageWrapper,
+    ReferenceGraphicsView,
+    Register,
+    StarDist,
+)
 from ui.alignment.alignment_preview_dialog import AlignmentPreviewDialog
 
 if typing.TYPE_CHECKING:
@@ -227,9 +233,9 @@ class Controller:
             filename = item["name"]
             if isinstance(layer, list):
                 # handles register.py
-                assert len(aligned_data["data"].keys()) == len(
-                    layer
-                ), "Aligned data keys do not match the expected layers"
+                assert len(aligned_data["data"].keys()) == len(layer), (
+                    "Aligned data keys do not match the expected layers"
+                )
                 data = {}
                 for layer_key in layer:
                     img_data = (

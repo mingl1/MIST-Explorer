@@ -103,12 +103,19 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.pixmap_item.hide()
         for pixmap in self.view_pixmaps:
             pixmap.show()
+        # Update the view transform to properly fit the view_pixmaps
+        if self.view_pixmaps:
+            self._center_image()
 
     def show_images_tab_image(self):
         """Show the images tab image."""
         self.pixmap_item.show()
         for pixmap in self.view_pixmaps:
             pixmap.hide()
+        
+        # Also hide rubberbands when switching to Extract tab
+        for rubber_band in self.rubber_bands:
+            rubber_band.hide()
 
     def get_scene(self):
         """Get the scene."""
