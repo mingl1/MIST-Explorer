@@ -14,7 +14,14 @@ if sys.stdout is None:
     sys.stdout = io.StringIO()
 if sys.stderr is None:
     sys.stderr = io.StringIO()
-import pyi_splash
+try:
+    import pyi_splash
+except ImportError:
+    class PyiSplashMock:
+        @staticmethod
+        def close():
+            pass
+    pyi_splash = PyiSplashMock()
 
 
 class LoadingDialog(QDialog):
@@ -48,7 +55,10 @@ if __name__ == "__main__":
 
     loading_dialog = LoadingDialog()
     loading_dialog.show()
-    pyi_splash.close()
+    try:
+        pyi_splash.close()
+    except Exception:
+        pass
     __app.processEvents()
 
     loading_dialog.update_progress(5, "Initializing...")
