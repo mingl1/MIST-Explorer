@@ -30,7 +30,7 @@ Our application is a powerful and intuitive tool designed for researchers and sc
    ```
 2. Clone and setup:
    ```
-   git clone https://github.com/yourusername/protein_visualization_app.git
+   git clone https://github.com/MIST-Explorer/MIST-Explorer.git
    cd MIST-Explorer
    uv sync
    ```
