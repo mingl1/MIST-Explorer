@@ -12,8 +12,14 @@ from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
-from core import (CellIntensity, ImageGraphicsView, ImageWrapper,
-                  ReferenceGraphicsView, Register, StarDist)
+from core import (
+    CellIntensity,
+    ImageGraphicsView,
+    ImageWrapper,
+    ReferenceGraphicsView,
+    Register,
+    StarDist,
+)
 from ui.alignment.alignment_preview_dialog import AlignmentPreviewDialog
 
 if typing.TYPE_CHECKING:
@@ -227,9 +233,9 @@ class Controller:
             filename = item["name"]
             if isinstance(layer, list):
                 # handles register.py
-                assert len(aligned_data["data"].keys()) == len(
-                    layer
-                ), "Aligned data keys do not match the expected layers"
+                assert len(aligned_data["data"].keys()) == len(layer), (
+                    "Aligned data keys do not match the expected layers"
+                )
                 data = {}
                 for layer_key in layer:
                     img_data = (
@@ -298,6 +304,12 @@ class Controller:
         """Handles the tab change."""
         self.need_canvas_change(index)
         self.prev_tab_index = index
+
+        # Update ROI button visibility based on tab
+        # Show on View (1) and Analyze (2) tabs, hide on Extract (0)
+        if hasattr(self.view, 'canvas'):
+            should_show_buttons = index in (1, 2)
+            self.view.canvas.set_buttons_visible(should_show_buttons)
 
     def update_small_view_visibility(self, *args):
         """Updates the visibility of the small view (reference view)."""
@@ -574,10 +586,6 @@ class SignalConnectionManager:
         )
         self.c.view.images_tab.image_tree_view.stardist_label.connect(
             self.c.model_cell_intensity.load_stardist_labels_from_storage
-        )
-
-        self.c.view.cell_intensity_groupbox.bead_data.clicked.connect(
-            self.c.view.cell_intensity_groupbox.load_bead_data
         )
 
         self.c.view.cell_intensity_groupbox.emitBeadData.connect(

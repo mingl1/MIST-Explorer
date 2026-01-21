@@ -3,26 +3,21 @@ Image Manager module.
 """
 import os
 import uuid
-from uuid import UUID
+from pathlib import Path
 from typing import Optional
+from uuid import UUID
 
 import numpy as np
 import tifffile  # pylint: disable=import-error
-
 # pylint: disable=no-name-in-module
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QActionGroup
-from PyQt6.QtWidgets import (
-    QFileDialog,
-    QMenu,
-    QMessageBox,
-    QTreeView,
-    QVBoxLayout,
-    QWidget,
-)
+from PyQt6.QtWidgets import (QFileDialog, QMenu, QMessageBox, QTreeView,
+                             QVBoxLayout, QWidget)
 
 from core import ImageGraphicsView, ImageStorage, StarDist
 from core.canvas import ReferenceGraphicsView
+from core.project_manager import ProjectManager
 from models.image_list_model import ImageTreeItem, ImageTreeModel
 
 
@@ -50,6 +45,14 @@ class ImageManager(QWidget):
         self.model_canvas: Optional[ImageGraphicsView] = None
         self.model_stardist: Optional[StarDist] = None
         self.model_reference_canvas: Optional[ReferenceGraphicsView] = None
+        self.current_project_path: Optional[Path] = None
+
+        # Connect deletion signal to backend cleanup
+        self.image_tree_view.item_deleted.connect(self._handle_item_deletion)
+
+    def set_project_path(self, project_path: Path):
+        """Set the current project path for auto-saving."""
+        self.current_project_path = project_path
 
     def set_model_canvas(self, model):
         """Set the model canvas."""
@@ -81,6 +84,36 @@ class ImageManager(QWidget):
                 channel_item = ImageTreeItem(item_uuid, channel=channel, useItemName=False)
                 main_item.appendRow(channel_item)
         self.root_node.appendRow(main_item)
+
+        if self.current_project_path:
+            self._save_image_to_project(item_uuid, item)
+
+    def _save_image_to_project(self, item_uuid, item):
+        """Save image data to the project folder."""
+        if item is None:
+            return
+
+        item_data = item.get("data", {})
+        if not item_data:
+            return
+
+        image_name = item.get("name", f"Image_{item_uuid}")
+        channel_count = len(item_data)
+        original_filename = item.get("original_filename", "")
+
+        contrast_settings = {}
+        for channel_name, wrapper in item_data.items():
+            contrast_settings[channel_name] = (wrapper.contrast_min, wrapper.contrast_max)
+
+        ProjectManager.save_image(
+            project_path=self.current_project_path,
+            image_uuid=str(item_uuid),
+            channel_data=item_data,
+            image_name=image_name,
+            channel_count=channel_count,
+            original_filename=original_filename,
+            contrast_settings=contrast_settings,
+        )
 
     def set_channel_icon(self, item_uuid, channel):
         """Set the icon for the channel item"""
@@ -122,6 +155,15 @@ class ImageManager(QWidget):
         """Add data to storage."""
         print(f"adding {item_uuid} to storage")
         self.storage.add_data(item_uuid, obj)
+
+    def _handle_item_deletion(self, item_uuid: UUID):
+        """Handle backend cleanup when an item is deleted."""
+        # Remove from in-memory storage
+        self.storage.remove_data(item_uuid)
+
+        # Remove from project files and metadata if project is open
+        if self.current_project_path:
+            ProjectManager.delete_image(self.current_project_path, str(item_uuid))
 
 
 class ImageTreeWidget(QTreeView):
@@ -198,7 +240,7 @@ class ImageTreeWidget(QTreeView):
         """Handle context menu event."""
         menu = QMenu(self)
         item = self.indexAt(event.pos())
-        if item:
+        if item and item.isValid():
             _, item_uuid = self._name_and_uuid_from_item(item)
             channel = int(self._get_channel_from_item(item))
             is_leaf = self._is_leaf(item)
@@ -324,7 +366,11 @@ class ImageTreeWidget(QTreeView):
             name = item.text()
         else:
             name = item.data(Qt.ItemDataRole.WhatsThisRole)
-        item_uuid = uuid.UUID(item.data(Qt.ItemDataRole.UserRole))
+        user_role_data = item.data(Qt.ItemDataRole.UserRole)
+        if isinstance(user_role_data, uuid.UUID):
+            item_uuid = user_role_data
+        else:
+            item_uuid = uuid.UUID(user_role_data)
         if not item_uuid:
             raise ValueError("Item does not have a valid UUID.")
 

@@ -104,11 +104,28 @@ class ImageGraphicsViewUI(QGraphicsView):
         for pixmap in self.view_pixmaps:
             pixmap.show()
 
+        # Update the view transform to properly fit the view_pixmaps
+        if self.view_pixmaps:
+            self._center_image()
+
+        # Show rubberbands when in view/analyze tabs (after centering to ensure correct z-order)
+        for rubber_band in self.rubber_bands:
+            rubber_band.show()
+            rubber_band.raise_()  # Bring to front
+
+        # Force viewport update to ensure rubberbands are painted
+        if self.viewport():
+            self.viewport().update()
+
     def show_images_tab_image(self):
         """Show the images tab image."""
         self.pixmap_item.show()
         for pixmap in self.view_pixmaps:
             pixmap.hide()
+
+        # Also hide rubberbands when switching to Extract tab
+        for rubber_band in self.rubber_bands:
+            rubber_band.hide()
 
     def get_scene(self):
         """Get the scene."""
@@ -345,11 +362,11 @@ class ImageGraphicsViewUI(QGraphicsView):
             self.view_pixmaps.append(new_layer)
             self.get_scene().addItem(new_layer)
             self._center_view_tab_image(layer_idx)
-            self.set_buttons_visible(True)
+            # Button visibility is now controlled by tab changes
         else:
             print(f"layer {layer_idx}")
             print(f"pixmap shape {pixmap.shape}")
-            self.set_buttons_visible(False)
+            # Button visibility is now controlled by tab changes
             if pixmap.shape == (0,):
                 removed_item = self.view_pixmaps.pop(layer_idx)
                 self.get_scene().removeItem(removed_item)

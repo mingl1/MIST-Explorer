@@ -2,11 +2,10 @@
 
 import copy
 import gc
-import os
 import threading
 import typing
-import xml.etree.ElementTree as ET
 from collections import deque
+
 # Standard library imports
 from queue import Queue
 from typing import Dict, Optional, OrderedDict, Union
@@ -17,25 +16,41 @@ import numpy as np
 import tifffile as tiff
 from cv2 import LUT
 from matplotlib import colormaps
+
 # Third-party imports
 from matplotlib.colors import Colormap
 from PIL import Image
+
 # PyQt6 imports
 from PyQt6.QtCore import QSize, Qt, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import (QCursor, QDragEnterEvent, QDragMoveEvent, QDropEvent,
-                         QPixmap)
-from PyQt6.QtWidgets import (QDialog, QGraphicsPixmapItem, QGraphicsScene,
-                             QGraphicsView, QHBoxLayout, QPushButton,
-                             QTableWidget, QTableWidgetItem, QVBoxLayout,
-                             QWidget)
+from PyQt6.QtGui import QCursor, QDragEnterEvent, QDragMoveEvent, QDropEvent, QPixmap
+from PyQt6.QtWidgets import (
+    QDialog,
+    QGraphicsPixmapItem,
+    QGraphicsScene,
+    QGraphicsView,
+    QHBoxLayout,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 from pystackreg.util import to_uint16
 from skimage.color import label2rgb as sk_label2rgb
 
+from core.image_utils import (
+    adjustContrast,
+    auto_contrast_helper,
+    create_lut,
+    numpy_to_qimage,
+    scale_adjust,
+    to_pixmap,
+)
+
 # Local/project imports
 from core.metadata_utils import parse_metadata
-from core.worker import Worker
-from core.image_utils import (adjustContrast, auto_contrast_helper, create_lut,
-                   numpy_to_qimage, scale_adjust, to_pixmap)
+from core.Worker import Worker
 
 if typing.TYPE_CHECKING:
     from controller import Controller
@@ -102,8 +117,7 @@ class MemoryEfficientImageCache:
                     for other_uuid_cache in self.cache.values():
                         for other_channel_cache in other_uuid_cache.values():
                             if other_channel_cache:
-                                _, old_data = other_channel_cache.popitem(
-                                    last=False)
+                                _, old_data = other_channel_cache.popitem(last=False)
                                 self.current_size_bytes -= old_data.nbytes
                                 del old_data
                                 evicted = True
@@ -362,7 +376,7 @@ class BaseGraphicsView(QWidget):
         self.queue_lock = threading.Lock()
         self.caching_queue = Queue()
         self.memory_cache = MemoryEfficientImageCache()
-        
+
         self._caching_worker = None
 
     def set_uuid(self, uuid):
@@ -438,14 +452,10 @@ class BaseGraphicsView(QWidget):
             self.file_queue.append(file_name)
         if file_name.endswith((".tiff", ".tif")):
             return self._process_tiff_image(
-                file_name,
-                adjust_contrast,
-                subsample_for_emit,
-                max_display_size)
-        else:
-            return self._process_single_image(
-                file_name, subsample_for_emit
+                file_name, adjust_contrast, subsample_for_emit, max_display_size
             )
+        else:
+            return self._process_single_image(file_name, subsample_for_emit)
 
     def _process_tiff_image(
         self,
@@ -467,8 +477,7 @@ class BaseGraphicsView(QWidget):
         with self.queue_lock:
             for image, channel_num in self._read_tiff_pages(file_name):
                 channel_name = f"Channel {channel_num}"
-                image_adjusted = self._apply_contrast_adjustment(
-                    image, adjust_contrast)
+                image_adjusted = self._apply_contrast_adjustment(image, adjust_contrast)
                 working_channels[channel_name] = ImageWrapper(
                     image_adjusted, channel_name
                 )
@@ -478,7 +487,8 @@ class BaseGraphicsView(QWidget):
                 # print("here 3")
                 for channel_name, image_adjusted in working_channels.items():
                     display_image = self._prepare_display_image(
-                        image_adjusted.data, subsample_for_emit, max_display_size)
+                        image_adjusted.data, subsample_for_emit, max_display_size
+                    )
                     emit_data[channel_name] = display_image
                     if channel_name == "Channel 1":
                         channel_one_image = display_image
@@ -545,9 +555,9 @@ class BaseGraphicsView(QWidget):
                 data, target_channel, subsample_for_emit, max_display_size
             )
             if as_new_image:
-                assert (
-                    new_image_name is not None
-                ), "Image name must be provided for new image"
+                assert new_image_name is not None, (
+                    "Image name must be provided for new image"
+                )
                 self._add_to_manager(new_image_name, self.working_channels)
 
             return ret
@@ -596,8 +606,8 @@ class BaseGraphicsView(QWidget):
 
         # Process remaining channels in background if there are any
         remaining_channels = {
-            k: v for k,
-            v in self.working_channels.items() if k != target_channel}
+            k: v for k, v in self.working_channels.items() if k != target_channel
+        }
 
         if remaining_channels:
             self._schedule_caching_task(remaining_channels, self.uuid)
@@ -612,16 +622,14 @@ class BaseGraphicsView(QWidget):
         for channel_name, image_wrapper in remaining_channels.items():
             try:
                 cache_key = contrast_key_from_wrapper(image_wrapper)
-                if self.memory_cache.get(
-                        uuid, channel_name, cache_key) is not None:
+                if self.memory_cache.get(uuid, channel_name, cache_key) is not None:
                     continue
                 contrasted = self.apply_contrast(
                     image_wrapper.contrast_min,
                     image_wrapper.contrast_max,
                     image_wrapper.data,
                 )
-                self.memory_cache.put(
-                    uuid, channel_name, cache_key, contrasted)
+                self.memory_cache.put(uuid, channel_name, cache_key, contrasted)
             except Exception as e:
                 print(f"Error processing {channel_name} in background: {e}")
                 continue
@@ -631,11 +639,9 @@ class BaseGraphicsView(QWidget):
     def _schedule_caching_task(self, channels, uuid):
         """Add a caching task to the queue and start a worker if not running."""
         self.caching_queue.put((channels, uuid))
-        if not (self._caching_worker is not None
-                and self._caching_worker.isRunning()):
+        if not (self._caching_worker is not None and self._caching_worker.isRunning()):
             self._caching_worker = Worker(self._process_caching_queue)
-            self._caching_worker.finished.connect(
-                self._on_caching_worker_finished)
+            self._caching_worker.finished.connect(self._on_caching_worker_finished)
             self._caching_worker.error.connect(
                 lambda e: print(f"Caching worker error: {e}")
             )
@@ -655,8 +661,7 @@ class BaseGraphicsView(QWidget):
         """Called when a caching worker finishes. Starts a new one if queue is not empty."""
         if not self.caching_queue.empty():
             self._caching_worker = Worker(self._process_caching_queue)
-            self._caching_worker.finished.connect(
-                self._on_caching_worker_finished)
+            self._caching_worker.finished.connect(self._on_caching_worker_finished)
             self._caching_worker.error.connect(
                 lambda e: print(f"Caching worker error: {e}")
             )
@@ -711,10 +716,8 @@ class BaseGraphicsView(QWidget):
         return image
 
     def _store_channel_data(
-            self,
-            channel_name: str,
-            image_wrapper: ImageWrapper,
-            replace_image_wrapper=True) -> None:
+        self, channel_name: str, image_wrapper: ImageWrapper, replace_image_wrapper=True
+    ) -> None:
         """Store channel data in full resolution containers."""
         self.working_channels[channel_name] = image_wrapper.copy()
         self.reset_working_channels[channel_name] = image_wrapper.copy()
@@ -734,22 +737,18 @@ class BaseGraphicsView(QWidget):
                 raise ValueError(
                     "If subsample_for_emit, max_display_size must be specified."
                 )
-            subsampled = self._subsample_for_display(
-                image_data, max_display_size)
+            subsampled = self._subsample_for_display(image_data, max_display_size)
             # print(f"  Original: {image_data.shape}, Subsampled: {subsampled.shape}")
             image_data = subsampled
         image_data = scale_adjust(image_data)
         return image_data
 
     def _handle_single_image_display(
-            self,
-            image_data: np.ndarray,
-            subsample_for_emit: bool,
-            max_display_size: int) -> np.ndarray:
+        self, image_data: np.ndarray, subsample_for_emit: bool, max_display_size: int
+    ) -> np.ndarray:
         """Handle single image display emission."""
         if subsample_for_emit and image_data.size > max_display_size * max_display_size:
-            subsampled = self._subsample_for_display(
-                image_data, max_display_size)
+            subsampled = self._subsample_for_display(image_data, max_display_size)
             self.image_signal.emit(subsampled, True)
 
             return subsampled
@@ -764,17 +763,15 @@ class BaseGraphicsView(QWidget):
         print(self.working_channels.keys())
 
         self.working_channels = {
-            k: self.working_channels[k] for k in sorted(
-                self.working_channels.keys())}
+            k: self.working_channels[k] for k in sorted(self.working_channels.keys())
+        }
         print(self.working_channels.keys())
         if emit_data:
             if subsample_for_emit:
                 # Create wrappers for subsampled data
                 display_wrappers = {
-                    name: ImageWrapper(
-                        data,
-                        name) for name,
-                    data in emit_data.items()}
+                    name: ImageWrapper(data, name) for name, data in emit_data.items()
+                }
                 # self.np_channels.update(display_wrappers)
                 self.image_signal.emit(display_wrappers, True)
             else:
@@ -801,14 +798,9 @@ class BaseGraphicsView(QWidget):
     def _update_progress(self, channel_num: int, total_channels) -> None:
         """Update processing progress."""
         progress = 10 + int(channel_num / total_channels * 70)
-        self.update_progress.emit(
-            progress, f"Processing Channel {channel_num}")
+        self.update_progress.emit(progress, f"Processing Channel {channel_num}")
 
-    def _add_to_manager(
-            self,
-            file_name: str,
-            image_channels,
-            metadata=None) -> None:
+    def _add_to_manager(self, file_name: str, image_channels, metadata=None) -> None:
         """Finalize processing with cleanup and emissions."""
         # self._clear_caches()
         self.update_progress.emit(100, "Image Loaded")
@@ -848,8 +840,7 @@ class ReferenceGraphicsView(BaseGraphicsView):
 
     def dropEvent(self, event: QDropEvent):  # type: ignore
         if self._accept_if_valid(event):
-            for url in event.mimeData().urls(
-            ):  # type: ignore ;_accept_if_valid ensures mimeData is not None
+            for url in event.mimeData().urls():  # type: ignore ;_accept_if_valid ensures mimeData is not None
                 file_path = url.toLocalFile()
                 if file_path:
                     self.add_to_canvas(file_path)
@@ -870,8 +861,8 @@ class ReferenceGraphicsView(BaseGraphicsView):
         self.reference_worker.start()
         self.reference_worker.signal.connect(self.set_pixmap)
         self.reference_worker.finished.connect(self.reference_worker.quit)
-        self.reference_worker.finished.connect(
-            self.reference_worker.deleteLater)
+        self.reference_worker.finished.connect(self.reference_worker.deleteLater)
+
     def set_uuid(self, uuid):
         """Set UUID for the reference image."""
         self.uuid = uuid
@@ -966,11 +957,9 @@ class ImageGraphicsView(BaseGraphicsView):
         # Check cache first
         cached_image = None
         if use_cache:
-            cached_image = self.memory_cache.get(
-                self.uuid, channel_num, cache_key)
+            cached_image = self.memory_cache.get(self.uuid, channel_num, cache_key)
         if cached_image is not None:
-            assert isinstance(
-                cached_image, np.ndarray), "Cached image must be ndarray"
+            assert isinstance(cached_image, np.ndarray), "Cached image must be ndarray"
             print(f"Using cached image for {channel_num}")
             contrasted_image = cached_image
         else:
@@ -1037,13 +1026,7 @@ class ImageGraphicsView(BaseGraphicsView):
         else:
             lut = self.lut_cache[cmap_text]  # Reuse the cached LaUT
 
-        return np.clip(
-            label2rgb(
-                scale_adjust(image),
-                lut),
-            0,
-            254,
-            dtype=np.uint8)
+        return np.clip(label2rgb(scale_adjust(image), lut), 0, 254, dtype=np.uint8)
 
     def update_image(
         self,
@@ -1131,8 +1114,7 @@ class ImageGraphicsView(BaseGraphicsView):
         # str is filepath
         self.image_worker = None
         if isinstance(i, str):
-            assert self.storage.get_data(
-                i) is None, "Convert str to UUID instance"
+            assert self.storage.get_data(i) is None, "Convert str to UUID instance"
             if not as_new_image:
                 raise ValueError(
                     "Cannot replace canvas with a filename, UUID replace not supported yet."
@@ -1266,8 +1248,8 @@ class ImageGraphicsView(BaseGraphicsView):
 
         # Process remaining channels in background if there are any
         remaining_channels = {
-            k: v for k,
-            v in self.working_channels.items() if k != target_channel}
+            k: v for k, v in self.working_channels.items() if k != target_channel
+        }
 
         if remaining_channels:
             self._schedule_caching_task(remaining_channels, self.uuid)
@@ -1310,8 +1292,7 @@ class ImageGraphicsView(BaseGraphicsView):
             rotation_matrix[0, 2] += (updated_w / 2) - center[0]
             rotation_matrix[1, 2] += (updated_h / 2) - center[1]
 
-            rotated_arr = cv2.warpAffine(
-                arr, rotation_matrix, (updated_w, updated_h))
+            rotated_arr = cv2.warpAffine(arr, rotation_matrix, (updated_w, updated_h))
             new_ch = channels[channel_num].copy()
             new_ch.data = rotated_arr
             result[channel_num] = new_ch
@@ -1336,8 +1317,7 @@ class ImageGraphicsView(BaseGraphicsView):
             self.rotation_worker.signal.connect(self.on_rotation_completed)
             self.rotation_worker.error.connect(self.on_error)
             self.rotation_worker.finished.connect(self.rotation_worker.quit)
-            self.rotation_worker.finished.connect(
-                self.rotation_worker.deleteLater)
+            self.rotation_worker.finished.connect(self.rotation_worker.deleteLater)
             self.rotation_worker.start()
 
     def same_uuid(self, other_uuid):
@@ -1351,10 +1331,10 @@ class ImageGraphicsView(BaseGraphicsView):
             for channel_name, wrapper in result.items():
                 if "Channel" in channel_name:
                     self.storage.update_data(
-                        result_uuid, channel_name, wrapper, emitter=self.update_sidebar)
+                        result_uuid, channel_name, wrapper, emitter=self.update_sidebar
+                    )
             if self.same_uuid(result_uuid):
-                self.working_channels = self.storage.get_data(result_uuid)[
-                    "data"]
+                self.working_channels = self.storage.get_data(result_uuid)["data"]
                 self.image_wrapper = self.working_channels.get(
                     f"Channel {self.current_channel + 1}",
                     ImageWrapper(np.array([]), ""),
@@ -1394,8 +1374,7 @@ class ImageGraphicsView(BaseGraphicsView):
         else:
             img = scale_adjust(self.image_wrapper.data)
 
-        vmin, vmax = auto_contrast_helper(
-            img, lower, upper, zero_eps, min_span)
+        vmin, vmax = auto_contrast_helper(img, lower, upper, zero_eps, min_span)
 
         self.update_contrast((int(round(vmin)), int(round(vmax))))
 
@@ -1407,8 +1386,7 @@ class ImageGraphicsView(BaseGraphicsView):
             # cancel previous worker if still running
             self.blur_worker.terminate()
             self.blur_worker.wait()
-        self.blur_worker = Worker(
-            self.blur_layer_task, blur_percentage, confirm)
+        self.blur_worker = Worker(self.blur_layer_task, blur_percentage, confirm)
         # self.blur_worker.signal.connect() # result is rotated_channels
         self.blur_worker.error.connect(self.on_error)
         self.blur_worker.finished.connect(self.blur_worker.quit)
@@ -1426,23 +1404,20 @@ class ImageGraphicsView(BaseGraphicsView):
 
         if not confirm:
             # blur_percentage = self._blur_percentage
-            layer_to_blur = copy.deepcopy(
-                self.working_channels[self._blur_layer].data)
+            layer_to_blur = copy.deepcopy(self.working_channels[self._blur_layer].data)
             # layer_to_blur = scale_adjust(layer_to_blur)
             blurred_mask = cv2.GaussianBlur(layer_to_blur, (101, 101), 0)
             blurred_mask_adjusted = (blurred_mask * blur_percentage).astype(
                 layer_to_blur.dtype
             )
-            self.corrected_layer = cv2.subtract(
-                layer_to_blur, blurred_mask_adjusted)
+            self.corrected_layer = cv2.subtract(layer_to_blur, blurred_mask_adjusted)
 
             self.corrected_layer = np.clip(
                 self.corrected_layer, 0, np.iinfo(layer_to_blur.dtype).max
             )
             self.update_image(
-                self.image_wrapper.cmap,
-                self.corrected_layer,
-                cache_result=False)
+                self.image_wrapper.cmap, self.corrected_layer, cache_result=False
+            )
 
         if (
             confirm
@@ -1472,14 +1447,12 @@ class ImageGraphicsView(BaseGraphicsView):
         right = min(self.image_wrapper.data.shape[1], image_rect.right())
         bottom = min(self.image_wrapper.data.shape[0], image_rect.bottom())
         cropped_array = self.image_wrapper.data[
-            top: bottom + 1, left: right + 1
+            top : bottom + 1, left : right + 1
         ]  # this is the current image. if layered then its the current channel
 
         cropped_array_copy = cropped_array.copy()
 
-        contrast = (
-            self.image_wrapper.contrast_min,
-            self.image_wrapper.contrast_max)
+        contrast = (self.image_wrapper.contrast_min, self.image_wrapper.contrast_max)
 
         crop_dialog = ImageDialog(
             self, cropped_array_copy, contrast, self.image_wrapper.cmap
@@ -1494,7 +1467,7 @@ class ImageGraphicsView(BaseGraphicsView):
             channels = {}
             for channel_name, wrapper in self.working_channels.items():
                 arr = wrapper.data
-                cropped_array = arr[top: bottom + 1, left: right + 1].copy()
+                cropped_array = arr[top : bottom + 1, left : right + 1].copy()
                 wrapper_copy = ImageWrapper(
                     cropped_array, name=channel_name, cmap=wrapper.cmap
                 )
@@ -1516,10 +1489,8 @@ class ImageGraphicsView(BaseGraphicsView):
             if "Channel" in channel_name:
                 wrapper.data = cv2.flip(wrapper.data, 1)
                 self.storage.update_data(
-                    self.uuid,
-                    channel_name,
-                    wrapper,
-                    emitter=self.update_sidebar)
+                    self.uuid, channel_name, wrapper, emitter=self.update_sidebar
+                )
         self.image_wrapper = self.working_channels.get(
             f"Channel {self.current_channel + 1}", ImageWrapper(np.array([]), "")
         )
@@ -1535,10 +1506,8 @@ class ImageGraphicsView(BaseGraphicsView):
             if "Channel" in channel_name:
                 wrapper.data = cv2.flip(wrapper.data, 0)
                 self.storage.update_data(
-                    self.uuid,
-                    channel_name,
-                    wrapper,
-                    emitter=self.update_sidebar)
+                    self.uuid, channel_name, wrapper, emitter=self.update_sidebar
+                )
         self.image_wrapper = self.working_channels.get(
             f"Channel {self.current_channel + 1}", ImageWrapper(np.array([]), "")
         )
@@ -1642,9 +1611,8 @@ class ImageDialog(QDialog):
             self.cropped_image = scale_adjust(self.cropped_image)
 
         image = self.apply_contrast(
-            self.cropped_image,
-            self.contrast[0],
-            self.contrast[1])
+            self.cropped_image, self.contrast[0], self.contrast[1]
+        )
         self.pix = QPixmap(numpy_to_qimage(image))
         self.cropped_pixmap_item = QGraphicsPixmapItem(self.pix)
         scene = self.image_view.scene()
@@ -1688,7 +1656,7 @@ class ImageDialog(QDialog):
 
     def create_lut(self, new_min, new_max):
         lut = np.zeros(256, dtype=np.uint8)  # uint8 for display
-        lut[new_min: new_max + 1] = np.linspace(
+        lut[new_min : new_max + 1] = np.linspace(
             start=0,
             stop=255,
             num=(new_max - new_min + 1),
@@ -1696,7 +1664,7 @@ class ImageDialog(QDialog):
             dtype=np.uint8,
         )
         lut[:new_min] = 0  # clip between 0 and 255
-        lut[new_max + 1:] = 255
+        lut[new_max + 1 :] = 255
 
         return lut
 
@@ -1713,9 +1681,9 @@ def generate_lut(cmap: str):
     label_range = np.linspace(0, 1, 256)
 
     temp = color_map(label_range)
-    temp = temp[:,2::-1]  # drop alpha channel and convert to bgr
+    temp = temp[:, 2::-1]  # drop alpha channel and convert to bgr
     uint8_temp = np.uint8(temp * 256)
-    result = uint8_temp.reshape(256, 1, 3) 
+    result = uint8_temp.reshape(256, 1, 3)
     return result
 
 
@@ -1728,7 +1696,5 @@ def label2rgb(labels, lut):
         # Ensure labels is 2D before merging
     if len(labels.shape) > 2:
         labels = labels[:, :, 0]  # Take first channel if multi-channel
-    result = cv2.LUT(cv2.merge((labels, labels, labels)),
-                    lut)   # gray to color
+    result = cv2.LUT(cv2.merge((labels, labels, labels)), lut)  # gray to color
     return result
-

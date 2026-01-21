@@ -87,6 +87,7 @@ class CellIntensityUI(QWidget):
         # bead data
         self.bead_data_layout = QHBoxLayout()
         self.bead_data = QPushButton(self.cell_intensity_groupbox)
+        self.bead_data.clicked.connect(self.load_bead_data)
         self.bead_data_label = QLabel()
         self.bead_data_layout.addWidget(self.bead_data)
         self.bead_data_layout.addWidget(self.bead_data_label)
@@ -133,7 +134,7 @@ class CellIntensityUI(QWidget):
 
         self.main_layout.addWidget(self.components_widget)
 
-        if containing_layout:
+        if containing_layout is not None:
             containing_layout.addWidget(self.cell_intensity_groupbox)
 
         self._retranslate_ui()
