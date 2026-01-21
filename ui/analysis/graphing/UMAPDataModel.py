@@ -39,13 +39,18 @@ class DataModel:
         return self.all_features
 
     def reprocess_data(self, normalization, features):
-        """
-        Rebuilds the AnnData object from scratch using specific features and normalization.
-        This is a 'destructive' update (resets PCA/UMAP).
-        """
-        logger.info(
-            f"Reprocessing data: Norm={normalization}, Features={len(features)}"
+        logger.info("=== START reprocess_data ===")
+        logger.info(f"Step 1: Filter columns")
+        cols_to_use = (
+            ["Cell ID"] + features if "Cell ID" in self.raw_df.columns else features
         )
+        subset_df = self.raw_df[cols_to_use].copy()
+        
+        logger.info(f"Step 2: Remove NaNs")
+        mask = ~subset_df.isna().any(axis=1)
+        clean_df = subset_df.loc[mask].reset_index(drop=True)
+        
+        logger.info(f"Step 3: Create data array - shape: {clean_df.shape}")
 
         self.normalization_method = normalization
         self.selected_features = features

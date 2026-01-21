@@ -4,23 +4,16 @@ Image Manager module.
 import os
 import uuid
 from pathlib import Path
-from uuid import UUID
 from typing import Optional
+from uuid import UUID
 
 import numpy as np
 import tifffile  # pylint: disable=import-error
-
 # pylint: disable=no-name-in-module
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QActionGroup
-from PyQt6.QtWidgets import (
-    QFileDialog,
-    QMenu,
-    QMessageBox,
-    QTreeView,
-    QVBoxLayout,
-    QWidget,
-)
+from PyQt6.QtWidgets import (QFileDialog, QMenu, QMessageBox, QTreeView,
+                             QVBoxLayout, QWidget)
 
 from core import ImageGraphicsView, ImageStorage, StarDist
 from core.canvas import ReferenceGraphicsView
@@ -235,7 +228,7 @@ class ImageTreeWidget(QTreeView):
         """Handle context menu event."""
         menu = QMenu(self)
         item = self.indexAt(event.pos())
-        if item:
+        if item and item.isValid():
             _, item_uuid = self._name_and_uuid_from_item(item)
             channel = int(self._get_channel_from_item(item))
             is_leaf = self._is_leaf(item)
