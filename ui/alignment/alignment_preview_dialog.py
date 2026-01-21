@@ -232,12 +232,22 @@ class AlignmentPreviewDialog(QDialog):
         scale_layout.addWidget(self.scale_button)
         scale_group.setLayout(scale_layout)
 
+        flip_group = QGroupBox("Flip")
+        flip_layout = QHBoxLayout()
+        self.flip_horizontal_btn = QPushButton("Flip Horizontal")
+        self.flip_vertical_btn = QPushButton("Flip Vertical")
+        flip_layout.addWidget(self.flip_horizontal_btn)
+        flip_layout.addWidget(self.flip_vertical_btn)
+        flip_group.setLayout(flip_layout)
+
         self.apply_trans_button.clicked.connect(self.apply_manual_translation)
         # self.dx_input.returnPressed.connect(self.apply_manual_translation)
         # self.dy_input.returnPressed.connect(self.apply_manual_translation)
         self.rotate_button.clicked.connect(self.apply_rotation)
         self.scale_button.clicked.connect(self.apply_scale)
         # self.rotation_input.returnPressed.connect(self.apply_rotation)
+        self.flip_horizontal_btn.clicked.connect(self.apply_flip_horizontal)
+        self.flip_vertical_btn.clicked.connect(self.apply_flip_vertical)
 
         self.reset_button = QPushButton("Reset Transformations")
         self.reset_button.clicked.connect(self.reset_zoom)
@@ -245,6 +255,7 @@ class AlignmentPreviewDialog(QDialog):
         self.control_layout.addWidget(trans_group)
         self.control_layout.addWidget(rot_group)
         self.control_layout.addWidget(scale_group)
+        self.control_layout.addWidget(flip_group)
         self.control_layout.addStretch()
         self.control_layout.addWidget(self.reset_button)
         self._setup_confirm_cancel_buttons()
@@ -350,6 +361,34 @@ class AlignmentPreviewDialog(QDialog):
             QMessageBox.warning(
                 self, "Invalid Input", "Please enter a valid scale factor."
             )
+
+    def apply_flip_horizontal(self):
+        """Apply horizontal flip to the moving image."""
+        self.transformations[-1].append("flip_h")
+
+        transform = self.image_view.moving_item.transform()
+        center = self.image_view.moving_item.boundingRect().center()
+        t = QTransform()
+        t.translate(center.x(), center.y())
+        t.scale(-1, 1)  # Flip horizontal
+        t.translate(-center.x(), -center.y())
+
+        self.image_view.moving_item.setTransform(transform * t)
+        self.update_offset_label()
+
+    def apply_flip_vertical(self):
+        """Apply vertical flip to the moving image."""
+        self.transformations[-1].append("flip_v")
+
+        transform = self.image_view.moving_item.transform()
+        center = self.image_view.moving_item.boundingRect().center()
+        t = QTransform()
+        t.translate(center.x(), center.y())
+        t.scale(1, -1)  # Flip vertical
+        t.translate(-center.x(), -center.y())
+
+        self.image_view.moving_item.setTransform(transform * t)
+        self.update_offset_label()
 
     def move_aligned_image(self, dx, dy):
         self.offset_x += dx
