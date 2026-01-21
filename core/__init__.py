@@ -6,27 +6,18 @@ import sys
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .canvas import (
-        ImageGraphicsView,
-        ImageStorage,
-        ImageWrapper,
-        MemoryEfficientImageCache,
-        MetaData,
-        ReferenceGraphicsView,
-    )
+    from .canvas import (ImageGraphicsView, ImageStorage, ImageWrapper,
+                         MemoryEfficientImageCache, MetaData,
+                         ReferenceGraphicsView)
     from .cell_intensity import CellIntensity
-    from .cell_layer_alignment import (
-        CellLayerAligner,
-        calculate_alignment_metrics,
-        combine_transforms,
-        create_preprocessing_matrix,
-        extract_complete_transformation,
-        morph_open,
-        register_combination,
-    )
+    from .cell_layer_alignment import (CellLayerAligner,
+                                       calculate_alignment_metrics,
+                                       combine_transforms,
+                                       create_preprocessing_matrix,
+                                       extract_complete_transformation,
+                                       morph_open, register_combination)
     from .registeration import Register, TileMap
     from .stardist import StarDist
-    from .umap import UMAPHelper
     from .Worker import Worker
 
 _LAZY_IMPORTS = {
@@ -48,7 +39,6 @@ _LAZY_IMPORTS = {
     "TileMap": ("core.registeration", "TileMap"),
     "Worker": ("core.Worker", "Worker"),
     "StarDist": ("core.stardist", "StarDist"),
-    "UMAPHelper": ("core.umap", "UMAPHelper"),
 }
 
 __all__ = [
@@ -70,7 +60,6 @@ __all__ = [
     "TileMap",
     "Worker",
     "StarDist",
-    "UMAPHelper",
 ]
 
 

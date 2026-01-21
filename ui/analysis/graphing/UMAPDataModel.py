@@ -2,7 +2,6 @@ import logging
 
 import numpy as np
 import scanpy as sc
-from sklearn_ann.kneighbors.annoy import AnnoyTransformer
 
 # Setup logger for this module
 logger = logging.getLogger(__name__)
@@ -14,11 +13,11 @@ class DataModel:
             raise ValueError("No data provided")
 
         # Store the immutable raw data
-        self.raw_df = data
+        self.raw_df = clean_panel_df(data)
         self.normalization_method = normalization
 
         # Define available features from the raw data immediately
-        exclude_cols = ["Cell ID", "Global X", "Global Y"]
+        exclude_cols = ["Cell_ID", "Global_X", "Global_Y"]
         self.all_features = [
             col
             for col in self.raw_df.columns
@@ -32,7 +31,10 @@ class DataModel:
         self.hvg_rankings = None
 
         # Initial Build
-        self.reprocess_data(self.normalization_method, self.selected_features)
+        try:
+            self.reprocess_data(self.normalization_method, self.selected_features)
+        except Exception as e:
+            logger.error(f"Error during initial data processing: {e}")
 
     def get_all_features(self):
         """Returns list of all available columns from raw dataframe"""
@@ -42,7 +44,7 @@ class DataModel:
         logger.info("=== START reprocess_data ===")
         logger.info(f"Step 1: Filter columns")
         cols_to_use = (
-            ["Cell ID"] + features if "Cell ID" in self.raw_df.columns else features
+            ["Cell_ID"] + features if "Cell_ID" in self.raw_df.columns else features
         )
         subset_df = self.raw_df[cols_to_use].copy()
         
@@ -58,7 +60,7 @@ class DataModel:
         # 1. Filter Raw DF by Selected Features
         # Always include metadata like Cell ID
         cols_to_use = (
-            ["Cell ID"] + features if "Cell ID" in self.raw_df.columns else features
+            ["Cell_ID"] + features if "Cell_ID" in self.raw_df.columns else features
         )
         subset_df = self.raw_df[cols_to_use].copy()
 
@@ -67,8 +69,8 @@ class DataModel:
         clean_df = subset_df.loc[mask].reset_index(drop=True)
 
         # 3. Create AnnData
-        if "Cell ID" in clean_df.columns:
-            labels = clean_df["Cell ID"].values
+        if "Cell_ID" in clean_df.columns:
+            labels = clean_df["Cell_ID"].values
             data_values = clean_df[features].values.astype(np.float64)
         else:
             labels = np.arange(1, len(clean_df) + 1)
@@ -82,11 +84,17 @@ class DataModel:
 
         # 4. Standard Filtering
         sc.pp.filter_cells(self.adata, min_genes=1)
-        logger.info(f"Data range before uint16 conversion: min={self.adata.X.min()}, max={self.adata.X.max()}")
-        if self.adata.X.max() > 65535:
-            logger.warning(f"Data contains values > 65535, uint16 conversion will overflow!")
-        self.adata.layers["counts"] = self.adata.X.astype(np.uint16).copy()
+        xmin = float(self.adata.X.min())
+        xmax = float(self.adata.X.max())
+        logger.info(f"Data range before counts cast: min={xmin}, max={xmax}")
 
+        if xmin < 0:
+            logger.warning("Counts contain negatives; 'counts' layer should be non-negative.")
+        if xmax <= 65535 and xmin >= 0:
+            self.adata.layers["counts"] = self.adata.X.astype(np.uint16).copy()
+        else:
+            # safest: preserve exact integers for HVG
+            self.adata.layers["counts"] = self.adata.X.astype(np.uint32).copy()
         raw_adata = self.adata.copy()
         sc.pp.normalize_total(raw_adata)
         sc.pp.log1p(raw_adata)
@@ -139,25 +147,26 @@ class DataModel:
             logger.info("Z-normalization applied.")
 
     def _compute_hvg_and_pca(self):
-        """Computes Highly Variable Genes and initial PCA"""
-        # HVG Logic
-        assert isinstance(self.adata, sc.AnnData), "adata is not an AnnData instance"
-        sc.pp.pca(self.adata, random_state=0, svd_solver="auto")
-        try:
-            sc.pp.highly_variable_genes(
-                self.adata, flavor="seurat_v3", layer="counts", inplace=True
-            )
-        except Exception as e:
-            logger.warning(
-                f"Seurat v3 HVG failed, falling back to span=1.0. Error: {e}"
-            )
-            sc.pp.highly_variable_genes(
-                self.adata, flavor="seurat_v3", layer="counts", inplace=True, span=1.0
-            )
+        assert isinstance(self.adata, sc.AnnData)
 
-        # Save rankings for UI visualization
-        if "highly_variable_rank" in self.adata.var.columns:
-            self.hvg_rankings = self.adata.var["highly_variable_rank"].copy()
+        # PCA on all features
+        sc.pp.pca(self.adata, random_state=0, svd_solver="auto")
+
+        n_vars = self.adata.n_vars
+
+        # Mimic "all variables are highly variable"
+        self.adata.var["highly_variable"] = True
+
+        # Optional: fake dispersion fields (some UI code expects them)
+        self.adata.var["means"] = self.adata.X.mean(axis=0)
+        self.adata.var["variances"] = self.adata.X.var(axis=0)
+        # based on varriances
+        self.adata.var["highly_variable_rank"] = np.argsort(
+            -self.adata.var["variances"]
+        ).astype(np.int32) + 1  # 1-based ranking
+
+        self.hvg_rankings = self.adata.var["highly_variable_rank"].copy()
+
 
         # PCA
 
@@ -211,16 +220,16 @@ class DataModel:
         )
         assert isinstance(self.adata, sc.AnnData), "adata is not initialized"
 
-        # 1. Compute Neighbors (using AnnoyTransformer as originally requested)
+        # 1. Compute Neighbors (using AnnoyTransformer as originally requested) 
         sc.pp.neighbors(
             self.adata,
-            transformer=AnnoyTransformer(n_trees=50, n_neighbors=n_neighbors),  # type: ignore
             random_state=random_state,
             n_neighbors=n_neighbors,
             n_pcs=n_components,
+            metric="cosine",
             use_rep="X_pca",
         )
-
+        logger.info("Neighbors computed.")
         # 2. Run UMAP
         sc.tl.umap(
             self.adata,
@@ -228,8 +237,52 @@ class DataModel:
             random_state=random_state,
             maxiter=None,  # removed restriction as per original 'n_epochs=None' comment
         )
-
+        logger.info("UMAP embedding computed.")
         # 3. Initial Clustering
         adata, key = self.run_clustering_only(resolution)
+        logger.info("Leiden clustering computed.")
 
         return adata, key
+import re
+
+import numpy as np
+import pandas as pd
+
+
+def clean_panel_df(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+
+    # strip whitespace
+    df.columns = [c.strip() for c in df.columns]
+
+    # normalize names to avoid "IL 10" / "Granzyme B" weirdness in downstream lookups
+    # (optional, but makes life easier)
+    def norm(c: str) -> str:
+        c = c.strip()
+        c = re.sub(r"\s+", "_", c)  # spaces -> _
+        c = c.replace(".", "_")     # dots -> _
+        return c
+
+    df.rename(columns={c: norm(c) for c in df.columns}, inplace=True)
+
+    # ensure uniqueness if duplicates exist
+    if df.columns.duplicated().any():
+        counts = {}
+        new_cols = []
+        for c in df.columns:
+            if c not in counts:
+                counts[c] = 0
+                new_cols.append(c)
+            else:
+                counts[c] += 1
+                new_cols.append(f"{c}__{counts[c]}")
+        df.columns = new_cols
+
+    # coerce everything except Global coords / Cell ID
+    meta = {"Cell_ID", "Global_X", "Global_Y"}
+    feat_cols = [c for c in df.columns if c not in meta]
+
+    df[feat_cols] = df[feat_cols].apply(pd.to_numeric, errors="coerce")
+    df[feat_cols] = df[feat_cols].replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+    return df

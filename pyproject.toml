@@ -257,7 +257,6 @@ dependencies = [
     "simpleitk==2.5.2",
     "siphash24==1.7",
     "six==1.17.0",
-    "sklearn-ann==0.1.4",
     "sknw==0.15",
     "slicerator==1.1.0",
     "sniffio==1.3.1",
