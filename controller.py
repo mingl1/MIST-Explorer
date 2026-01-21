@@ -582,10 +582,6 @@ class SignalConnectionManager:
             self.c.model_cell_intensity.load_stardist_labels_from_storage
         )
 
-        self.c.view.cell_intensity_groupbox.bead_data.clicked.connect(
-            self.c.view.cell_intensity_groupbox.load_bead_data
-        )
-
         self.c.view.cell_intensity_groupbox.emitBeadData.connect(
             self.c.model_cell_intensity.set_bead_data
         )
