@@ -47,6 +47,9 @@ class ImageManager(QWidget):
         self.model_reference_canvas: Optional[ReferenceGraphicsView] = None
         self.current_project_path: Optional[Path] = None
 
+        # Connect deletion signal to backend cleanup
+        self.image_tree_view.item_deleted.connect(self._handle_item_deletion)
+
     def set_project_path(self, project_path: Path):
         """Set the current project path for auto-saving."""
         self.current_project_path = project_path
@@ -152,6 +155,15 @@ class ImageManager(QWidget):
         """Add data to storage."""
         print(f"adding {item_uuid} to storage")
         self.storage.add_data(item_uuid, obj)
+
+    def _handle_item_deletion(self, item_uuid: UUID):
+        """Handle backend cleanup when an item is deleted."""
+        # Remove from in-memory storage
+        self.storage.remove_data(item_uuid)
+
+        # Remove from project files and metadata if project is open
+        if self.current_project_path:
+            ProjectManager.delete_image(self.current_project_path, str(item_uuid))
 
 
 class ImageTreeWidget(QTreeView):

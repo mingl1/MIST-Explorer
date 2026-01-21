@@ -176,6 +176,29 @@ class ProjectManager:
                 ProjectManager._save_metadata(metadata)
 
     @staticmethod
+    def delete_image(project_path: Path, image_uuid: str) -> bool:
+        """Delete an image from the project (files and metadata)."""
+        import shutil
+
+        # Delete image files from disk
+        image_folder = project_path / "images" / image_uuid
+        if image_folder.exists():
+            shutil.rmtree(image_folder)
+
+        # Delete thumbnail
+        thumbnail_path = project_path / "thumbnails" / f"{image_uuid}.png"
+        if thumbnail_path.exists():
+            thumbnail_path.unlink()
+
+        # Update metadata
+        metadata = ProjectManager.load_metadata(project_path)
+        if metadata is not None:
+            metadata.remove_image(image_uuid)
+            ProjectManager._save_metadata(metadata)
+            return True
+        return False
+
+    @staticmethod
     def delete_project(project_path: Path) -> bool:
         import shutil
 
