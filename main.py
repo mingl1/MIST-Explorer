@@ -1,12 +1,11 @@
 """
 Main script for starting the MIST-Explorer application.
 """
-import os
-
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 import io
+import os
 import sys
 
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 from PyQt6.QtCore import QCoreApplication, Qt
 from PyQt6.QtWidgets import (QApplication, QDialog, QLabel, QProgressBar,
                              QVBoxLayout)
@@ -15,7 +14,7 @@ if sys.stdout is None:
     sys.stdout = io.StringIO()
 if sys.stderr is None:
     sys.stderr = io.StringIO()
-# import pyi_splash
+import pyi_splash
 
 
 class LoadingDialog(QDialog):
@@ -49,7 +48,7 @@ if __name__ == "__main__":
 
     loading_dialog = LoadingDialog()
     loading_dialog.show()
-    # pyi_splash.close()
+    pyi_splash.close()
     __app.processEvents()
 
     loading_dialog.update_progress(5, "Initializing...")
