@@ -512,6 +512,12 @@ class MainWindow(QMainWindow):
 
     def _connect_signals(self):
         """Connect remaining signals"""
+        # Connect cell intensity error signal to statusbar
+        if self.cell_intensity_groupbox:
+            self.cell_intensity_groupbox.errorSignal.connect(
+                lambda msg: self.statusbar.showMessage(msg, 5000)
+            )
+
         # Connect toolbar tab change signal
         # Start with Images tab
         self.stacked_widget.setCurrentIndex(0)
