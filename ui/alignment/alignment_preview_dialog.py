@@ -25,7 +25,6 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
-    QSlider,
     QVBoxLayout,
 )
 
@@ -57,6 +56,16 @@ class ZoomableImageView(QGraphicsView):
         self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
         self.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
 
+        # For shift+drag to move moving image
+        self._is_dragging_layer = False
+        self._drag_start_pos = None
+        self._parent_dialog = None
+
+        # Max zoom level (relative to original size)
+        self._max_zoom = 150.0
+        self._min_zoom = 0.1
+        self._current_zoom = 1.0
+
     def set_images(self, target_pixmap: QPixmap, moving_pixmap: QPixmap):
         self.target_item.setPixmap(target_pixmap)
         self.moving_item.setPixmap(moving_pixmap)
@@ -66,6 +75,7 @@ class ZoomableImageView(QGraphicsView):
         self.get_scene().setSceneRect(self.get_scene().itemsBoundingRect())
         self.fitInView(self.target_item, Qt.AspectRatioMode.KeepAspectRatio)
         self.centerOn(self.target_item)
+        self._current_zoom = 1.0
 
     def get_scene(self):
         s = self.scene()
@@ -85,7 +95,73 @@ class ZoomableImageView(QGraphicsView):
         else:
             zoom_factor = 1 / 1.15  # Zoom out
 
+        # Calculate new zoom level
+        new_zoom = self._current_zoom * zoom_factor
+
+        # Enforce max zoom limit
+        if new_zoom > self._max_zoom:
+            zoom_factor = self._max_zoom / self._current_zoom
+            new_zoom = self._max_zoom
+
+        # Enforce min zoom limit (0.1x)
+        if new_zoom < 0.1:
+            zoom_factor = 0.1 / self._current_zoom
+            new_zoom = 0.1
+
+        self._current_zoom = new_zoom
         self.scale(zoom_factor, zoom_factor)
+
+    def mousePressEvent(self, event):
+        """Handle mouse press events for shift+drag layer movement."""
+        if (
+            event.button() == Qt.MouseButton.LeftButton
+            and event.modifiers() == Qt.KeyboardModifier.ShiftModifier
+        ):
+            if self._parent_dialog and self._parent_dialog.can_edit:
+                self._is_dragging_layer = True
+                self._drag_start_pos = self.mapToScene(event.pos())
+                event.accept()
+                return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        """Handle mouse move events for shift+drag layer movement."""
+        if self._is_dragging_layer and self._drag_start_pos is not None:
+            current_pos = self.mapToScene(event.pos())
+            delta = current_pos - self._drag_start_pos
+
+            transform = self.moving_item.transform()
+
+            # Extract current translation and add delta
+            current_dx = transform.dx()
+            current_dy = transform.dy()
+
+            # Create new transform with updated translation, preserving rotation/scale
+            new_transform = QTransform(
+                transform.m11(),
+                transform.m12(),
+                transform.m21(),
+                transform.m22(),
+                current_dx + delta.x(),
+                current_dy + delta.y(),
+            )
+            self.moving_item.setTransform(new_transform)
+            if self._parent_dialog:
+                self._parent_dialog.update_offset_label()
+
+            self._drag_start_pos = current_pos
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        """Handle mouse release events for shift+drag layer movement."""
+        if event.button() == Qt.MouseButton.LeftButton and self._is_dragging_layer:
+            self._is_dragging_layer = False
+            self._drag_start_pos = None
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
 
 class AlignmentPreviewDialog(QDialog):
@@ -121,7 +197,7 @@ class AlignmentPreviewDialog(QDialog):
             self._on_contrast_checkbox_changed
         )
         instruction_text = (
-            "Arrow keys/Inputs: move, Mouse wheel: zoom, Drag: pan, Double-click: reset view"
+            "Arrow keys/Inputs: move, Shift+Drag: move layer, Mouse wheel: zoom, Drag: pan, Double-click: reset view"
             if self.can_edit
             else "Mouse wheel: zoom, Drag: pan, Double-click: reset view"
         )
@@ -151,6 +227,7 @@ class AlignmentPreviewDialog(QDialog):
 
         self.image_view = ZoomableImageView(self)
         self.image_view.setMinimumSize(800, 500)
+        self.image_view._parent_dialog = self
 
         self.control_layout = QHBoxLayout()
         self.button_layout = QHBoxLayout()
@@ -391,13 +468,27 @@ class AlignmentPreviewDialog(QDialog):
         self.update_offset_label()
 
     def move_aligned_image(self, dx, dy):
+        """Move the moving image by dx, dy pixels in screen coordinates."""
         self.offset_x += dx
         self.offset_y += dy
         self.transformations[-1][1].append((dx, dy))
 
         transform = self.image_view.moving_item.transform()
-        transform.translate(dx, dy)
-        self.image_view.moving_item.setTransform(transform)
+
+        # Extract current translation and add delta
+        current_dx = transform.dx()
+        current_dy = transform.dy()
+
+        # Create new transform with updated translation, preserving rotation/scale
+        new_transform = QTransform(
+            transform.m11(),
+            transform.m12(),
+            transform.m21(),
+            transform.m22(),
+            current_dx + dx,
+            current_dy + dy,
+        )
+        self.image_view.moving_item.setTransform(new_transform)
 
         self.update_offset_label()
 
