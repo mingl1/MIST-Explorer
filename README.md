@@ -3,24 +3,27 @@
 Our application is a powerful and intuitive tool designed for researchers and scientists in the field of single-cell proteomics. It allows users to load, visualize, and analyze protein distribution at the single-cell level. By providing a user-friendly interface, the app enables seamless exploration of protein expression data, helping to uncover insights into cellular functions, interactions, and heterogeneity.
 
 ## Key Features
-- **Basic Image Manipulation**: Efficiently crop, rotate, flip tiff images. 
-- **Multi-Channel Viewer**: Layer-by-layer visualization with independent opacity, contrast, and color controls
-- **Image Registration**: Multi-algorithm alignment (Optical Flow, SIFT/ORB, ITK B-spline) with sub to few-pixel accuracy
-- **Cell Segmentation**: StarDist neural network integration for accurate single-cell detection
-- **Single-Cell Analysis**: Extract protein expression levels with bead decoding and ROI-based statistics
-- **UMAP & Interactive Clustering**: Dimensionality reduction and Leiden clustering for cell type identification
-- **Interactive ROI Tools**: Rectangular and circular region selection for focused analysis
+
+- **Easy Viewer**: Easily import protein expression data of any size, and interactively explore detailed protein distributions within specific regions of interest at both single-cell and group levels.
+- **Alignment & Registration**: Align and register protein expression data across multiple layers/cycles within a few pixels of accuracy by using our registration pipeline.
+- **Microbead Decoding**: Decode aligned microbeads to determine protein readout from tissue sample in a computationally efficient way.
+- **Interactive Visualization**: View protein distribution and expression levels across individual cells with the view tab.
+- **Customizable Graphs**: Create customizable graphs to visualize protein expression trends over time, in different experimental conditions, or across cell types. (TBD, somewhat)
+- **Clustering & Classification**: Utilize clustering algorithms to group cells based on protein expression profiles for more targeted analysis.
 
 ## Advanced Analytics
-- **Statistical Analysis**: Distribution analysis, histograms, and IQR-based outlier detection
-- **Export Capabilities**: Save results and visualizations for external processing
+
+- **Statistical Analysis**: Perform basic statistical operations on protein expression data to detect significant differences.
+<!-- - **Machine Learning Integration**: Integrate machine learning models for advanced pattern recognition and prediction of protein interactions. -->
 
 ## Requirements
-- **Operating System**: Windows, macOS tested 
+
+- **Operating System**: Windows, macOS tested
 - **Minimum Hardware**: 8 GB RAM, 2 GHz Processor
 - **Dependencies**: Python (with libraries such as NumPy, Pandas, Matplotlib), JavaScript (for web-based interfaces), and cloud-based storage options (if applicable).
 
 ## Installation
+
 1. Install [uv](https://docs.astral.sh/uv/):
    ```
    curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -33,6 +36,7 @@ Our application is a powerful and intuitive tool designed for researchers and sc
    ```
 
 ## Usage
+
 ```
 uv run main.py
 ```
