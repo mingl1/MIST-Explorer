@@ -543,6 +543,7 @@ class ImageGraphicsViewUI(QGraphicsView):
                         self.rubber_band = RectLasso(self)
                 elif self.select == "rect":
                     self.rubber_band = RectLasso(self)
+                    self.rubber_band.roi_moved.connect(lambda: self.update_roi_from_lasso(self.rubber_band))
                     self.rubber_bands.append(self.rubber_band)
                     self.rubber_band_colors.append(self.rubber_band.color)
                     self.rubber_band.setGeometry(QRect(self.origin, QSize()))
@@ -550,6 +551,7 @@ class ImageGraphicsViewUI(QGraphicsView):
                 elif self.select == "circle":
                     self.center = QPoint(self.starting_x, self.starting_y)
                     self.rubber_band = CircleLasso(self)
+                    self.rubber_band.roi_moved.connect(lambda: self.update_roi_from_lasso(self.rubber_band))
                     self.rubber_bands.append(self.rubber_band)
                     self.rubber_band_colors.append(self.rubber_band.color)
                     self.rubber_band.setGeometry(QRect(self.origin, QSize()))
@@ -1051,3 +1053,45 @@ class ImageGraphicsViewUI(QGraphicsView):
         """Hide the pixel highlight"""
         if hasattr(self, "pixel_highlight") and self.pixel_highlight:
             self.pixel_highlight.hide()
+
+    def update_roi_from_lasso(self, rubberband):
+        """Update ROI region based on lasso position"""
+        if not rubberband or not self.pixmap_item:
+            return
+
+        # Get geometry in view coordinates
+        rect = rubberband.geometry()
+        top_left = rect.topLeft()
+        bottom_right = rect.bottomRight()
+
+        # Convert to scene coords
+        top_left_scene = self.mapToScene(top_left)
+        bottom_right_scene = self.mapToScene(bottom_right)
+
+        # Convert to image coords
+        image_top_left = self.pixmap_item.mapFromScene(top_left_scene)
+        image_bottom_right = self.pixmap_item.mapFromScene(bottom_right_scene)
+
+        # Determine shape type
+        shape_type = "rect"
+        if isinstance(rubberband, CircleLasso):
+            shape_type = "circle"
+            center_x = (image_top_left.x() + image_bottom_right.x()) / 2
+            center_y = (image_top_left.y() + image_bottom_right.y()) / 2
+            radius = (image_bottom_right.x() - image_top_left.x()) / 2
+            x2 = center_x + radius
+            y2 = center_y
+            region_coords = (center_x, center_y, x2, y2)
+        else:
+            shape_type = "rect"
+            region_coords = (
+                image_top_left.x(),
+                image_top_left.y(),
+                image_bottom_right.x(),
+                image_bottom_right.y(),
+            )
+
+        region = (shape_type, region_coords)
+        
+        # Call into analysis tab to update
+        self.enc.analysis_tab.update_roi_region(rubberband, region)
