@@ -305,6 +305,12 @@ class Controller:
         self.need_canvas_change(index)
         self.prev_tab_index = index
 
+        # Update ROI button visibility based on tab
+        # Show on View (1) and Analyze (2) tabs, hide on Extract (0)
+        if hasattr(self.view, 'canvas'):
+            should_show_buttons = index in (1, 2)
+            self.view.canvas.set_buttons_visible(should_show_buttons)
+
     def update_small_view_visibility(self, *args):
         """Updates the visibility of the small view (reference view)."""
         # args can be ignored (either index from tab change or pixmap from update_reference)

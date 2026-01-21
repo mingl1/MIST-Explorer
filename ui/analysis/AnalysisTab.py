@@ -83,20 +83,16 @@ class AnalysisTab(QWidget):
 
     def on_tab_changed(self, index):
         # Index 0 is ROI Analysis, 1 is Full Image
-        # Show canvas buttons only for ROI Analysis
-        is_roi_tab = (index == 0)
-        if hasattr(self.enc, 'canvas'):
-            self.enc.canvas.set_buttons_visible(is_roi_tab)
+        # Button visibility is now controlled by the main tab change handler
+        # This method is kept for potential future sub-tab specific logic
+        pass
 
     def hideEvent(self, event):
-        # Hide ROI buttons when leaving the Analysis tab
-        if hasattr(self.enc, 'canvas'):
-            self.enc.canvas.set_buttons_visible(False)
+        # Button visibility is now controlled by the main tab change handler
         super().hideEvent(event)
 
     def showEvent(self, event):
-        # Sync button visibility when tab is shown
-        self.on_tab_changed(self.tabs.currentIndex())
+        # Button visibility is now controlled by the main tab change handler
         super().showEvent(event)
 
 
