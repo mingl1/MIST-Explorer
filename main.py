@@ -1,14 +1,14 @@
 """
 Main script for starting the MIST-Explorer application.
 """
-
 import io
 import os
 import sys
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 from PyQt6.QtCore import QCoreApplication, Qt
-from PyQt6.QtWidgets import QApplication, QDialog, QLabel, QProgressBar, QVBoxLayout
+from PyQt6.QtWidgets import (QApplication, QDialog, QLabel, QProgressBar,
+                             QVBoxLayout)
 
 if sys.stdout is None:
     sys.stdout = io.StringIO()
