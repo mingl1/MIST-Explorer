@@ -48,16 +48,7 @@ matplotlib.use("QtAgg")
 
 # --- 1. Debugging Setup ---
 
-log_format = "%(asctime)s - %(levelname)s - %(message)s"
-logging.basicConfig(
-    level=logging.DEBUG,
-    format=log_format,
-    handlers=[logging.FileHandler("app_debug.log"), logging.StreamHandler(sys.stdout)],
-)
-
 logger = logging.getLogger("UMAP_App")
-
-logging.getLogger("matplotlib").setLevel(logging.WARNING)
 
 
 def excepthook(exc_type, exc_value, exc_tb):

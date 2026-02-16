@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPushButton,
     QSpinBox,
     QVBoxLayout,
@@ -30,6 +31,7 @@ class CellIntensityUI(QWidget):
     emitBeadData = pyqtSignal(np.ndarray)
     emitColorCodes = pyqtSignal(dict)
     generate_cell_data = pyqtSignal()
+    requestFilteredStats = pyqtSignal()
 
     def __init__(self, parent=None, containing_layout: typing.Optional[QVBoxLayout] = None):
         super().__init__(parent)
@@ -57,6 +59,7 @@ class CellIntensityUI(QWidget):
         self.run_button = None
         self.cancel_button = None
         self.save_button = None
+        self.filtered_stats_button = None
 
         self.setup_ui(parent, containing_layout)
 
@@ -131,6 +134,11 @@ class CellIntensityUI(QWidget):
         # save button
         self.save_button = QPushButton(self.cell_intensity_groupbox)
         self.cellintensity_components_vlayout.addWidget(self.save_button)
+
+        # filtered bead stats button
+        self.filtered_stats_button = QPushButton(self.cell_intensity_groupbox)
+        self.filtered_stats_button.clicked.connect(self._show_filtered_bead_stats)
+        self.cellintensity_components_vlayout.addWidget(self.filtered_stats_button)
 
         self.main_layout.addWidget(self.components_widget)
 
@@ -232,6 +240,20 @@ class CellIntensityUI(QWidget):
             except UnicodeDecodeError:
                 self.errorSignal.emit("Please select a valid file type")
 
+    def _show_filtered_bead_stats(self):
+        if self.bead_data_file is not None:
+            self.emitBeadData.emit(self.bead_data_file)
+            self.requestFilteredStats.emit()
+        else:
+            self.errorSignal.emit("Please load bead data first.")
+
+    def show_filtered_stats(self, percentage: float):
+        QMessageBox.information(
+            self,
+            "Filtered Bead Stats",
+            f"Filtered beads (cy0 >= 254) inside cell boundaries: {percentage:.2f}%",
+        )
+
     def _retranslate_ui(self):
         _translate = QCoreApplication.translate
         self.cell_intensity_groupbox.setTitle(
@@ -246,3 +268,4 @@ class CellIntensityUI(QWidget):
         self.run_button.setText(_translate("MainWindow", "Run"))
         self.save_button.setText(_translate("MainWindow", "Save"))
         self.cancel_button.setText(_translate("MainWindow", "Cancel"))
+        self.filtered_stats_button.setText(_translate("MainWindow", "Filtered Bead Stats"))

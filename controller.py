@@ -560,6 +560,9 @@ class SignalConnectionManager:
         self.c.view.register_groupbox.num_tiles.valueChanged.connect(
             self.c.model_register.set_num_tiles
         )
+        self.c.view.register_groupbox.ncc_threshold.valueChanged.connect(
+            lambda v: self.c.model_register.set_ncc_threshold(v / 100)
+        )
 
         # Execution
         self.c.view.register_groupbox.run_button.clicked.connect(
@@ -610,6 +613,12 @@ class SignalConnectionManager:
         self.c.model_cell_intensity.progress.connect(self.c.view.update_progress_bar)
         self.c.view.cell_intensity_groupbox.cancel_button.clicked.connect(
             self.c.model_cell_intensity.cancel
+        )
+        self.c.view.cell_intensity_groupbox.requestFilteredStats.connect(
+            self.c.model_cell_intensity.get_filtered_bead_count
+        )
+        self.c.model_cell_intensity.filtered_stats_ready[float].connect(
+            self.c.view.cell_intensity_groupbox.show_filtered_stats
         )
 
     def _setup_img_broadcast_conns(self):

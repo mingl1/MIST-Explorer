@@ -2,8 +2,13 @@
 Main script for starting the MIST-Explorer application.
 """
 import io
+import logging
 import os
 import sys
+
+logging.basicConfig(level=logging.WARNING)
+for _name in ("core", "ui", "controller", "UMAP_App", "MIST_UMAP"):
+    logging.getLogger(_name).setLevel(logging.DEBUG)
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 from PyQt6.QtCore import QCoreApplication, Qt

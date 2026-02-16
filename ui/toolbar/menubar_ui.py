@@ -31,6 +31,15 @@ class MenuBarUI(QMenuBar):
         self.open_project_folder.triggered.connect(parent.open_project_folder)
         self.menuFile.addAction(self.open_project_folder)
 
+        # View menu
+        menu_view = self.addMenu("&View")
+        assert menu_view is not None, "Menu 'View' could not be created"
+        self.menuView = menu_view
+
+        view_log_action = QAction("View Log", self.menuView)
+        view_log_action.triggered.connect(parent.show_log_dialog)
+        self.menuView.addAction(view_log_action)
+
         if sys.platform == "win32":
             # Window controls
             self.controls_widget = QWidget()

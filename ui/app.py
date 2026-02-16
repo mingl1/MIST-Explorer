@@ -102,6 +102,7 @@ class MainWindow(QMainWindow):
         self.splitter: Optional[QSplitter] = None
         self.last_sidebar_width: int = 400
         self.current_project_path: Optional[Path] = None
+        self.log_dialog = None
 
     def _parse_arguments(self):
         """Parse command line arguments"""
@@ -585,6 +586,15 @@ class MainWindow(QMainWindow):
             total = sum(current_sizes)
             target = getattr(self, "last_sidebar_width", 400)
             self.splitter.setSizes([target, total - target])
+
+    def show_log_dialog(self) -> None:
+        """Show the application log dialog."""
+        from ui.log_dialog import LogDialog
+
+        if self.log_dialog is None:
+            self.log_dialog = LogDialog(self)
+        self.log_dialog.show()
+        self.log_dialog.raise_()
 
     def get_metadata(self, metadata: dict):
         """Update metadata tab with new metadata"""

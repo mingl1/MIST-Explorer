@@ -8,8 +8,6 @@ from ui.analysis.graphing.UMAPDataModel import DataModel
 
 matplotlib.use("QtAgg")
 
-# Configure Logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("MIST_UMAP")
 
 

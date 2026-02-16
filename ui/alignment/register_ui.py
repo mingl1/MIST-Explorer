@@ -2,7 +2,7 @@ import os
 
 import numpy as np
 import pandas as pd
-from PyQt6.QtCore import QCoreApplication, QMetaObject, pyqtSignal
+from PyQt6.QtCore import QCoreApplication, QMetaObject, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSlider,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -90,6 +91,25 @@ class RegisterUI(QWidget):
         self.overlap_layout.addWidget(self.overlap)
         self.register_components_vlayout.addLayout(self.overlap_layout)
 
+        # NCC threshold
+        self.ncc_threshold_layout = QHBoxLayout()
+        self.ncc_threshold_label = QLabel(self.register_groupbox)
+        self.ncc_threshold_layout.addWidget(self.ncc_threshold_label)
+        self.ncc_threshold = QSlider(Qt.Orientation.Horizontal, self.register_groupbox)
+        self.ncc_threshold.setMinimum(85)
+        self.ncc_threshold.setMaximum(100)
+        self.ncc_threshold.setValue(85)
+        self.ncc_threshold.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.ncc_threshold.setTickInterval(10)
+        self.ncc_threshold_value_label = QLabel("0.85", self.register_groupbox)
+        self.ncc_threshold_value_label.setFixedWidth(30)
+        self.ncc_threshold.valueChanged.connect(
+            lambda v: self.ncc_threshold_value_label.setText(f"{v / 100:.2f}")
+        )
+        self.ncc_threshold_layout.addWidget(self.ncc_threshold)
+        self.ncc_threshold_layout.addWidget(self.ncc_threshold_value_label)
+        self.register_components_vlayout.addLayout(self.ncc_threshold_layout)
+
         # run button
         self.run_button = QPushButton(self.register_groupbox)
         self.register_components_vlayout.addWidget(self.run_button)
@@ -131,5 +151,6 @@ class RegisterUI(QWidget):
         self.max_size_label.setText(_translate("MainWindow", "Max Size"))
         self.num_tiles_label.setText(_translate("MainWindow", "Number of Tiles"))
         self.overlap_label.setText(_translate("MainWindow", "Overlap"))
+        self.ncc_threshold_label.setText(_translate("MainWindow", "NCC Threshold"))
         self.run_button.setText(_translate("MainWindow", "Run"))
         self.cancel_button.setText(_translate("MainWindow", "Cancel"))

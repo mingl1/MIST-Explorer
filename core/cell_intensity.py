@@ -15,6 +15,7 @@ from core.canvas import ImageStorage
 class CellIntensity(QThread):
     error_signal = pyqtSignal(str)
     progress = pyqtSignal(int, str)
+    filtered_stats_ready = pyqtSignal(float)
 
     def __init__(self):
         super().__init__()
@@ -108,10 +109,12 @@ class CellIntensity(QThread):
     def run(self):
 
         # need the aligned and segmented cell image, bead_data, and color_code
+        first_channel_num = None
 
         for channel, color_code in self.channel_to_color_code.items():
             self.color_code = color_code
-            channel = int(channel.split(" ")[-1]) - 1
+            channel_num = int(channel.split(" ")[-1])
+            channel = channel_num - 1
             print(f"generating channel {channel}")
             # this func expects channel to be zero-indexed integer.
             self.load_protein_signal_array_from_storage(None, channel)
@@ -397,14 +400,15 @@ class CellIntensity(QThread):
                 )
                 # and finally save everything
                 if self.df_cell_data is None:
-
+                    first_channel_num = channel_num
                     self.df_cell_data = pd.DataFrame(
                         save_this, columns=header
                     )  # --> use this to visualize
                 else:
                     curr_cell_data = pd.DataFrame(save_this, columns=header)
                     self.df_cell_data = self.df_cell_data.merge(
-                        curr_cell_data, on=["Global X", "Global Y"]
+                        curr_cell_data, on=["Global X", "Global Y"],
+                        suffixes=(f"_cy{first_channel_num}", f"_cy{channel_num}"),
                     )
         self.progress.emit(100, "Cell Data is Generated")
 
@@ -509,6 +513,26 @@ class CellIntensity(QThread):
                 stardist.data), np.min(
                 stardist.data))
         self.stardist_labels = stardist.data
+
+    def get_filtered_bead_count(self):
+        if self.bead_data is None or self.stardist_labels.size == 0:
+            self.error_signal.emit("Bead data or stardist labels not loaded.")
+            return
+        coords = self.bead_data[:, 0:2].astype(int)
+        x_limit, y_limit = self.stardist_labels.shape[1], self.stardist_labels.shape[0]
+        in_bounds = (coords[:, 0] < x_limit) & (coords[:, 1] < y_limit)
+        coords = coords[in_bounds]
+        bead_data_filtered = self.bead_data[in_bounds]
+        cell_ids = self.stardist_labels[coords[:, 1], coords[:, 0]]
+        in_cell = cell_ids > 0
+        total_in_cell = int(np.sum(in_cell))
+        if total_in_cell == 0:
+            self.filtered_stats_ready.emit(0.0)
+            return
+        cy0_values = bead_data_filtered[:, 2]
+        filtered_count = int(np.sum(in_cell & (cy0_values >= 254)))
+        percentage = (filtered_count / total_in_cell) * 100
+        self.filtered_stats_ready.emit(percentage)
 
     def set_bead_data(self, bead_data):
         if isinstance(bead_data, np.ndarray):
