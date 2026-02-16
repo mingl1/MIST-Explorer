@@ -7,17 +7,20 @@ from pathlib import Path
 from typing import Optional
 
 # pylint: disable=no-name-in-module
-from PyQt6.QtCore import QCoreApplication, QEvent, QMetaObject, QPoint, Qt, QTimer
-from PyQt6.QtGui import QImageReader, QKeySequence, QShortcut
+from PyQt6.QtCore import (QCoreApplication, QEvent, QMetaObject, QPoint, Qt,
+                          QTimer)
+from PyQt6.QtGui import QIcon, QImageReader, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (QFileDialog, QGroupBox, QHBoxLayout, QLabel,
                              QMainWindow, QMenu, QProgressBar, QPushButton,
-                             QScrollArea, QSizePolicy, QSplitter, QStackedWidget,
-                             QStatusBar, QTabWidget, QVBoxLayout, QWidget)
+                             QScrollArea, QSizePolicy, QSplitter,
+                             QStackedWidget, QStatusBar, QTabWidget,
+                             QVBoxLayout, QWidget)
 
 from core import MetaData
 from core.project_manager import ProjectManager
 from ui.toolbar.menubar_ui import MenuBarUI
 from ui.toolbar.toolbar_ui import ToolBarUI
+from utils import resource_path
 
 
 class MainWindow(QMainWindow):
@@ -119,6 +122,7 @@ class MainWindow(QMainWindow):
         """Setup main window properties"""
         if sys.platform == "win32":
             self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        self.setWindowIcon(QIcon(resource_path("assets/final_icon.png")))
         self.resize(1440, 1000)
         self.setMinimumSize(1200, 800)
 
@@ -131,8 +135,8 @@ class MainWindow(QMainWindow):
 
     def _load_project(self, project_path: Path):
         """Load an existing project."""
-        from models.workspace import ImageMetadata
         from core.canvas import ImageWrapper
+        from models.workspace import ImageMetadata
 
         self.current_project_path = project_path
 
@@ -322,9 +326,9 @@ class MainWindow(QMainWindow):
 
     def _setup_transform_tab(self):
         """Sets up the 'Transform' tab with Crop, Rotate, and Flip tools."""
+        from ui.alignment.cell_layer_alignment_ui import CellLayerAlignmentUI
         from ui.processing.crop_ui import CropUI
         from ui.processing.rotation_ui import RotateUI
-        from ui.alignment.cell_layer_alignment_ui import CellLayerAlignmentUI
 
         transform_tab = QWidget()
         transform_layout = QVBoxLayout(transform_tab)
