@@ -1,4 +1,8 @@
+import logging
 import os
+import traceback
+
+logger = logging.getLogger(__name__)
 
 import numpy as np
 import pandas as pd
@@ -229,9 +233,10 @@ class LayerDialog(QDialog):
         self.setLayout(my_layout)
 
     def get_selected_layer_index(self):
-        print([item.text() for item in self.layer_list.selectedItems()])
-        print([l["name"] for l in self.layers])
-        print(
+        logger.debug("selected items: %s", [item.text() for item in self.layer_list.selectedItems()])
+        logger.debug("layer names: %s", [l["name"] for l in self.layers])
+        logger.debug(
+            "selected layer index: %s",
             [l["name"] for l in self.layers].index(
                 [item.text() for item in self.layer_list.selectedItems()][0]
             )
@@ -243,7 +248,7 @@ class LayerDialog(QDialog):
                 [item.text() for item in self.layer_list.selectedItems()][0]
             )
 
-            print("selected index", selected_index)
+            logger.debug("selected index %s", selected_index)
             return selected_index
         return None
 
@@ -285,17 +290,17 @@ def adjust_contrast(image, min=5, max=100):
 
     image = scale_adjust(image)
     t1 = time.perf_counter()
-    print(f"Time for scale_adjust: {t1 - t0:.6f} sec")
+    logger.debug(f"Time for scale_adjust: {t1 - t0:.6f} sec")
 
     lut = create_lut(min, max)
     t2 = time.perf_counter()
-    print(f"Time for create_lut: {t2 - t1:.6f} sec")
+    logger.debug(f"Time for create_lut: {t2 - t1:.6f} sec")
 
     res = np.clip(cv2.LUT(image, lut), 0, 254, dtype=np.uint8)
     t3 = time.perf_counter()
-    print(f"Time for LUT application: {t3 - t2:.6f} sec")
+    logger.debug(f"Time for LUT application: {t3 - t2:.6f} sec")
 
-    print(f"Total adjust_contrast time: {t3 - t0:.6f} sec")
+    logger.debug(f"Total adjust_contrast time: {t3 - t0:.6f} sec")
     return res
 
 
@@ -498,7 +503,7 @@ class ImageOverlay(QWidget):
         self.layers = [{"name": name, "image": None} for name in protein_names]
 
         end = time.time()
-        print(f"Build time: {end - start:.2f} seconds")
+        logger.debug(f"Build time: {end - start:.2f} seconds")
         self.progress.emit(100, "Done")
 
         # Update UI
@@ -525,14 +530,22 @@ class ImageOverlay(QWidget):
             )
             return
 
-        # Prepare data for UMAP
-        # self.df has CellID as index. Reset it and rename to "Cell ID" as expected by DataModel
-        df_for_umap = self.df.reset_index().rename(columns={"CellID": "Cell ID"})
+        try:
+            # Prepare data for UMAP
+            # self.df has CellID as index. Reset it and rename to "Cell ID" as expected by DataModel
+            df_for_umap = self.df.reset_index().rename(columns={"CellID": "Cell ID"})
 
-        # Instantiate and show UMAP window
-        # We keep a reference to avoid garbage collection
-        self.umap_window = UMAPVisualizer(df_for_umap, self.reduced_cell_img)
-        self.umap_window.show()
+            # Instantiate and show UMAP window
+            # We keep a reference to avoid garbage collection
+            self.umap_window = UMAPVisualizer(df_for_umap, self.reduced_cell_img)
+            self.umap_window.show()
+        except Exception as e:
+            tb = traceback.format_exc()
+            logger.critical(f"Failed to open UMAP analysis:\n{tb}")
+            QMessageBox.critical(
+                self, "UMAP Error",
+                f"Failed to open UMAP analysis:\n\n{e}\n\nSee log for full traceback."
+            )
 
     # can probably be optimized by having just one array with all names and values, and then filtering out invisible ones
     # avoids looping through self.controls
@@ -783,11 +796,11 @@ class ImageOverlay(QWidget):
                 selected_index = dialog.get_selected_layer_index()
             except IndexError:
                 selected_index = 0
-            print("selected indexxxx is ", selected_index)
+            logger.debug("selected index is %s", selected_index)
             if selected_index is not None:
                 c = ControlsBox()
 
-                print("potential error", selected_index)
+                logger.warning("potential error %s", selected_index)
 
                 try:
                     if self.layers[selected_index]["image"] == None:
@@ -939,9 +952,9 @@ class ImageOverlay(QWidget):
                     contrast_slider.setValue((min_val, max_val))
                     self.update_contrast((min_val, max_val), idx)
                 else:
-                    print("Invalid contrast range!")
+                    logger.warning("Invalid contrast range!")
             except ValueError:
-                print("Enter valid integers for contrast.")
+                logger.warning("Enter valid integers for contrast.")
 
         apply_contrast_button.clicked.connect(apply_contrast_values)
 
@@ -1074,7 +1087,7 @@ class ImageOverlay(QWidget):
 
         # Exit if the user cancelled the dialog
         if not file_path:
-            print("Export cancelled.")
+            logger.info("Export cancelled.")
             return
 
         multi_channel_image = []
@@ -1123,24 +1136,24 @@ class ImageOverlay(QWidget):
 
         # 2. Save the result as a multi-channel TIFF
         if not multi_channel_image:
-            print("No images to save.")
+            logger.warning("No images to save.")
             return
 
         # multi_channel_image = np.array(multi_channel_image)
         try:
             # Stack the list of 2D images into a single 3D array (C, H, W)
             output_stack = np.stack(multi_channel_image, axis=0)
-            print(output_stack.shape)
+            logger.debug(output_stack.shape)
 
             # Save the stack to the selected file path
             tiff.imwrite(file_path, output_stack, imagej=True)
 
-            print(
+            logger.info(
                 f"Successfully exported {len(multi_channel_image)} channels to: {file_path}"
             )
 
         except Exception as e:
-            print(f"Error saving TIFF file: {e}")
+            logger.error(f"Error saving TIFF file: {e}")
             # Consider showing a QMessageBox to the user here for better UX
 
 

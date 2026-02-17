@@ -1,8 +1,12 @@
+import logging
+
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import plotly.io as pio
 import itertools
+
+logger = logging.getLogger(__name__)
 
 # in all odds, not going to work!
 
@@ -57,7 +61,7 @@ def plot():
             & (data["Global Y"] >= y1)
             & (data["Global Y"] <= y2)
         ]
-        print(f"Number of cells in the selected region: {len(filtered_data)}")
+        logger.info(f"Number of cells in the selected region: {len(filtered_data)}")
         return filtered_data
 
     # Function to calculate weighted centroids and average protein expression for each protein
@@ -76,11 +80,11 @@ def plot():
 
                 centroids[protein] = (avg_x, avg_y)
                 avg_expression[protein] = avg_protein_expression
-                print(
+                logger.info(
                     f"Protein {protein}: {len(protein_cells)} cells found, weighted centroid at ({avg_x}, {avg_y}), average expression: {avg_protein_expression:.2f}"
                 )
             else:
-                print(f"No cells express {protein} in this region.")
+                logger.info(f"No cells express {protein} in this region.")
         return centroids, avg_expression
 
     # Function to rescale node sizes based on average protein expression
@@ -127,9 +131,9 @@ def plot():
     node_sizes = rescale_sizes(avg_expression, min_size, max_size)
 
     # Print the centroids and average expressions
-    print("\nCentroids and average expression of proteins in the specified region:")
+    logger.info("Centroids and average expression of proteins in the specified region:")
     for protein, coord in centroids.items():
-        print(
+        logger.info(
             f"{protein}: {coord}, Avg Expression: {avg_expression[protein]:.2f}, Node Size: {node_sizes[protein]:.2f}"
         )
 

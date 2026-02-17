@@ -32,6 +32,7 @@ class Locale:
         "LBL_RES": "Resolution [{:.2f}]",
         "BTN_EXECUTE": "Run Analysis",
         "BTN_PROCESSING": "Calculating...",
+        "BTN_CANCEL": "Cancel",
         # --- Views ---
         "PLOT_NO_SIGNAL": "No data to display",
         "PLOT_PROJECTION": "Color by: {}",

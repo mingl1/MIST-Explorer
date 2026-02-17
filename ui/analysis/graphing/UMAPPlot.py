@@ -43,6 +43,7 @@ from PyQt6.QtWidgets import (
 from ui.analysis.graphing.UMAPDataModel import DataModel
 from ui.analysis.graphing.UMAPLocale import Locale
 from ui.analysis.graphing.UMAPWorkers import AnalysisWorker, ClusteringWorker
+from utils import resource_path
 
 matplotlib.use("QtAgg")
 
@@ -116,10 +117,11 @@ class ThemeManager:
     def get_stylesheet(cls):
         c = cls.get_current()
         
-        # Resolve icon path
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        icons_dir = os.path.join(base_dir, "icons").replace("\\", "/")
-        
+        # Resolve icon path (use resource_path for PyInstaller compatibility)
+        icons_dir = resource_path(
+            os.path.join("ui", "analysis", "graphing", "icons")
+        ).replace("\\", "/")
+
         # Select icon based on theme
         tick_icon = "checkbox_tick_dark.svg" if cls.current_mode == "DARK" else "checkbox_tick_light.svg"
         tick_path = f"{icons_dir}/{tick_icon}"
@@ -504,24 +506,21 @@ class UMAPControls(QWidget):
             item = self.feature_list.item(i)
             item.setHidden(text.lower() not in item.text().lower())
 
-    def select_all(self, emit=True):
+    def select_all(self, _=None):
         self.feature_list.blockSignals(True)
         for i in range(self.feature_list.count()):
             item = self.feature_list.item(i)
             if not item.isHidden():
                 item.setCheckState(Qt.CheckState.Checked)
         self.feature_list.blockSignals(False)
-        if emit:
-            self.emit_apply_data()
+        self.emit_apply_data()
 
-    def select_none(self, emit=True):
-        if emit:
-            self.feature_list.blockSignals(True)
+    def select_none(self, _=None):
+        self.feature_list.blockSignals(True)
         for i in range(self.feature_list.count()):
             self.feature_list.item(i).setCheckState(Qt.CheckState.Unchecked)
-        if emit:
-            self.feature_list.blockSignals(False)
-            self.emit_apply_data()
+        self.feature_list.blockSignals(False)
+        self.emit_apply_data()
 
     def get_selected_features(self):
         selected = []
@@ -1190,60 +1189,75 @@ class UMAPVisualizer(QMainWindow):
         self.resize(1300, 900)
         self.setStyleSheet(ThemeManager.get_stylesheet())
         self.is_running_full_pipeline = False
+        self.analysis_worker = None
+        self.clustering_worker = None
 
         try:
             self.model = DataModel(df, normalization="RC")
             self.segmentation = segmentation
         except Exception as e:
-            QMessageBox.critical(self, "SYSTEM_FAILURE", f"INIT_ERR: {e}")
+            logger.critical(f"DataModel init failed: {e}", exc_info=True)
+            QMessageBox.critical(
+                self, "UMAP Error",
+                f"Failed to initialize data model:\n\n{e}\n\nSee log for full traceback."
+            )
             return
 
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        main_layout = QVBoxLayout(central_widget)
+        try:
+            central_widget = QWidget()
+            self.setCentralWidget(central_widget)
+            main_layout = QVBoxLayout(central_widget)
 
-        # === TOOLBAR & THEME TOGGLE ===
-        top_bar = QHBoxLayout()
-        header = QLabel(Locale.get("HEADER"))
-        header.setObjectName("h1")
-        top_bar.addWidget(header)
-        top_bar.addStretch()
+            # === TOOLBAR & THEME TOGGLE ===
+            top_bar = QHBoxLayout()
+            header = QLabel(Locale.get("HEADER"))
+            header.setObjectName("h1")
+            top_bar.addWidget(header)
+            top_bar.addStretch()
 
-        self.btn_theme = QPushButton(Locale.get("THEME_BTN"))
-        self.btn_theme.setFixedWidth(200)
-        self.btn_theme.clicked.connect(self.toggle_theme)
-        top_bar.addWidget(self.btn_theme)
+            self.btn_theme = QPushButton(Locale.get("THEME_BTN"))
+            self.btn_theme.setFixedWidth(200)
+            self.btn_theme.clicked.connect(self.toggle_theme)
+            top_bar.addWidget(self.btn_theme)
 
-        main_layout.addLayout(top_bar)
+            main_layout.addLayout(top_bar)
 
-        # === TABS ===
-        self.tabs = QTabWidget()
-        main_layout.addWidget(self.tabs)
+            # === TABS ===
+            self.tabs = QTabWidget()
+            main_layout.addWidget(self.tabs)
 
-        self.umap_tab = QWidget()
-        self.setup_umap_tab()
-        self.tabs.addTab(self.umap_tab, Locale.get("TAB_UMAP"))
+            self.umap_tab = QWidget()
+            self.setup_umap_tab()
+            self.tabs.addTab(self.umap_tab, Locale.get("TAB_UMAP"))
 
-        self.seg_view = SegmentationView(segmentation)
-        self.seg_view.cluster_state_changed.connect(self.trigger_heatmap_update)
-        self.tabs.addTab(self.seg_view, Locale.get("TAB_SEG"))
+            self.seg_view = SegmentationView(segmentation)
+            self.seg_view.cluster_state_changed.connect(self.trigger_heatmap_update)
+            self.tabs.addTab(self.seg_view, Locale.get("TAB_SEG"))
 
-        self.heatmap_view = HeatmapView()
-        self.tabs.addTab(self.heatmap_view, Locale.get("TAB_HEATMAP"))
+            self.heatmap_view = HeatmapView()
+            self.tabs.addTab(self.heatmap_view, Locale.get("TAB_HEATMAP"))
 
-        self.ranked_genes_view = RankedGenesView()
-        self.tabs.addTab(self.ranked_genes_view, "RANKED GENES")
+            self.ranked_genes_view = RankedGenesView()
+            self.tabs.addTab(self.ranked_genes_view, "RANKED GENES")
 
-        # === STATUS BAR ===
-        self.status_bar = self.statusBar()
-        self.progress = QProgressBar()
-        self.progress.setVisible(False)
-        self.progress.setMaximumWidth(200)
-        self.status_bar.addPermanentWidget(self.progress)
-        self.status_label = QLabel(Locale.get("STATUS_READY"))
-        self.status_bar.addWidget(self.status_label)
+            self.tabs.currentChanged.connect(self._on_tab_changed)
 
-        self.update_status_style()
+            # === STATUS BAR ===
+            self.status_bar = self.statusBar()
+            self.progress = QProgressBar()
+            self.progress.setVisible(False)
+            self.progress.setMaximumWidth(200)
+            self.status_bar.addPermanentWidget(self.progress)
+            self.status_label = QLabel(Locale.get("STATUS_READY"))
+            self.status_bar.addWidget(self.status_label)
+
+            self.update_status_style()
+        except Exception as e:
+            logger.critical(f"UMAP UI setup failed: {e}", exc_info=True)
+            QMessageBox.critical(
+                self, "UMAP Error",
+                f"Failed to set up UMAP window:\n\n{e}\n\nSee log for full traceback."
+            )
 
     def setup_umap_tab(self):
         layout = QHBoxLayout(self.umap_tab)
@@ -1280,8 +1294,25 @@ class UMAPVisualizer(QMainWindow):
         )
 
     def start_full_analysis(self, params):
+        features = self.controls.get_selected_features()
+        if len(features) < 1:
+            QMessageBox.warning(self, "INPUT_ERR", "MIN_FEATURES_REQUIRED: 1")
+            return
+
         self.set_busy_state(True)
         self.is_running_full_pipeline = True
+
+        # Reprocess data with current normalization/features before running pipeline
+        normalization = self.controls.combo_norm.currentText()
+        try:
+            self.model.reprocess_data(normalization, features)
+            new_max_pcs = self.model.get_max_pcs()
+            self.controls.set_max_pca(new_max_pcs)
+        except Exception as e:
+            QMessageBox.critical(self, "ERR", str(e))
+            self.set_busy_state(False)
+            self.is_running_full_pipeline = False
+            return
 
         self.analysis_worker = AnalysisWorker(
             model=self.model,
@@ -1311,6 +1342,11 @@ class UMAPVisualizer(QMainWindow):
         self.clustering_worker.error.connect(self.on_analysis_error)
         self.clustering_worker.start()
 
+    def _on_tab_changed(self, index):
+        """Redraw the UMAP plot when switching back to the UMAP tab."""
+        if index == 0 and self.plot_view.current_adata is not None:
+            self.plot_view.canvas.draw_idle()
+
     def on_analysis_finished(self, adata, key):
         self.set_busy_state(False)
         self.is_running_full_pipeline = False
@@ -1331,41 +1367,46 @@ class UMAPVisualizer(QMainWindow):
         QMessageBox.critical(self, "PROCESS_TERMINATED", error_msg)
 
     def apply_data_changes(self, normalization, features):
+        """Lightweight update when proteins/normalization change — no reprocessing."""
         if len(features) < 1:
-            QMessageBox.warning(self, "INPUT_ERR", "MIN_FEATURES_REQUIRED: 1")
             return
+        # Max PCs = n_features - 1 (PCA constraint)
+        self.controls.set_max_pca(max(len(features) - 1, 2))
+        msg = f"SELECTED: {len(features)} FEATS | {normalization} — click Run Analysis to apply"
+        self.status_label.setText(msg)
 
-        self.set_busy_state(True)
-        self.status_label.setText("REPROCESSING_STREAM...")
-        QApplication.processEvents()
-
-        try:
-            self.model.reprocess_data(normalization, features)
-            new_max_pcs = self.model.get_max_pcs()
-            self.controls.set_max_pca(new_max_pcs)
-            self.plot_view.figure.clear()
-            apply_matplotlib_theme(self.plot_view.figure)  # Re-apply theme on clear
-            self.plot_view.canvas.draw()
-
-            self.heatmap_view.figure.clear()
-            apply_matplotlib_theme(self.heatmap_view.figure)
-            self.heatmap_view.canvas.draw()
-
-            msg = f"UPDATED: {len(features)} FEATS | {normalization}"
-            self.status_label.setText(msg)
-        except Exception as e:
-            QMessageBox.critical(self, "ERR", str(e))
-        finally:
-            self.set_busy_state(False)
+    def cancel_analysis(self):
+        """Cancel any running analysis or clustering worker."""
+        if self.analysis_worker and self.analysis_worker.isRunning():
+            self.analysis_worker.cancel()
+            self.analysis_worker.finished.disconnect()
+            self.analysis_worker.error.disconnect()
+        if self.clustering_worker and self.clustering_worker.isRunning():
+            self.clustering_worker.cancel()
+            self.clustering_worker.finished.disconnect()
+            self.clustering_worker.error.disconnect()
+        self.is_running_full_pipeline = False
+        self.set_busy_state(False)
+        self.status_label.setText("Analysis cancelled.")
+        logger.info("Analysis cancelled by user.")
 
     def set_busy_state(self, is_busy):
-        self.controls.btn_run.setEnabled(not is_busy)
         if is_busy:
-            self.controls.btn_run.setText(Locale.get("BTN_PROCESSING"))
+            self.controls.btn_run.setText(Locale.get("BTN_CANCEL"))
+            try:
+                self.controls.btn_run.clicked.disconnect()
+            except TypeError:
+                pass
+            self.controls.btn_run.clicked.connect(self.cancel_analysis)
             self.progress.setVisible(True)
             self.progress.setRange(0, 0)
         else:
             self.controls.btn_run.setText(Locale.get("BTN_EXECUTE"))
+            try:
+                self.controls.btn_run.clicked.disconnect()
+            except TypeError:
+                pass
+            self.controls.btn_run.clicked.connect(self.controls.emit_run)
             self.progress.setVisible(False)
 
     def toggle_theme(self):
@@ -1417,4 +1458,4 @@ if __name__ == "__main__":
         sys.exit(app.exec())
     except FileNotFoundError:
         logger.error("Demo files not found. Exiting.")
-        print("Demo files (csv/tif) not found. Please check paths.")
+        logger.error("Demo files (csv/tif) not found. Please check paths.")

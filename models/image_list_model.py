@@ -1,8 +1,12 @@
+import logging
+
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QIcon, QPixmap, QStandardItem, QStandardItemModel
 
 from core import ImageStorage
 from utils import numpy_to_qimage
+
+logger = logging.getLogger(__name__)
 
 
 class ImageTreeItem(QStandardItem):
@@ -54,7 +58,7 @@ class ImageTreeItem(QStandardItem):
 
     def set_icon(self, data=None):
         """Set the icon for the item. Always a child"""
-        print(
+        logger.debug(
             f"Setting icon for {self.data(Qt.ItemDataRole.UserRole)} - {self.channel}"
         )
         if data is None:

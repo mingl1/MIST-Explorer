@@ -2,6 +2,7 @@
 
 import copy
 import gc
+import logging
 import threading
 import typing
 from collections import deque
@@ -51,6 +52,8 @@ from core.image_utils import (
 # Local/project imports
 from core.metadata_utils import parse_metadata
 from core.Worker import Worker
+
+logger = logging.getLogger("core.canvas")
 
 if typing.TYPE_CHECKING:
     from controller import Controller
@@ -275,7 +278,7 @@ class ImageStorage:
             else:
                 raise ValueError(f"UUID: {image_id} doesnt exist in storage")
         if emitter:
-            print("emitting update sidebar")
+            logger.debug("emitting update sidebar")
             emitter.emit(str(image_id), channel)
 
     def clear_data(self):
@@ -631,7 +634,7 @@ class BaseGraphicsView(QWidget):
                 )
                 self.memory_cache.put(uuid, channel_name, cache_key, contrasted)
             except Exception as e:
-                print(f"Error processing {channel_name} in background: {e}")
+                logger.error(f"Error processing {channel_name} in background: {e}")
                 continue
 
         return processed_channels
@@ -722,7 +725,7 @@ class BaseGraphicsView(QWidget):
         self.working_channels[channel_name] = image_wrapper.copy()
         self.reset_working_channels[channel_name] = image_wrapper.copy()
         if replace_image_wrapper:
-            print("stored image_wrapper")
+            logger.debug("stored image_wrapper")
             self.image_wrapper = image_wrapper.copy()
 
     def _prepare_display_image(
@@ -760,12 +763,12 @@ class BaseGraphicsView(QWidget):
         self, emit_data: Dict[str, np.ndarray], subsample_for_emit: bool
     ) -> None:
         """Notify listeners that number of channels has changed and emit data."""
-        print(self.working_channels.keys())
+        logger.debug(self.working_channels.keys())
 
         self.working_channels = {
             k: self.working_channels[k] for k in sorted(self.working_channels.keys())
         }
-        print(self.working_channels.keys())
+        logger.debug(self.working_channels.keys())
         if emit_data:
             if subsample_for_emit:
                 # Create wrappers for subsampled data
@@ -789,11 +792,11 @@ class BaseGraphicsView(QWidget):
         full_size_mb = full_image.nbytes / (1024 * 1024)
         if subsample_for_emit:
             display_size_mb = display_image.nbytes / (1024 * 1024)
-            print(
+            logger.debug(
                 f"{channel_name} - Full: {full_size_mb:.2f} MB, Display: {display_size_mb:.2f} MB"
             )
         else:
-            print(f"{channel_name} - Size: {full_size_mb:.2f} MB")
+            logger.debug(f"{channel_name} - Size: {full_size_mb:.2f} MB")
 
     def _update_progress(self, channel_num: int, total_channels) -> None:
         """Update processing progress."""
@@ -960,10 +963,10 @@ class ImageGraphicsView(BaseGraphicsView):
             cached_image = self.memory_cache.get(self.uuid, channel_num, cache_key)
         if cached_image is not None:
             assert isinstance(cached_image, np.ndarray), "Cached image must be ndarray"
-            print(f"Using cached image for {channel_num}")
+            logger.debug(f"Using cached image for {channel_num}")
             contrasted_image = cached_image
         else:
-            print(f"Processing new contrast for {channel_num}")
+            logger.debug(f"Processing new contrast for {channel_num}")
             if is_labeled:
                 # ignore contast
                 contrasted_image = sk_label2rgb(self.image_wrapper.data)
@@ -1038,13 +1041,15 @@ class ImageGraphicsView(BaseGraphicsView):
     ):
         """Updates the current image using the current colormap and contrast settings.
         This only changes the display and does not change the underlying data."""
-        # print("updating image")
+        if self.image_wrapper.data.size == 0:
+            logger.warning("No image loaded — update ignored")
+            return None
 
         # update the color map
         # print(cmap_text)
         if cmap_text == "default":
             cmap_text = self.image_wrapper.cmap
-        print(f"Changing cmap to {cmap_text}")
+        logger.debug(f"Changing cmap to {cmap_text}")
         # updates cmap ui but also updated in change_cmap, mainly for
         # label_image
         self.update_cmap.emit(cmap_text)
@@ -1072,10 +1077,10 @@ class ImageGraphicsView(BaseGraphicsView):
                 cache_result=cache_result,
             )
         if cmap_text != "label_image" and prev_cmap != "label_image":
-            print(f"changing cmap to {cmap_text}")
+            logger.debug(f"changing cmap to {cmap_text}")
             image_to_display = self.change_cmap(cmap_text, image)
         else:
-            print("using raw image")
+            logger.debug("using raw image")
             image_to_display = image
 
         assert image_to_display is not None, "Updating empty image"
@@ -1084,6 +1089,9 @@ class ImageGraphicsView(BaseGraphicsView):
         return image_to_display
 
     def update_contrast(self, values):
+        if self.image_wrapper.data.size == 0:
+            logger.warning("No image loaded — contrast change ignored")
+            return
         # print("Updating contrast with values:", values)
         self.image_wrapper.contrast_min = int(values[0])
         self.image_wrapper.contrast_max = int(values[1])
@@ -1189,10 +1197,13 @@ class ImageGraphicsView(BaseGraphicsView):
 
     def reset_image(self):
         """resets the image to original state"""
+        if self.image_wrapper.data.size == 0:
+            logger.warning("No image loaded — reset ignored")
+            return
         if len(self.reset_working_channels):
             self.working_channels = copy.deepcopy(self.reset_working_channels)
             self.image_signal.emit(self.working_channels, False)
-            print(self.uuid)
+            logger.debug(self.uuid)
 
             channel_num = f"Channel {self.current_channel + 1}"
             for channel_name, wrapper in self.working_channels.items():
@@ -1244,7 +1255,7 @@ class ImageGraphicsView(BaseGraphicsView):
         # Emit target channel immediately for display
         emit_data = {target_channel: display_channel_data}
         self._update_number_of_channels(emit_data, subsample_for_emit)
-        print(self.current_channel, "current channel")
+        logger.debug(f"{self.current_channel} current channel")
 
         # Process remaining channels in background if there are any
         remaining_channels = {
@@ -1326,7 +1337,7 @@ class ImageGraphicsView(BaseGraphicsView):
     @pyqtSlot(object)
     def on_rotation_completed(self, output):
         result_uuid, result = output
-        print("rot complete")
+        logger.debug("rot complete")
         if result is not None:
             for channel_name, wrapper in result.items():
                 if "Channel" in channel_name:
@@ -1364,6 +1375,7 @@ class ImageGraphicsView(BaseGraphicsView):
         lower/upper are *percentiles* (e.g., 1.0, 99.0).
         """
         if self.image_wrapper.data.size == 0:
+            logger.warning("No image loaded — auto contrast ignored")
             return
 
         # Get the channel in its native scale (0..1 or 0..255 or whatever
@@ -1399,7 +1411,7 @@ class ImageGraphicsView(BaseGraphicsView):
         """
 
         self._blur_layer = f"Channel {self.current_channel + 1}"
-        print("blur")
+        logger.debug("blur")
         # self._clear_caches(self.uuid, self._blur_layer)
 
         if not confirm:
@@ -1424,7 +1436,7 @@ class ImageGraphicsView(BaseGraphicsView):
             and hasattr(self, "corrected_layer")
             and (self.working_channels.get(self._blur_layer) is not None)
         ):
-            print(f"saving. {self.uuid} {self._blur_layer}")
+            logger.debug(f"saving. {self.uuid} {self._blur_layer}")
             self.working_channels[self._blur_layer].data = self.corrected_layer
             self.storage.update_data(
                 self.uuid,

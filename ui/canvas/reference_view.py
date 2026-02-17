@@ -1,6 +1,7 @@
 """
 Reference graphics view module.
 """
+import logging
 import pyqtgraph as pg
 # pylint: disable=no-name-in-module, missing-final-newline, fixme
 from PyQt6.QtCore import QPoint, QPointF, QRectF, QSize, Qt, pyqtSignal
@@ -12,6 +13,8 @@ from PyQt6.QtWidgets import (QGraphicsPixmapItem, QGraphicsRectItem,
 import utils
 from ui.canvas.items import ArrowItem
 from utils import resource_path
+
+logger = logging.getLogger(__name__)
 
 
 # pylint: disable=too-many-instance-attributes
@@ -249,7 +252,7 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         self.pixmap_item = QGraphicsPixmapItem(self.pixmap)
         scene.addItem(self.pixmap_item)
 
-        print("has np channels")
+        logger.debug("has np channels")
         # TODO: Scale and reposition arrows dynamically
 
         # Setup scene

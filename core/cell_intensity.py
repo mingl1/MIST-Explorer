@@ -1,4 +1,5 @@
 import itertools
+import logging
 
 import cv2 as cv
 import numpy as np
@@ -10,6 +11,8 @@ from skimage.measure import regionprops
 
 from core import ImageWrapper
 from core.canvas import ImageStorage
+
+logger = logging.getLogger(__name__)
 
 
 class CellIntensity(QThread):
@@ -46,7 +49,7 @@ class CellIntensity(QThread):
         assert data is not None, "data not found in storage item"
 
         self.load_protein_signal_array(data[c].data)
-        print("loaded protein signal array from storage")
+        logger.info("loaded protein signal array from storage")
 
     def load_stardist_labels_from_storage(self, uuid, channel):
         item = self.storage.get_data(uuid)
@@ -56,10 +59,10 @@ class CellIntensity(QThread):
         c = "Channel " + str(channel + 1)
         stardist_labels = data[c]
         self.load_stardist_labels(stardist_labels)
-        print("loaded stardist labels from storage")
+        logger.info("loaded stardist labels from storage")
 
     def load_protein_signal_array(self, arr):
-        print("loaded protein signal array")
+        logger.info("loaded protein signal array")
         self.protein_signal_array = arr
         self.blur_and_set_protein_layer()
 
@@ -115,7 +118,7 @@ class CellIntensity(QThread):
             self.color_code = color_code
             channel_num = int(channel.split(" ")[-1])
             channel = channel_num - 1
-            print(f"generating channel {channel}")
+            logger.info(f"generating channel {channel}")
             # this func expects channel to be zero-indexed integer.
             self.load_protein_signal_array_from_storage(None, channel)
             if (
@@ -134,7 +137,7 @@ class CellIntensity(QThread):
                 if self.protein_signal_array is None:
                     err_msg += "protein signal array, "
                 err_msg = err_msg.rstrip(", ")  # remove trailing comma
-                print(err_msg)
+                logger.error(err_msg)
                 self.critical_error(err_msg)
                 return
             else:
@@ -142,7 +145,7 @@ class CellIntensity(QThread):
                 # then, for each combination, convert it to index. So for
                 # example, 16 combinations would be indexed 0 to 15.
                 self.infer_params()
-                print("Inferred params:", self.params)
+                logger.debug("Inferred params: %s", self.params)
                 possible_values = list(
                     range(self.params["num_decoding_colors"]))
                 all_perms = [
@@ -185,14 +188,14 @@ class CellIntensity(QThread):
                     self.stardist_labels.shape[1],
                     self.stardist_labels.shape[0],
                 )
-                print("before filtering", data_modified.shape)
+                logger.debug("before filtering %s", data_modified.shape)
                 data_modified = [
                     bead
                     for bead in data_modified
                     if bead[0] < x_limit and bead[1] < y_limit
                 ]
                 data_modified = np.array(data_modified)
-                print("after filtering", data_modified.shape)
+                logger.debug("after filtering %s", data_modified.shape)
                 # --- Replace your entire 'for' loop with this block ---
 
                 self.progress.emit(25, "Finding beads within cells...")
@@ -290,7 +293,7 @@ class CellIntensity(QThread):
                 cell_centroids = self.compute_all_centroids()
 
                 # find how many are different
-                print("Finding values for cells with incomplete protein profiles")
+                logger.info("Finding values for cells with incomplete protein profiles")
                 for i, cell_id in enumerate(cell_data_dict.keys()):
                     cell_center = cell_centroids[cell_id]
                     progress_update = int(
@@ -421,7 +424,7 @@ class CellIntensity(QThread):
         self.channel_to_color_code = channel_to_code.copy()
 
     def save_cell_data(self):
-        print("saving cell data")
+        logger.info("saving cell data")
         file_name, _ = QFileDialog.getSaveFileName(
             None, "Save Cell Data File", "cell_data.csv", "*.csv;;*.xlsx;; All Files(*)")
         if self.df_cell_data is not None:
@@ -507,9 +510,9 @@ class CellIntensity(QThread):
         return 0.8266 * x + 3970.1
 
     def load_stardist_labels(self, stardist: ImageWrapper) -> None:
-        print("stardist label dtype:", stardist.data.dtype)
-        print(
-            "stardist label max and min", np.max(
+        logger.debug("stardist label dtype: %s", stardist.data.dtype)
+        logger.debug(
+            "stardist label max and min %s %s", np.max(
                 stardist.data), np.min(
                 stardist.data))
         self.stardist_labels = stardist.data

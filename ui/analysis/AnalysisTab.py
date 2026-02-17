@@ -18,6 +18,7 @@ Features:
 """
 
 import io
+import logging
 import sys
 import traceback
 from contextlib import redirect_stdout
@@ -40,6 +41,8 @@ from PyQt6.QtWidgets import *
 from PyQt6.QtWidgets import (QApplication, QComboBox, QGridLayout, QHBoxLayout,
                              QLabel, QMainWindow, QPushButton, QStackedWidget,
                              QVBoxLayout, QWidget)
+
+logger = logging.getLogger(__name__)
 
 from ui.analysis.graphing.CellDensityPlot import CellDensityPlot
 from ui.analysis.graphing.DistributionViewer import DistributionViewer
@@ -254,7 +257,7 @@ class ROIAnalysisView(QWidget):
             if self.current_view_index < len(self.rubberbands):
                 self.rubberbands[self.current_view_index].set_filled(False)
             else:
-                print("Warning: current_view_index out of bounds for rubberbands")
+                logger.warning("current_view_index out of bounds for rubberbands")
                 self.current_view_index = len(self.rubberbands) - 1
                 if self.current_view_index < 0:
                     self.current_view_index = 0
@@ -402,7 +405,7 @@ class ROIAnalysisView(QWidget):
         try:
             index = self.rubberbands.index(rubberband)
         except ValueError:
-            print("Rubberband not found in analysis view")
+            logger.warning("Rubberband not found in analysis view")
             return False
 
         # Update the region
@@ -421,7 +424,7 @@ class ROIAnalysisView(QWidget):
         try:
             self.generate_analysis_graphs(region)
         except Exception as e:
-            print(f"Error updating ROI analysis: {e}")
+            logger.error(f"Error updating ROI analysis: {e}")
             traceback.print_exc()
             return False
             
@@ -440,7 +443,7 @@ class ROIAnalysisView(QWidget):
                     # Refresh the detail page with the current graph index
                     detail_page.set_icon_index(self.current_graph_index)
         except Exception as e:
-            print(f"Error refreshing graph display: {e}")
+            logger.error(f"Error refreshing graph display: {e}")
         
         return True
 
@@ -623,7 +626,7 @@ class ROIAnalysisView(QWidget):
         """Get data filtered by the selected region"""
         data = self.enc.view_tab.get_df()
         x_min, y_min, x_max, y_max = [i for i in region]
-        print(x_min, y_min, x_max, y_max)
+        logger.debug("%s %s %s %s", x_min, y_min, x_max, y_max)
 
         return data[
             (data["Global X"] >= x_min)
@@ -710,17 +713,11 @@ class ROIAnalysisView(QWidget):
         self.navigate_to_roi(self.current_view_index)
 
     def show_icon_detail_page(self, index):
-        print(
-            "show_icon_detail_page1,",
-            "current roi:",
-            self.current_view_index,
-            "graph:",
-            index,
-        )
+        logger.debug("show_icon_detail_page1, current roi: %s graph: %s", self.current_view_index, index)
 
         # Get the graph interface for the current roi
         if self.current_view_index not in self.view_graph_interfaces:
-            print("Error: No graph interface found for current roi")
+            logger.error("No graph interface found for current roi")
             return
 
         interface = self.view_graph_interfaces[self.current_view_index]
@@ -733,7 +730,7 @@ class ROIAnalysisView(QWidget):
     def show_icon_grid_page(self):
         # Get the graph interface for the current roi
         if self.current_view_index not in self.view_graph_interfaces:
-            print("Error: No graph interface found for current roi")
+            logger.error("No graph interface found for current roi")
             return
 
         interface = self.view_graph_interfaces[self.current_view_index]

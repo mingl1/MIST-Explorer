@@ -44,7 +44,6 @@ class ToolBarUI(QToolBar):
         self._init_channel_selector(parent)
 
         self._populate_toolbar()
-
         self._retranslateUI()
 
     def _init_tab_buttons(self):
@@ -276,28 +275,6 @@ class ToolBarUI(QToolBar):
         self.auto_contrast_button_action = self.addWidget(self.auto_contrast_button)
         self.contrast_slider_action = self.addWidget(self.contrast_slider)
         self.addWidget(self.statusLine)
-
-        self.disable_actions()
-
-    def enable_actions(self):
-        assert self.cmap_action is not None
-        assert self.channel_selector_action is not None
-        assert self.auto_contrast_button_action is not None
-        assert self.contrast_slider_action is not None
-        self.actionReset.setEnabled(True)
-        self.cmap_action.setEnabled(True)
-        self.auto_contrast_button_action.setEnabled(True)
-        self.contrast_slider_action.setEnabled(True)
-
-    def disable_actions(self):
-        assert self.cmap_action is not None
-        assert self.channel_selector_action is not None
-        assert self.auto_contrast_button_action is not None
-        assert self.contrast_slider_action is not None
-        self.actionReset.setEnabled(False)
-        self.cmap_action.setEnabled(False)
-        self.auto_contrast_button_action.setEnabled(False)
-        self.contrast_slider_action.setEnabled(False)
 
     def _retranslateUI(self):
         _translate = QCoreApplication.translate

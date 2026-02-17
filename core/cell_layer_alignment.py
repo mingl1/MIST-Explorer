@@ -1,4 +1,5 @@
 import concurrent.futures
+import logging
 import traceback
 from typing import Tuple, final
 
@@ -20,6 +21,8 @@ from utils import (
     to_uint8,
     warp_image,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class CellLayerAligner(QThread):
@@ -165,7 +168,7 @@ class CellLayerAligner(QThread):
         }
         try:
             if self.target_spacing != self.unaligned_spacing:
-                print("Resampling unaligned image to match target spacing")
+                logger.info("Resampling unaligned image to match target spacing")
                 moving = sitk.GetImageFromArray(self.unaligned_image)
                 moving.SetSpacing(self.unaligned_spacing)
                 fixed = sitk.GetImageFromArray(self.target_image)
@@ -203,7 +206,7 @@ class CellLayerAligner(QThread):
                 "flip": self.itk_flip,
                 "matrix": coarse_transform,
             }
-            print(coarse_transform)
+            logger.debug("Coarse transform:\n%s", coarse_transform)
             # Prepare images for fine alignment
             self.progress.emit(50, "Preparing images for fine alignment")
             fine_transform = self._scale_transform_matrix(
@@ -215,14 +218,14 @@ class CellLayerAligner(QThread):
             fine_target_shape = (
                 np.array(self.target_image.shape) * self.fine_scale
             ).astype(int)
-            print(fine_target_shape, fine_target.shape, fine_unaligned.shape)
+            logger.debug("Fine target shape: %s, fine_target: %s, fine_unaligned: %s",
+                         fine_target_shape, fine_target.shape, fine_unaligned.shape)
             fine_moving = warp_image(fine_unaligned, fine_transform)
             fine_moving = to_uint8(fine_moving)
             fine_moving = remove_padding(fine_moving, fine_target_shape)
             fine_target_image = remove_padding(fine_target, fine_target_shape)
-            print(
-                f"Fine target shape: {fine_target_image.shape}, Fine moving shape: {fine_moving.shape}"
-            )
+            logger.debug("Fine target shape: %s, Fine moving shape: %s",
+                         fine_target_image.shape, fine_moving.shape)
             # self._emit_snapshot("itk", itk_metadata, fine_moving, fine_target_image)
 
             # Perform fine alignment
@@ -232,7 +235,7 @@ class CellLayerAligner(QThread):
             )
 
             if refinement_transform is None:
-                print("StackReg refinement failed, using only coarse alignment.")
+                logger.warning("StackReg refinement failed, using only coarse alignment.")
                 aligned_preview = fine_moving
                 refinement_transform = np.eye(3)  # Identity transform
                 refinement_transform = self._scale_transform_matrix(
@@ -336,7 +339,7 @@ class CellLayerAligner(QThread):
             params, angle, flip, moving.shape
         )
         t = transform_info["combined_matrix"]
-        print(t.shape)
+        logger.debug("Transform shape: %s", t.shape)
         if t.shape == (2, 3):
             t = np.vstack([t, [0, 0, 1]])
         inverted = np.linalg.inv(t)
@@ -390,7 +393,7 @@ class CellLayerAligner(QThread):
         return coarse_target, coarse_moving
 
     def _itk_align(self, rotation_angles, fixed, moving):
-        print("Stage 1: Finding best angles...")
+        logger.info("Stage 1: Finding best angles...")
         angle_results = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
             futures = [
@@ -401,12 +404,11 @@ class CellLayerAligner(QThread):
                 try:
                     angle_results.append(future.result())
                 except Exception as e:
-                    print(f"Error during registration: {e}")
-                    traceback.print_exc()
+                    logger.error("Error during registration: %s", e, exc_info=True)
         if len(angle_results) == 1:
             # If only one angle was tested, return it directly
             best_angle, best_flip, params = angle_results[0][1:]
-            print(f"Only one angle tested: {best_angle}, flip: {best_flip}")
+            logger.info("Only one angle tested: %s, flip: %s", best_angle, best_flip)
             return best_angle, best_flip, params
         valid_angle_results = [r for r in angle_results if r[3] is not None]
         sorted_angle_results = sorted(
@@ -414,11 +416,11 @@ class CellLayerAligner(QThread):
         )
         top3_angles = sorted_angle_results[:3]
 
-        print("Top 3 angles:")
+        logger.info("Top 3 angles:")
         for i, (score, angle, _, params) in enumerate(top3_angles):
-            print(f"  {i+1}. Angle {angle}: score = {score}")
+            logger.info("  %d. Angle %s: score = %s", i+1, angle, score)
 
-        print("Stage 2: Testing flip options for top 3 angles...")
+        logger.info("Stage 2: Testing flip options for top 3 angles...")
         flip_results = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
             futures = [
@@ -438,8 +440,8 @@ class CellLayerAligner(QThread):
             valid_all_results, key=lambda x: x[0], reverse=True
         )
         best_score, best_angle, best_flip, params = final_sorted_results[0]
-        print(
-            f"Final best: angle={best_angle}, flip={best_flip}, score={best_score}")
+        logger.info("Final best: angle=%s, flip=%s, score=%s",
+                    best_angle, best_flip, best_score)
         return best_angle, best_flip, params
 
     def _alignment_stackreg(self, target_fine, unaligned_fine):
@@ -457,7 +459,7 @@ class CellLayerAligner(QThread):
             aligned_result = warp_image(unaligned_fine, refinement_matrix)
             return refinement_matrix[:2, :3], aligned_result
         except Exception as e:
-            print(f"StackReg refinement error: {e}")
+            logger.error("StackReg refinement error: %s", e)
             return None, None
 
     def _image_enhancement(self, target, moving):
@@ -593,20 +595,20 @@ def composite_to_matrix(composite_transform, reference_image):
         return np.array([[m00, m01, tx], [m10, m11, ty]])
 
     except Exception as e:
-        print(f"Warning: Could not convert CompositeTransform to matrix: {e}")
+        logger.warning("Could not convert CompositeTransform to matrix: %s", e)
         # Fallback: return identity 2x3 matrix
         return np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
 
 
 def register_combination(fixed, moving, angle, flip):
-    print(f"Registering with angle={angle}, flip={flip}")
+    logger.info("Registering with angle=%s, flip=%s", angle, flip)
 
     # Apply flip if specified
     t = np.flip(moving, axis=-2) if flip else moving
 
     # Apply rotation
     rotated = rotate(t, angle, reshape=False, order=1)
-    print(f"Rotated shape: {rotated.shape}, Fixed shape: {fixed.shape}")
+    logger.debug("Rotated shape: %s, Fixed shape: %s", rotated.shape, fixed.shape)
 
     # Convert to ITK images
     source_itk = sitk.GetImageFromArray(rotated)
@@ -664,11 +666,11 @@ def register_combination(fixed, moving, angle, flip):
             # For CompositeTransform, get the matrix from the last transform
             transform_matrix = composite_to_matrix(final_transform, target_itk)
         score = -1 * score  # Invert score for consistency (higher is better)
-        print(f"Score: {score} for angle={angle}, flip={flip}")
+        logger.debug("Score: %s for angle=%s, flip=%s", score, angle, flip)
         return score, angle, flip, transform_matrix
 
     except Exception as e:
-        print(f"Failed at angle={angle}, flip={flip}: {e}")
+        logger.error("Failed at angle=%s, flip=%s: %s", angle, flip, e)
         return -1, angle, flip, None
 
 
@@ -753,19 +755,19 @@ def combine_transforms(itk_params, angle, flip, image_shape):
 
     # Make matrices compatible (both 3x3 or both 4x4)
     if itk_matrix.shape == (3, 3) and preprocessing_matrix.shape == (4, 4):
-        print("Convert ITK 3x3 to 4x4")
+        logger.debug("Convert ITK 3x3 to 4x4")
         itk_4d = np.eye(4)
         itk_4d[:2, :2] = itk_matrix[:2, :2]
         itk_4d[:2, 3] = itk_matrix[:2, 2]
         itk_matrix = itk_4d
     elif itk_matrix.shape == (2, 3) and preprocessing_matrix.shape == (3, 3):
-        print("Convert ITK 2x3 to 3x3")
+        logger.debug("Convert ITK 2x3 to 3x3")
         itk_3d = np.eye(3)
         itk_3d[:2, :2] = itk_matrix[:2, :2]
         itk_3d[:2, 2] = itk_matrix[:2, 2]
         itk_matrix = itk_3d
     elif itk_matrix.shape == (2, 3) and preprocessing_matrix.shape == (4, 4):
-        print("Convert ITK 2x3 to 4x4")
+        logger.debug("Convert ITK 2x3 to 4x4")
         itk_4d = np.eye(4)
         itk_4d[:2, :2] = itk_matrix[:2, :2]
         itk_4d[:2, 3] = itk_matrix[:2, 2]
@@ -845,7 +847,7 @@ def extract_complete_transformation(
         return results
 
     except Exception as e:
-        print(f"Error extracting complete transformation: {e}")
+        logger.error("Error extracting complete transformation: %s", e)
         return {}
 
 

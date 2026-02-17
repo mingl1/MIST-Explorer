@@ -1,4 +1,5 @@
 "Image graphics view module."
+import logging
 import typing
 
 import numpy as np
@@ -17,6 +18,8 @@ from ui.lassos.CircleLasso import CircleLasso
 from ui.lassos.PolyLasso import PolyLasso
 from ui.lassos.RectLasso import RectLasso
 from utils import resource_path
+
+logger = logging.getLogger(__name__)
 
 if typing.TYPE_CHECKING:
     from ui.app import MainWindow
@@ -364,8 +367,8 @@ class ImageGraphicsViewUI(QGraphicsView):
             self._center_view_tab_image(layer_idx)
             # Button visibility is now controlled by tab changes
         else:
-            print(f"layer {layer_idx}")
-            print(f"pixmap shape {pixmap.shape}")
+            logger.debug(f"layer {layer_idx}")
+            logger.debug(f"pixmap shape {pixmap.shape}")
             # Button visibility is now controlled by tab changes
             if pixmap.shape == (0,):
                 removed_item = self.view_pixmaps.pop(layer_idx)
@@ -532,7 +535,7 @@ class ImageGraphicsViewUI(QGraphicsView):
 
             # Handle regular selection modes
             if self.begin_crop or self.select:
-                print("beginning selection")
+                logger.debug("beginning selection")
                 self.origin = event.pos()
                 self.update_starting_position(event)
                 scene_pos = self.mapToScene(event.pos())
@@ -598,7 +601,7 @@ class ImageGraphicsViewUI(QGraphicsView):
             and self.crop_mode
             and self.active_crop_rect
         ):
-            print("confirming")
+            logger.debug("confirming")
             self.confirm_crop()
             return
 
@@ -989,7 +992,7 @@ class ImageGraphicsViewUI(QGraphicsView):
                     # if select is circle, then image_pos dist to initial left click pos is radius
                     # if select is rectangle, then initial is top let and image_pos is bottom right
                     # initial pos is self.select_start_pos
-                    print(image_pos)
+                    logger.debug(image_pos)
                     image_rect = (
                         self.select,
                         (

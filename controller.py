@@ -1,6 +1,7 @@
 """Class to handle signal connections"""
 
 import copy
+import logging
 import os
 import typing
 import uuid
@@ -21,6 +22,8 @@ from core import (
     StarDist,
 )
 from ui.alignment.alignment_preview_dialog import AlignmentPreviewDialog
+
+logger = logging.getLogger(__name__)
 
 if typing.TYPE_CHECKING:
     from ui.app import MainWindow
@@ -148,7 +151,7 @@ class Controller:
                 None, "Save File", "image.png", "*.png;;*.jpg;;*.tif;; All Files(*)"
             )
             if file_name:
-                print(file_name)
+                logger.debug(file_name)
                 Image.fromarray(img).save(file_name)
                 return True
 
@@ -176,7 +179,6 @@ class Controller:
     # add new image to storage
     def handle_new_image(self, data, file_name, metadata=None):
         """Handles a new image by adding it to storage."""
-        self.view.tool_bar.enable_actions()
         storage_item = {}
         storage_item["name"] = os.path.basename(file_name)
         storage_item["metadata"] = metadata
@@ -290,10 +292,10 @@ class Controller:
             # self.view.canvas.pixmap_item.show()
             self.view.canvas.show_images_tab_image()
             if self.model_canvas.uuid:
-                print("swapping channel")
+                logger.debug("swapping channel")
                 self.model_canvas.swap_channel(self.model_canvas.current_channel)
             else:
-                print("clearing canvas")
+                logger.debug("clearing canvas")
                 self.model_canvas.clear_canvas()
         else:
             self.view.canvas.show_view_tab_image()

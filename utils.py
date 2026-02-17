@@ -1,3 +1,4 @@
+import logging
 import os
 import sys
 
@@ -6,6 +7,8 @@ import numpy as np
 import tifffile as tiff
 from numpy.typing import NDArray
 from PyQt6.QtGui import QImage, QPixmap
+
+logger = logging.getLogger(__name__)
 
 # Import extracted functions from core.image_utils
 
@@ -148,7 +151,7 @@ def to_uint8(image):
         )
         return img_norm.astype(np.uint8)
     else:
-        print("Warning: Image has no variation, returning zeros")
+        logger.warning("Image has no variation, returning zeros")
         return np.zeros_like(image, dtype=np.uint8)
 
 
@@ -198,7 +201,7 @@ def calculate_ncc(img1, img2):
         return ncc
 
     except Exception as e:
-        print(f"Error calculating NCC: {str(e)}")
+        logger.error(f"Error calculating NCC: {str(e)}")
         return None
 
 
@@ -756,7 +759,7 @@ def get_image_diagnostics(image: np.ndarray):
 def print_image_diagnostics(image: np.ndarray):
     diagnostics = get_image_diagnostics(image)
     for key, value in diagnostics.items():
-        print(f"{key}: {value}")
+        logger.debug(f"{key}: {value}")
 
 
 def get_dummy_image(shape=(100, 100), dtype=np.uint8):

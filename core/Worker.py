@@ -1,4 +1,8 @@
+import logging
+
 from PyQt6.QtCore import QThread, pyqtSignal
+
+logger = logging.getLogger(__name__)
 
 
 class Worker(QThread):
@@ -13,7 +17,7 @@ class Worker(QThread):
 
     def run(self):
         try:
-            print("thread is running")
+            logger.debug("thread is running")
             self.result = self.func(*self.args, **self.kwargs)
             self.signal.emit(self.result)
         except Exception as e:

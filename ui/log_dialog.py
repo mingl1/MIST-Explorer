@@ -2,6 +2,10 @@
 Log dialog module — surfaces Python logging messages in a PyQt6 dialog.
 """
 import logging
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 from PyQt6.QtCore import pyqtSignal, QObject
 from PyQt6.QtWidgets import (
@@ -53,6 +57,9 @@ class LogDialog(QDialog):
         layout.addWidget(self._log_view)
 
         btn_layout = QHBoxLayout()
+        open_folder_btn = QPushButton("Open Log Folder")
+        open_folder_btn.clicked.connect(self._open_log_folder)
+        btn_layout.addWidget(open_folder_btn)
         btn_layout.addStretch()
         clear_btn = QPushButton("Clear")
         clear_btn.clicked.connect(self._log_view.clear)
@@ -63,6 +70,17 @@ class LogDialog(QDialog):
         self._handler = QtLogHandler()
         self._handler.signal.connect(self._append_log)
         logging.getLogger().addHandler(self._handler)
+
+    @staticmethod
+    def _open_log_folder() -> None:
+        log_dir = Path.home() / ".mist-explorer" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        if sys.platform == "win32":
+            os.startfile(str(log_dir))
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(log_dir)])
+        else:
+            subprocess.Popen(["xdg-open", str(log_dir)])
 
     def _append_log(self, message: str) -> None:
         self._log_view.appendPlainText(message)

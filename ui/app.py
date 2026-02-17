@@ -2,6 +2,7 @@
 Main application window module.
 """
 import argparse
+import logging
 import sys
 from pathlib import Path
 from typing import Optional
@@ -21,6 +22,8 @@ from core.project_manager import ProjectManager
 from ui.toolbar.menubar_ui import MenuBarUI
 from ui.toolbar.toolbar_ui import ToolBarUI
 from utils import resource_path
+
+logger = logging.getLogger(__name__)
 
 
 class MainWindow(QMainWindow):
@@ -168,10 +171,9 @@ class MainWindow(QMainWindow):
                     image_data[channel_name] = wrapper
 
             if image_data:
-                from uuid import UUID
-                image_uuid = UUID(image_meta.uuid)
+                image_uuid = str(image_meta.uuid)
                 self.images_tab.storage.add_data(
-                    str(image_uuid),
+                    image_uuid,
                     {
                         "name": image_meta.name,
                         "data": image_data,
@@ -551,12 +553,12 @@ class MainWindow(QMainWindow):
 
     def select(self):
         """Set rectangle selection mode"""
-        print("selecting")
+        logger.debug("selecting")
         self.canvas.select = "rect"
 
     def circle_select(self):
         """Set circle selection mode"""
-        print("selecting")
+        logger.debug("selecting")
         self.canvas.select = "circle"
 
     def poly_select(self):

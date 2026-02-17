@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 import pandas as pd
 import scanpy.pp as pp
@@ -11,6 +13,8 @@ import marsilea.plotter as mp
 from tqdm import tqdm
 from matplotlib.colors import to_rgb
 import plotly.express as px
+
+logger = logging.getLogger(__name__)
 
 
 class UMAPHelper:
@@ -49,7 +53,7 @@ class UMAPHelper:
         total = len(self.data)
         sc.pp.filter_cells(self.adata, min_genes=1)
         self.adata.layers["counts"] = np.array(self.adata.X, dtype=np.int32)
-        print(f"Filtered {total-len(self.adata.X)} cells")
+        logger.info(f"Filtered {total-len(self.adata.X)} cells")
 
         if normalization == "pseudo-seurat":  # mentioned in tutorial
             sc.pp.normalize_total(self.adata)
@@ -72,7 +76,7 @@ class UMAPHelper:
                 )
             sc.pp.scale(self.adata, max_value=10)
         sc.pp.pca(self.adata)
-        print(
+        logger.info(
             f"Data loaded: {self.data.shape[0]} cells, {self.data.shape[1]} features")
 
     def getNumCells(self):
@@ -191,8 +195,8 @@ class UMAPHelper:
         plt.tight_layout()
 
         # Print the top N genes
-        print(f"\nTop {top_n} Highly Variable Genes:")
-        print(top_hvg[["means", "variances_norm",
+        logger.info(f"\nTop {top_n} Highly Variable Genes:")
+        logger.info(top_hvg[["means", "variances_norm",
               "highly_variable_rank"]].to_string())
         return fig, ax
 
@@ -311,10 +315,10 @@ class UMAPHelper:
         missing_cells = seg_cell_ids - valid_cell_ids
 
         if missing_cells:
-            print(
+            logger.debug(
                 f"Warning: {len(missing_cells)} cell IDs in segmentation are not in dataframe"
             )
-            print(
+            logger.debug(
                 f"These cells will be colored black: {sorted(list(missing_cells))[:10]}..."
                 if len(missing_cells) > 10
                 else f"These cells will be colored black: {sorted(missing_cells)}"

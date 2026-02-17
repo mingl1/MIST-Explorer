@@ -1,6 +1,7 @@
 """
 Image Manager module.
 """
+import logging
 import os
 import uuid
 from pathlib import Path
@@ -19,6 +20,8 @@ from core import ImageGraphicsView, ImageStorage, StarDist
 from core.canvas import ReferenceGraphicsView
 from core.project_manager import ProjectManager
 from models.image_list_model import ImageTreeItem, ImageTreeModel
+
+logger = logging.getLogger(__name__)
 
 
 class ImageManager(QWidget):
@@ -71,7 +74,7 @@ class ImageManager(QWidget):
 
     def add_item(self, item_uuid):
         """Add an item to the tree."""
-        print("adding item")
+        logger.debug("adding item")
         assert self.root_node is not None, "Root node is not initialized"
         main_item = ImageTreeItem(item_uuid, channel="Channel 1", useItemName=True)
         item = self.storage.get_data(item_uuid)
@@ -153,7 +156,7 @@ class ImageManager(QWidget):
 
     def add_to_storage(self, item_uuid, obj):
         """Add data to storage."""
-        print(f"adding {item_uuid} to storage")
+        logger.debug(f"adding {item_uuid} to storage")
         self.storage.add_data(item_uuid, obj)
 
     def _handle_item_deletion(self, item_uuid: UUID):
@@ -214,7 +217,7 @@ class ImageTreeWidget(QTreeView):
     def show_on_canvas(self, item):
         """Show selected item on canvas."""
         assert self.model_canvas is not None, "model_canvas is not set"
-        print("show on canvas")
+        logger.debug("show on canvas")
         model_canvas = self.model_canvas
         _, my_uuid = self._name_and_uuid_from_item(item, tooltip=True)
         different = str(my_uuid) != str(model_canvas.uuid)
@@ -386,7 +389,7 @@ class ImageTreeWidget(QTreeView):
             return str(channel)
         try:
             channel = int(channel.replace("Channel ", "")) - 1
-            print(channel)
+            logger.debug(channel)
         except ValueError as exc:
             raise ValueError("Invalid default channel format.") from exc
         return channel
@@ -406,7 +409,7 @@ class ImageTreeWidget(QTreeView):
         assert item is not None, f"No data found for UUID: {item_uuid}"
         channel_dict = item["data"]
         if file_type == "tif":
-            print("inside")
+            logger.debug("inside")
             folder_path = QFileDialog.getExistingDirectory(
                 self, "Select Folder to Save TIFF"
             )

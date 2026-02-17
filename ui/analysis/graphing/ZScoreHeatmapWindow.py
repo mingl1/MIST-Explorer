@@ -1,3 +1,4 @@
+import logging
 import sys
 from itertools import combinations
 
@@ -9,6 +10,8 @@ import seaborn as sns
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
 from scipy.cluster.hierarchy import linkage
+
+logger = logging.getLogger(__name__)
 
 # implement 1
 
@@ -29,7 +32,7 @@ class ZScoreHeatmapWindow(QMainWindow):
             2:
         ]  # Assuming proteins start at the 4th column
         proteins = protein_columns
-        print(proteins)
+        logger.debug(proteins)
 
         def calculate_weighted_centroids(data, proteins, signal_threshold=100):
             centroids = {}
