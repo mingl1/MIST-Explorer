@@ -17,8 +17,9 @@ class Worker(QThread):
 
     def run(self):
         try:
-            logger.debug("thread is running")
+            logger.debug("Worker executing: %s", self.func.__name__)
             self.result = self.func(*self.args, **self.kwargs)
             self.signal.emit(self.result)
         except Exception as e:
+            logger.error("Worker thread error in %s: %s", self.func.__name__, e, exc_info=True)
             self.error.emit(str(e))

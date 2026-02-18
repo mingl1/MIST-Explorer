@@ -66,7 +66,8 @@ class UMAPHelper:
             try:
                 sc.pp.highly_variable_genes(
                     self.adata, flavor="seurat_v3", layer="counts", inplace=True)
-            except BaseException:
+            except Exception as e:
+                logger.warning("HVG failed with default span, retrying with span=1.0: %s", e)
                 sc.pp.highly_variable_genes(
                     self.adata,
                     flavor="seurat_v3",

@@ -1,4 +1,5 @@
 import json
+import logging
 import platform
 from datetime import datetime
 from pathlib import Path
@@ -8,6 +9,8 @@ import uuid
 import tifffile
 
 from models.workspace import ImageMetadata, ProjectMetadata
+
+logger = logging.getLogger(__name__)
 
 
 class ProjectManager:
@@ -68,9 +71,13 @@ class ProjectManager:
         if not metadata_path.exists():
             return None
 
-        with open(metadata_path, "r") as f:
-            data = json.load(f)
-        return ProjectMetadata.from_dict(data)
+        try:
+            with open(metadata_path, "r") as f:
+                data = json.load(f)
+            return ProjectMetadata.from_dict(data)
+        except Exception as e:
+            logger.error("Failed to load project metadata from '%s': %s", metadata_path, e, exc_info=True)
+            return None
 
     @staticmethod
     def load_project(project_path: Path) -> Optional[ProjectMetadata]:
@@ -109,12 +116,16 @@ class ProjectManager:
         for channel_name, wrapper in channel_data.items():
             channel_num = channel_name.replace("Channel ", "")
             channel_path = image_folder / f"channel_{channel_num}.tif"
-            tifffile.imwrite(
-                str(channel_path),
-                wrapper.data,
-                photometric="minisblack",
-                imagej=True,
-            )
+            try:
+                tifffile.imwrite(
+                    str(channel_path),
+                    wrapper.data,
+                    photometric="minisblack",
+                    imagej=True,
+                )
+            except Exception as e:
+                logger.error("Failed to save channel '%s' to '%s': %s", channel_name, channel_path, e, exc_info=True)
+                raise
 
         thumbnail_folder = project_path / "thumbnails"
         thumbnail_path = thumbnail_folder / f"{image_uuid}.png"
@@ -147,7 +158,11 @@ class ProjectManager:
         channel_path = image_folder / f"channel_{channel_num}.tif"
 
         if channel_path.exists():
-            return tifffile.imread(str(channel_path))
+            try:
+                return tifffile.imread(str(channel_path))
+            except Exception as e:
+                logger.error("Failed to load image from '%s': %s", channel_path, e, exc_info=True)
+                return None
         return None
 
     @staticmethod
@@ -212,12 +227,15 @@ class ProjectManager:
         import subprocess
 
         system = platform.system()
-        if system == "Darwin":
-            subprocess.run(["open", str(project_path)])
-        elif system == "Linux":
-            subprocess.run(["xdg-open", str(project_path)])
-        elif system == "Windows":
-            subprocess.run(["explorer", str(project_path)])
+        try:
+            if system == "Darwin":
+                subprocess.run(["open", str(project_path)])
+            elif system == "Linux":
+                subprocess.run(["xdg-open", str(project_path)])
+            elif system == "Windows":
+                subprocess.run(["explorer", str(project_path)])
+        except Exception as e:
+            logger.error("Failed to open project folder '%s': %s", project_path, e, exc_info=True)
 
     @staticmethod
     def get_folder_size(path: Path) -> int:

@@ -17,29 +17,13 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon, QPixmap
-from PyQt6.QtWidgets import (
-    QApplication,
-    QCheckBox,
-    QComboBox,
-    QGridLayout,
-    QGroupBox,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QListWidget,
-    QListWidgetItem,
-    QMainWindow,
-    QMessageBox,
-    QProgressBar,
-    QPushButton,
-    QScrollArea,
-    QSlider,
-    QSpinBox,
-    QSplitter,
-    QTabWidget,
-    QVBoxLayout,
-    QWidget,
-)
+from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QGridLayout,
+                             QGroupBox, QHBoxLayout, QLabel, QLineEdit,
+                             QListWidget, QListWidgetItem, QMainWindow,
+                             QMessageBox, QProgressBar, QPushButton,
+                             QScrollArea, QSlider, QSpinBox, QSplitter,
+                             QTabWidget, QVBoxLayout, QWidget)
+
 from ui.analysis.graphing.UMAPDataModel import DataModel
 from ui.analysis.graphing.UMAPLocale import Locale
 from ui.analysis.graphing.UMAPWorkers import AnalysisWorker, ClusteringWorker
@@ -611,7 +595,9 @@ class PlotView(QWidget):
                 )
             self.figure.tight_layout()
             self.canvas.draw()
-        except Exception:
+        except Exception as e:
+            logger.exception("UMAP_PLOT_FAIL")
+            logger.debug(f"Error: {e}")
             self.ax.text(
                 0.5, 0.5, Locale.get("PLOT_NO_SIGNAL"), ha="center", color=c["alert"]
             )

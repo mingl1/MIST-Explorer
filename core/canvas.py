@@ -422,8 +422,8 @@ class BaseGraphicsView(QWidget):
 
                     yield image, valid_page_count
 
-                except Exception:
-                    # print(f"Error reading page {i}: {e}")
+                except Exception as e:
+                    logger.warning("Skipping corrupted TIFF page %d: %s", _, e)
                     continue
 
     def _subsample_for_display(
@@ -518,7 +518,11 @@ class BaseGraphicsView(QWidget):
         """Process single channel images."""
         # print("Processing single image")
         emit_data = {}
-        channel_one_image = np.array(Image.open(file_name))
+        try:
+            channel_one_image = np.array(Image.open(file_name))
+        except Exception as e:
+            logger.error("Failed to open image file '%s': %s", file_name, e, exc_info=True)
+            raise
         channel_name = "Channel 1"
         channel_one_wrapper = ImageWrapper(channel_one_image, channel_name)
         working_channel = {channel_name: channel_one_wrapper}
@@ -634,7 +638,7 @@ class BaseGraphicsView(QWidget):
                 )
                 self.memory_cache.put(uuid, channel_name, cache_key, contrasted)
             except Exception as e:
-                logger.error(f"Error processing {channel_name} in background: {e}")
+                logger.error(f"Error processing {channel_name} in background: {e}", exc_info=True)
                 continue
 
         return processed_channels
@@ -646,7 +650,7 @@ class BaseGraphicsView(QWidget):
             self._caching_worker = Worker(self._process_caching_queue)
             self._caching_worker.finished.connect(self._on_caching_worker_finished)
             self._caching_worker.error.connect(
-                lambda e: print(f"Caching worker error: {e}")
+                lambda e: logger.error("Caching worker error: %s", e)
             )
             self._caching_worker.start()
 
@@ -657,8 +661,8 @@ class BaseGraphicsView(QWidget):
                 channels, uuid = self.caching_queue.get_nowait()
                 self._cache_remaining_channels(channels, uuid)
                 self.caching_queue.task_done()
-            except BaseException:
-                pass  # Should not happen if called correctly
+            except Exception as e:
+                logger.error("Error processing caching queue: %s", e, exc_info=True)
 
     def _on_caching_worker_finished(self):
         """Called when a caching worker finishes. Starts a new one if queue is not empty."""
@@ -666,7 +670,7 @@ class BaseGraphicsView(QWidget):
             self._caching_worker = Worker(self._process_caching_queue)
             self._caching_worker.finished.connect(self._on_caching_worker_finished)
             self._caching_worker.error.connect(
-                lambda e: print(f"Caching worker error: {e}")
+                lambda e: logger.error("Caching worker error: %s", e)
             )
             self._caching_worker.start()
 

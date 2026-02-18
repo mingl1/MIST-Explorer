@@ -39,6 +39,10 @@ class QtLogHandler(logging.Handler):
             msg = self.format(record)
             self._emitter.log_message.emit(msg)
         except Exception:
+            try:
+                print(self.format(record), file=sys.stderr)
+            except Exception:
+                pass
             self.handleError(record)
 
 

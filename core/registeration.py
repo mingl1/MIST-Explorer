@@ -63,6 +63,7 @@ class Register(QThread):
         self.max_points = max_points
 
     def _fatal_error_message(self, msg):
+        logger.error("Registration error: %s", msg)
         self.error.emit(msg)
         self.progress.emit(100, "Retry Maybe")
 
