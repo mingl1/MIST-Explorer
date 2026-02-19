@@ -65,6 +65,10 @@ color_dict = {
     "dark slate blue": [72, 61, 139],
 }
 
+DEFAULT_PROTEIN_LOWER_PERCENTILE = 1.0
+DEFAULT_PROTEIN_UPPER_PERCENTILE = 99.5
+DEFAULT_PROTEIN_GAMMA = 0.8
+
 
 def create_contrast_lut(min_val, max_val):
     """Creates a Look-Up Table for contrast adjustment."""
@@ -137,10 +141,54 @@ import time
 
 
 # return cnv
+def robust_scale_protein_values(
+    protein_data,
+    lower_percentile=DEFAULT_PROTEIN_LOWER_PERCENTILE,
+    upper_percentile=DEFAULT_PROTEIN_UPPER_PERCENTILE,
+    gamma=DEFAULT_PROTEIN_GAMMA,
+):
+    """Robustly scale per-cell intensities for display.
+
+    Typical microscopy tools clip outliers with percentile windowing, then map to 8-bit.
+    This keeps sparse hot pixels from suppressing the majority of cell signal.
+    """
+    values = np.asarray(protein_data, dtype=np.float32)
+    values = np.nan_to_num(values, nan=0.0, posinf=0.0, neginf=0.0)
+    values = np.clip(values, 0.0, None)
+
+    foreground = values[values > 0]
+    if foreground.size == 0:
+        return np.zeros_like(values, dtype=np.uint8)
+
+    if foreground.size < 8:
+        lo = 0.0
+        hi = float(np.max(foreground))
+    else:
+        lo, hi = np.percentile(foreground, [lower_percentile, upper_percentile])
+
+    if not np.isfinite(lo):
+        lo = 0.0
+    if not np.isfinite(hi) or hi <= lo:
+        hi = float(np.max(foreground))
+        lo = min(lo, hi)
+
+    span = hi - lo
+    if span <= 0:
+        normalized = np.zeros_like(values, dtype=np.float32)
+    else:
+        normalized = (values - lo) / span
+        normalized = np.clip(normalized, 0.0, 1.0)
+
+    if gamma > 0 and gamma != 1:
+        normalized = np.power(normalized, gamma)
+
+    return (normalized * 255.0).astype(np.uint8)
+
+
 def write_protein(protein_data, reduced_cell_img):
     """
     Generates a protein intensity image using vectorized numpy indexing.
-    Intensity is scaled absolutely based on a 16-bit range (0-65535).
+    Intensity is robustly scaled for display with percentile clipping.
 
     Args:
         protein_data (np.ndarray): 1D array of intensity values for each cell.
@@ -156,17 +204,9 @@ def write_protein(protein_data, reduced_cell_img):
         # Ensure float for division
         protein_data = protein_data.astype(np.float32)
 
-    # Scale data relative to the max value of uint16 (65535).
-    # This provides a consistent, absolute scaling across all proteins.
-    scaled_data = (protein_data / 65535.0 * 255.0).astype(np.float32)
-
-    # Replace any NaN or inf values before casting to integer type.
-    # NaNs are converted to 0, which is appropriate for missing data.
-    safe_data = np.nan_to_num(scaled_data)
-
-    # Clip values to ensure they are in the 0-65535 range and convert to uint8
-    normalized_data = np.clip(safe_data, 0, 255).astype(np.uint8)
-    # normalized_data[normalized_data==0] = np.nan
+    # Robustly map each protein channel to display range so high outliers
+    # do not dominate layer visibility.
+    normalized_data = robust_scale_protein_values(protein_data)
 
     # Create a lookup table (LUT) for protein intensities.
     # The +1 is for the background (cell ID 0), which will have an intensity of 0.
@@ -838,7 +878,26 @@ class ImageOverlay(QWidget):
     def add_layer(self, c):
         self.controls.append(c)
         self.add_layer_controls(c)
-        self.change_pix.emit(c.image, len(self.controls) - 1)
+        idx = len(self.controls) - 1
+        self.change_pix.emit(c.image, idx)
+        self.update_layer_display(idx)
+
+    def _default_contrast_for_image(self, image):
+        if not isinstance(image, np.ndarray) or image.size == 0:
+            return (0, 255)
+        if image.ndim != 2:
+            return (0, 255)
+
+        vmin, vmax = auto_contrast_helper(
+            image,
+            lower=DEFAULT_PROTEIN_LOWER_PERCENTILE,
+            upper=DEFAULT_PROTEIN_UPPER_PERCENTILE,
+        )
+        vmin = int(np.clip(round(vmin), 0, 255))
+        vmax = int(np.clip(round(vmax), 0, 255))
+        if vmax <= vmin:
+            return (0, 255)
+        return (vmin, vmax)
 
     def update_current_image(self, image):
         last_index = len(self.controls) - 1
@@ -913,9 +972,13 @@ class ImageOverlay(QWidget):
         )
 
         contrast_slider.setMaximum(255)
-        contrast_slider.setValue((0, 255))
+        initial_contrast = self._default_contrast_for_image(c.image)
+        contrast_slider.blockSignals(True)
+        contrast_slider.setValue(initial_contrast)
+        contrast_slider.blockSignals(False)
         contrast_slider.setDecimals(0)
         self.contrast_sliders.append(contrast_slider)
+        self.controls[idx].current_contrast = [initial_contrast[0], initial_contrast[1]]
         # contrast_slider.installEventFilter(self)
 
         contrast_label = QLabel("Contrast:")
@@ -1024,7 +1087,12 @@ class ImageOverlay(QWidget):
         self.update_layer_display(idx)
         self.process_images()
 
-    def auto_contrast(self, gb, lower=0.1, upper=0.9):
+    def auto_contrast(
+        self,
+        gb,
+        lower=DEFAULT_PROTEIN_LOWER_PERCENTILE,
+        upper=DEFAULT_PROTEIN_UPPER_PERCENTILE,
+    ):
         idx = self.scroll_layout.indexOf(gb)
         img = self.controls[idx].image
         assert isinstance(img, np.ndarray)
