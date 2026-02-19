@@ -10,12 +10,26 @@ import qtrangeslider
 import tifffile as tiff
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QImage
-from PyQt6.QtWidgets import (QDialog, QDialogButtonBox, QFileDialog,
-                             QFormLayout, QGroupBox, QHBoxLayout, QLabel,
-                             QLineEdit, QListWidget, QListWidgetItem,
-                             QMessageBox, QPushButton, QScrollArea,
-                             QSizePolicy, QSlider, QSplitter, QVBoxLayout,
-                             QWidget)
+from PyQt6.QtWidgets import (
+    QDialog,
+    QDialogButtonBox,
+    QFileDialog,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QSlider,
+    QSplitter,
+    QVBoxLayout,
+    QWidget,
+)
 
 from controller import Controller
 from core.image_utils import auto_contrast_helper, create_lut, scale_adjust
@@ -273,13 +287,16 @@ class LayerDialog(QDialog):
         self.setLayout(my_layout)
 
     def get_selected_layer_index(self):
-        logger.debug("selected items: %s", [item.text() for item in self.layer_list.selectedItems()])
+        logger.debug(
+            "selected items: %s",
+            [item.text() for item in self.layer_list.selectedItems()],
+        )
         logger.debug("layer names: %s", [l["name"] for l in self.layers])
         logger.debug(
             "selected layer index: %s",
             [l["name"] for l in self.layers].index(
                 [item.text() for item in self.layer_list.selectedItems()][0]
-            )
+            ),
         )
 
         selected_items = self.layer_list.selectedItems()
@@ -583,8 +600,9 @@ class ImageOverlay(QWidget):
             tb = traceback.format_exc()
             logger.critical(f"Failed to open UMAP analysis:\n{tb}")
             QMessageBox.critical(
-                self, "UMAP Error",
-                f"Failed to open UMAP analysis:\n\n{e}\n\nSee log for full traceback."
+                self,
+                "UMAP Error",
+                f"Failed to open UMAP analysis:\n\n{e}\n\nSee log for full traceback.",
             )
 
     # can probably be optimized by having just one array with all names and values, and then filtering out invisible ones
@@ -597,11 +615,11 @@ class ImageOverlay(QWidget):
         for c in self.controls:
             if c.current_visibility == False:
                 continue
-            
+
             # Skip if this is an "other image" (RGB) which has no cell data
             if c.cell_image.size == 0:
                 continue
-                
+
             value = c.cell_image[y, x]
             layer_values.append((c.name, value))
 
@@ -781,7 +799,6 @@ class ImageOverlay(QWidget):
         self.build_all_worker.finished.connect(self.build_all_worker.deleteLater)
         # self.threadpool.start(self.build_all_worker)
 
-
     def less_than_15_chars(self, string):
         if len(string) > 50:
             return string[:49] + "..."
@@ -843,7 +860,7 @@ class ImageOverlay(QWidget):
                 logger.warning("potential error %s", selected_index)
 
                 try:
-                    if self.layers[selected_index]["image"] == None:
+                    if self.layers[selected_index]["image"] is None:
                         (
                             self.layers[selected_index]["image"],
                             self.layers[selected_index]["cell_data"],
@@ -852,7 +869,8 @@ class ImageOverlay(QWidget):
                     QMessageBox.critical(
                         self,
                         "Error",
-                        "Error generating image for layer. Please ensure number of instances in segmentation and match number of cells.\n\n" + str(e),
+                        "Error generating image for layer. Please ensure number of instances in segmentation and match number of cells.\n\n"
+                        + str(e),
                     )
                 reduced_cell_img = np.array(self.layers[selected_index]["image"])
                 # reduced_cellImg = reduced_cell_img/255.0
