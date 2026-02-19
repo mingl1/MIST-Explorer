@@ -297,7 +297,7 @@ class Controller:
             else:
                 logger.debug("clearing canvas")
                 self.model_canvas.clear_canvas()
-        else:
+        elif self.prev_tab_index == 0 and new_index != 0:
             self.view.canvas.show_view_tab_image()
             self.view.view_tab.process_images()
             # self.view.canvas.pixmap_item.hide()

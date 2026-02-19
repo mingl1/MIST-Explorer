@@ -377,6 +377,7 @@ class ImageGraphicsViewUI(QGraphicsView):
                 self.view_pixmaps[layer_idx].setImage(pixmap)
 
     def _center_view_tab_image(self, layer_idx):
+        rubber_band_positions = self._capture_rubber_band_scene_positions()
         pixmap_item = self.view_pixmaps[layer_idx]
         item_rect = pixmap_item.boundingRect()
         item_rect = QRectF(
@@ -388,8 +389,10 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.setSceneRect(item_rect)
         self.fitInView(pixmap_item, Qt.AspectRatioMode.KeepAspectRatio)
         self.centerOn(pixmap_item)
+        self._restore_rubber_band_scene_positions(rubber_band_positions)
 
     def _center_image(self):
+        rubber_band_positions = self._capture_rubber_band_scene_positions()
         pixmap_item = \
             self.pixmap_item if self.pixmap_item.isVisible() else self.view_pixmaps[0]
         item_rect = pixmap_item.boundingRect()
@@ -402,8 +405,32 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.setSceneRect(item_rect)
         self.fitInView(pixmap_item, Qt.AspectRatioMode.KeepAspectRatio)
         self.centerOn(pixmap_item)
+        self._restore_rubber_band_scene_positions(rubber_band_positions)
         # if self.reference_view:
         #     self.reference_view.__centerImage()
+
+    def _capture_rubber_band_scene_positions(self):
+        """Capture ROI widget corners in scene coordinates before view transform changes."""
+        positions = []
+        for rubber_band in self.rubber_bands:
+            if rubber_band is None:
+                continue
+            rect = rubber_band.geometry().normalized()
+            top_left_scene = self.mapToScene(rect.topLeft())
+            bottom_right_scene = self.mapToScene(rect.bottomRight())
+            positions.append((rubber_band, top_left_scene, bottom_right_scene))
+        return positions
+
+    def _restore_rubber_band_scene_positions(self, positions):
+        """Restore ROI widget geometry from scene coordinates after view transform changes."""
+        for rubber_band, top_left_scene, bottom_right_scene in positions:
+            if rubber_band is None:
+                continue
+            new_top_left_view = self.mapFromScene(top_left_scene)
+            new_bottom_right_view = self.mapFromScene(bottom_right_scene)
+            rubber_band.setGeometry(
+                QRect(new_top_left_view, new_bottom_right_view).normalized()
+            )
 
     # pylint: disable=invalid-name
     def dragEnterEvent(self, event: QDragEnterEvent):  # type: ignore
@@ -497,6 +524,29 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.starting_x = int(self.image_pos.x())
         self.starting_y = int(self.image_pos.y())
 
+    def _find_top_rubber_band(self, view_pos):
+        """Return the top-most visible ROI under the given view position."""
+        for rubber_band in reversed(self.rubber_bands):
+            if (
+                rubber_band
+                and rubber_band.isVisible()
+                and rubber_band.geometry().contains(view_pos)
+            ):
+                return rubber_band
+        return None
+
+    def _cancel_rubber_band_drag(self):
+        """Reset any in-progress ROI drag state."""
+        self.moving_lasso = None
+        self.last_mouse_pos = None
+        for rubber_band in self.rubber_bands:
+            if hasattr(rubber_band, "is_dragging"):
+                rubber_band.is_dragging = False
+            if hasattr(rubber_band, "mouse_press_pos"):
+                rubber_band.mouse_press_pos = None
+            if hasattr(rubber_band, "mouse_move_pos"):
+                rubber_band.mouse_move_pos = None
+
     # pylint: disable=invalid-name, too-many-branches, too-many-statements
     def mousePressEvent(self, event: QMouseEvent | None):
         """Handle mouse press."""
@@ -526,12 +576,12 @@ class ImageGraphicsViewUI(QGraphicsView):
             # Handle Shift+Click to move ROI
             if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
                 # Find the top-most lasso under the mouse
-                for r in reversed(self.rubber_bands):
-                    if r.geometry().contains(event.pos()):
-                        self.moving_lasso = r
-                        self.last_mouse_pos = event.pos()
-                        event.accept()
-                        return
+                top_lasso = self._find_top_rubber_band(event.pos())
+                if top_lasso is not None:
+                    self.moving_lasso = top_lasso
+                    self.last_mouse_pos = event.pos()
+                    event.accept()
+                    return
 
             # Handle regular selection modes
             if self.begin_crop or self.select:
@@ -585,10 +635,6 @@ class ImageGraphicsViewUI(QGraphicsView):
 
         if not self.is_resizing and not self.select:
             super().mousePressEvent(event)
-
-        # Propagate event to rubber bands
-        for r in self.rubber_bands:
-            r.mousePressEvent(event)
 
     # pylint: disable=invalid-name
     def keyPressEvent(self, event):
@@ -877,11 +923,6 @@ class ImageGraphicsViewUI(QGraphicsView):
                     QRect(self.origin, event.pos()).normalized()
                 )
 
-        # Propagate event to rubber bands
-        if not self.select:
-            for r in self.rubber_bands:
-                r.mouseMoveEvent(event)
-
     # pylint: disable=invalid-name
     def mouseReleaseEvent(self, event: QMouseEvent | None):
         """Handle mouse release."""
@@ -975,10 +1016,6 @@ class ImageGraphicsViewUI(QGraphicsView):
         if not self.rubber_bands:
             return
 
-        # Propagate event to rubber bands
-        for r in self.rubber_bands:
-            r.mouseReleaseEvent(event)
-
         if event.button() == Qt.MouseButton.LeftButton:
             rubberband = self.rubber_band if self.begin_crop else self.rubber_bands[-1]
 
@@ -1010,6 +1047,18 @@ class ImageGraphicsViewUI(QGraphicsView):
                             rubberband.deleteLater()
                     self.select = False
                     return
+
+    def leaveEvent(self, event):
+        """Cancel ROI dragging when pointer leaves the view."""
+        self._cancel_rubber_band_drag()
+        super().leaveEvent(event)
+
+    # pylint: disable=invalid-name
+    def scrollContentsBy(self, dx, dy):
+        """Keep ROI overlays anchored to image coordinates while panning."""
+        rubber_band_positions = self._capture_rubber_band_scene_positions()
+        super().scrollContentsBy(dx, dy)
+        self._restore_rubber_band_scene_positions(rubber_band_positions)
 
     def load_channels(self, np_channels):
         """Load channel data"""
