@@ -161,10 +161,16 @@ class MainWindow(QMainWindow):
                 )
                 if channel_array is not None:
                     contrast = image_meta.contrast_settings.get(channel_name, (0, 255))
+                    display_name = image_meta.channel_display_names.get(
+                        channel_name, channel_name
+                    )
+                    channel_cmap = (
+                        "label_image" if display_name == "StarDist Labels" else "gray"
+                    )
                     wrapper = ImageWrapper(
                         channel_array,
-                        name=channel_name,
-                        cmap="gray",
+                        name=display_name,
+                        cmap=channel_cmap,
                     )
                     wrapper.contrast_min = contrast[0]
                     wrapper.contrast_max = contrast[1]

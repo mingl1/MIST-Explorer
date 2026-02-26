@@ -619,6 +619,9 @@ class BaseGraphicsView(QWidget):
         if remaining_channels:
             self._schedule_caching_task(remaining_channels, self.uuid)
 
+        if hasattr(self, "_restore_stardist_state_from_channels"):
+            self._restore_stardist_state_from_channels()
+
         # self._clear_caches()
         return target_image_wrapper.data
 
@@ -904,6 +907,11 @@ class ImageGraphicsView(BaseGraphicsView):
         self.memory_cache = MemoryEfficientImageCache(max_cache_size_mb=3000)
         self.blur_worker = None
         self.stardist_labels = None
+        self.stardist_overlay_enabled = False
+        self.stardist_overlay_alpha = 0.45
+        self._stardist_overlay_rgb = None
+        self.stardist_source_channel = None
+        self.stardist_virtual_channel = None
         self._blur_layer = ""
         self.corrected_layer = None
         self.uuid = None
@@ -925,18 +933,188 @@ class ImageGraphicsView(BaseGraphicsView):
         self.blur_worker = None
         self.uuid = None
         self.num_channels = 0
+        self.clear_stardist_overlay()
         self.update_canvas.emit(QPixmap())
 
     def swap_channel(self, index):
         """Modified swap_channel to wait for background processing if needed."""
+        channel_num = f"Channel {index + 1}"
+        if channel_num not in self.working_channels:
+            logger.debug("Channel %s not available. swap ignored.", channel_num)
+            return
+
         # not 100% so need the len check later
         self.current_channel = index
-
-        channel_num = f"Channel {index + 1}"
-        self.image_wrapper = self.working_channels.get(
-            channel_num, ImageWrapper(np.array([]), "")
-        )
+        self.image_wrapper = self.working_channels[channel_num]
         self.update_image()
+
+    def _prepare_channels_for_new_image(self):
+        super()._prepare_channels_for_new_image()
+        self.clear_stardist_overlay()
+
+    def clear_stardist_overlay(self):
+        self.stardist_labels = None
+        self.stardist_overlay_enabled = False
+        self._stardist_overlay_rgb = None
+        self.stardist_source_channel = None
+        self.stardist_virtual_channel = None
+
+    def _restore_stardist_state_from_channels(self):
+        self.clear_stardist_overlay()
+        for channel_key, wrapper in self.working_channels.items():
+            if getattr(wrapper, "name", "") == "StarDist Labels":
+                self.stardist_virtual_channel = channel_key
+                self.stardist_labels = wrapper.data.copy()
+                break
+
+        if self.stardist_labels is None:
+            return
+
+        current_channel_key = f"Channel {self.current_channel + 1}"
+        if current_channel_key != self.stardist_virtual_channel:
+            self.stardist_source_channel = current_channel_key
+            return
+
+        for channel_key, wrapper in self.working_channels.items():
+            if channel_key == self.stardist_virtual_channel:
+                continue
+            if (
+                wrapper.data.ndim == 2
+                and wrapper.data.shape == self.stardist_labels.shape
+            ):
+                self.stardist_source_channel = channel_key
+                return
+
+    def set_stardist_overlay_enabled(self, enabled: bool):
+        self.stardist_overlay_enabled = bool(enabled) and self.stardist_labels is not None
+        if not self.stardist_overlay_enabled:
+            self._stardist_overlay_rgb = None
+        self.update_image()
+
+    def remove_virtual_stardist_channel(self, channel_key: str) -> bool:
+        wrapper = self.working_channels.get(channel_key)
+        if wrapper is None or getattr(wrapper, "name", "") != "StarDist Labels":
+            return False
+
+        self.working_channels.pop(channel_key, None)
+        self.reset_working_channels.pop(channel_key, None)
+        if self.uuid is not None:
+            self.memory_cache.clear_channel(self.uuid, channel_key)
+
+        self.clear_stardist_overlay()
+
+        if not self.working_channels:
+            self.image_wrapper = ImageWrapper(np.array([]), "")
+            self.update_canvas.emit(QPixmap())
+            return True
+
+        available_channels = sorted(
+            self.working_channels.keys(), key=lambda x: int(x.replace("Channel ", ""))
+        )
+        self.current_channel = int(available_channels[0].replace("Channel ", "")) - 1
+        self.image_wrapper = self.working_channels[available_channels[0]]
+        self.image_signal.emit(self.working_channels, True)
+        self.update_image()
+        return True
+
+    def _set_stardist_source_channel(self):
+        if not hasattr(self.controller, "model_stardist"):
+            return
+        source_channel = self.controller.model_stardist.params.get("channel")
+        if not isinstance(source_channel, str):
+            return
+        if source_channel not in self.working_channels:
+            return
+        self.stardist_source_channel = source_channel
+
+        try:
+            self.current_channel = int(source_channel.replace("Channel ", "")) - 1
+        except ValueError:
+            return
+        self.image_wrapper = self.working_channels[source_channel]
+
+    def _next_available_channel_key(self) -> str:
+        next_index = 0
+        for key in self.working_channels:
+            if not key.startswith("Channel "):
+                continue
+            try:
+                idx = int(key.replace("Channel ", ""))
+            except ValueError:
+                continue
+            next_index = max(next_index, idx)
+        return f"Channel {next_index + 1}"
+
+    def _upsert_stardist_virtual_channel(self, labels: np.ndarray):
+        if self.stardist_virtual_channel is None:
+            for channel_key, wrapper in self.working_channels.items():
+                if getattr(wrapper, "name", "") == "StarDist Labels":
+                    self.stardist_virtual_channel = channel_key
+                    break
+            if self.stardist_virtual_channel is None:
+                self.stardist_virtual_channel = self._next_available_channel_key()
+
+        channel_key = self.stardist_virtual_channel
+        wrapper = ImageWrapper(labels, name="StarDist Labels", cmap="label_image")
+        wrapper.contrast_min = 0
+        wrapper.contrast_max = 255
+        self.working_channels[channel_key] = wrapper
+        self.reset_working_channels[channel_key] = wrapper.copy()
+
+        if self.uuid is None:
+            return
+        item = self.storage.get_data(str(self.uuid))
+        if item is None:
+            return
+        self.storage.update_data(
+            str(self.uuid),
+            channel_key,
+            wrapper.copy(),
+            emitter=self.update_sidebar,
+        )
+
+    def _build_stardist_overlay(self, labels: np.ndarray) -> np.ndarray:
+        label_rgb = sk_label2rgb(labels, bg_label=0, bg_color=(0, 0, 0))
+        return scale_adjust(label_rgb)
+
+    def _apply_stardist_overlay(self, image_to_display: np.ndarray) -> np.ndarray:
+        current_channel_key = f"Channel {self.current_channel + 1}"
+        if (
+            not self.stardist_overlay_enabled
+            or self.stardist_labels is None
+            or image_to_display.size == 0
+            or self.image_wrapper.data.ndim != 2
+            or self.stardist_labels.shape != self.image_wrapper.data.shape
+            or self.stardist_source_channel is None
+            or current_channel_key != self.stardist_source_channel
+            or current_channel_key == self.stardist_virtual_channel
+        ):
+            return image_to_display
+
+        if image_to_display.dtype != np.uint8:
+            image_to_display = scale_adjust(image_to_display)
+
+        if image_to_display.ndim == 2:
+            base_rgb = cv2.cvtColor(image_to_display, cv2.COLOR_GRAY2RGB)
+        elif image_to_display.ndim == 3 and image_to_display.shape[2] >= 3:
+            base_rgb = image_to_display[:, :, :3].copy()
+        else:
+            return image_to_display
+
+        if self._stardist_overlay_rgb is None:
+            self._stardist_overlay_rgb = self._build_stardist_overlay(
+                self.stardist_labels
+            )
+
+        mask = self.stardist_labels > 0
+        if not np.any(mask):
+            return base_rgb
+
+        alpha = float(np.clip(self.stardist_overlay_alpha, 0.0, 1.0))
+        blended = base_rgb.astype(np.float32)
+        overlay = self._stardist_overlay_rgb.astype(np.float32)
+        blended[mask] = (1.0 - alpha) * blended[mask] + alpha * overlay[mask]
+        return np.clip(blended, 0, 255).astype(np.uint8)
 
     def update_contrast_memory_efficient(
         self, values, use_cache=True, is_labeled=False, cache_result=True
@@ -957,6 +1135,9 @@ class ImageGraphicsView(BaseGraphicsView):
         # if self.is_layered:
         # print("Processing layered image with memory management")
         channel_num = f"Channel {self.current_channel + 1}"
+        if channel_num not in self.working_channels:
+            logger.warning("Channel %s missing during contrast update.", channel_num)
+            return np.array([]), cmap_key
         self.image_wrapper = self.working_channels[channel_num]
         self.image_wrapper.contrast_min = contrast_min
         self.image_wrapper.contrast_max = contrast_max
@@ -1088,6 +1269,7 @@ class ImageGraphicsView(BaseGraphicsView):
             image_to_display = image
 
         assert image_to_display is not None, "Updating empty image"
+        image_to_display = self._apply_stardist_overlay(image_to_display)
         if self_emit:
             self.set_pixmap(image_to_display)
         return image_to_display
@@ -1108,8 +1290,16 @@ class ImageGraphicsView(BaseGraphicsView):
             channel_num, cache_key, contrast_min, contrast_max
         )
 
-    def load_stardist_labels(self, stardist: ImageWrapper):
-        self.stardist_labels = stardist.data
+    def load_stardist_labels(self, stardist: ImageWrapper, *_):
+        self.stardist_labels = stardist.data.copy()
+        self.stardist_overlay_enabled = False
+        self._stardist_overlay_rgb = None
+        self._upsert_stardist_virtual_channel(self.stardist_labels)
+        self._set_stardist_source_channel()
+        if self.image_wrapper.cmap == "label_image":
+            self.image_wrapper.cmap = "gray"
+        self.image_signal.emit(self.working_channels, True)
+        self.update_image()
 
     def add_to_canvas(
         self,
@@ -1120,7 +1310,6 @@ class ImageGraphicsView(BaseGraphicsView):
     ):
         """add a new image if input is a filename, or can choose to only replace the canvas
         if input is an ImageWrapper or dict of ImageWrapper"""
-        self._prepare_channels_for_new_image()
         # if hasattr(self, "memory_cache"):
         # self.memory_cache.clear_all()
         # str is filepath
@@ -1350,10 +1539,14 @@ class ImageGraphicsView(BaseGraphicsView):
                     )
             if self.same_uuid(result_uuid):
                 self.working_channels = self.storage.get_data(result_uuid)["data"]
-                self.image_wrapper = self.working_channels.get(
-                    f"Channel {self.current_channel + 1}",
-                    ImageWrapper(np.array([]), ""),
-                )
+                channel_key = f"Channel {self.current_channel + 1}"
+                if channel_key in self.working_channels:
+                    self.image_wrapper = self.working_channels[channel_key]
+                else:
+                    logger.warning(
+                        "Channel %s missing after rotation; keeping current wrapper.",
+                        channel_key,
+                    )
                 self.update_image()
             self._clear_caches(result_uuid)
         else:
@@ -1386,6 +1579,9 @@ class ImageGraphicsView(BaseGraphicsView):
         # scale_adjust gives)
         if self.is_layered:
             channel_num = f"Channel {self.current_channel + 1}"
+            if channel_num not in self.working_channels:
+                logger.warning("Channel %s missing during auto contrast.", channel_num)
+                return
             img = scale_adjust(self.working_channels[channel_num].data)
         else:
             img = scale_adjust(self.image_wrapper.data)
@@ -1448,7 +1644,8 @@ class ImageGraphicsView(BaseGraphicsView):
                 self.working_channels[self._blur_layer],
                 emitter=self.update_sidebar,
             )
-            self.image_wrapper = self.working_channels[self._blur_layer]
+            if self._blur_layer in self.working_channels:
+                self.image_wrapper = self.working_channels[self._blur_layer]
             self._clear_caches(self.uuid, self._blur_layer)
             self.image_signal.emit(self.working_channels, False)
             self.update_progress.emit(100, f"Replaced {self._blur_layer}")
@@ -1489,7 +1686,10 @@ class ImageGraphicsView(BaseGraphicsView):
                 )
                 channels[channel_name] = wrapper_copy
 
-            self.crop_worker = Worker(self.add_to_canvas, channels, True, name)
+            target_channel = f"Channel {self.current_channel + 1}"
+            self.crop_worker = Worker(
+                self.add_to_canvas, channels, True, name, target_channel
+            )
             self.crop_worker.finished.connect(self.crop_worker.quit)
             self.crop_worker.finished.connect(self.crop_worker.deleteLater)
             self.crop_worker.start()
@@ -1507,9 +1707,9 @@ class ImageGraphicsView(BaseGraphicsView):
                 self.storage.update_data(
                     self.uuid, channel_name, wrapper, emitter=self.update_sidebar
                 )
-        self.image_wrapper = self.working_channels.get(
-            f"Channel {self.current_channel + 1}", ImageWrapper(np.array([]), "")
-        )
+        channel_key = f"Channel {self.current_channel + 1}"
+        if channel_key in self.working_channels:
+            self.image_wrapper = self.working_channels[channel_key]
         self._clear_caches()
         self.update_image(use_cache=False)
         # self.set_pixmap(self.image_wrapper.data)
@@ -1524,9 +1724,9 @@ class ImageGraphicsView(BaseGraphicsView):
                 self.storage.update_data(
                     self.uuid, channel_name, wrapper, emitter=self.update_sidebar
                 )
-        self.image_wrapper = self.working_channels.get(
-            f"Channel {self.current_channel + 1}", ImageWrapper(np.array([]), "")
-        )
+        channel_key = f"Channel {self.current_channel + 1}"
+        if channel_key in self.working_channels:
+            self.image_wrapper = self.working_channels[channel_key]
         self._clear_caches()
         self.update_image(use_cache=False)
 

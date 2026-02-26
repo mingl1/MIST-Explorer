@@ -1,5 +1,6 @@
 from PyQt6.QtCore import QCoreApplication, QMetaObject, QSize
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QGroupBox,
@@ -106,9 +107,19 @@ class StarDistUI(QWidget):
         self.stardist_hlayout7.addWidget(self.radius)
         self.stardist_components_vlayout.addLayout(self.stardist_hlayout7)
 
+        self.use_contrasted_checkbox = QCheckBox(self.stardist_groupbox)
+        self.use_contrasted_checkbox.setChecked(False)
+        self.stardist_components_vlayout.addWidget(self.use_contrasted_checkbox)
+
         # run button
         self.stardist_run_button = QPushButton(self.stardist_groupbox)
         self.stardist_components_vlayout.addWidget(self.stardist_run_button)
+
+        # overlay toggle
+        self.overlay_toggle_button = QPushButton(self.stardist_groupbox)
+        self.overlay_toggle_button.setCheckable(True)
+        self.overlay_toggle_button.setChecked(False)
+        self.stardist_components_vlayout.addWidget(self.overlay_toggle_button)
 
         # cancel button
         self.cancel_button = QPushButton(self.stardist_groupbox)
@@ -127,9 +138,15 @@ class StarDistUI(QWidget):
     def updateChannelSelector(self, channels: dict):
         self.clearChannelSelector()
         channel_keys = sorted(
-            channels.keys(), key=lambda x: int(x.replace("Channel ", ""))
+            [
+                key
+                for key, wrapper in channels.items()
+                if getattr(wrapper, "name", "") != "StarDist Labels"
+            ],
+            key=lambda x: int(x.replace("Channel ", "")),
         )
         self.stardist_channel_selector.addItems(channel_keys)
+        self.overlay_toggle_button.setChecked(False)
         self.__retranslate_UI()
 
     def clearChannelSelector(self):
@@ -151,5 +168,9 @@ class StarDistUI(QWidget):
         self.stardist_label5.setText(_translate("MainWindow", "Overlap Threshold"))
         self.stardist_label6.setText(_translate("MainWindow", "Number of Tiles"))
         self.stardist_label7.setText(_translate("MainWindow", "Radius"))
+        self.use_contrasted_checkbox.setText(
+            _translate("MainWindow", "Use contrasted image (toolbar sliders)")
+        )
         self.stardist_run_button.setText(_translate("MainWindow", "Run"))
+        self.overlay_toggle_button.setText(_translate("MainWindow", "Show Overlay"))
         self.cancel_button.setText(_translate("MainWindow", "Cancel"))

@@ -35,6 +35,8 @@ class ToolBarUI(QToolBar):
 
     def __init__(self, parent):
         super().__init__(parent=parent)
+        self.initialized = False
+        self._pending_channel_index: int | None = None
         self._init_tab_buttons()
         self._init_actions(parent)
         # self._init_channel_selector(parent)
@@ -119,18 +121,45 @@ class ToolBarUI(QToolBar):
 
     def updateChannelSelector(self, channels: dict, clear=False):
         self.initialized = False
-        if clear:
+        was_blocked = self.channelSelector.blockSignals(True)
+        try:
+            # Always rebuild from source-of-truth channels to avoid duplicate entries.
             self.clearChannelSelector()
-        channel_keys = sorted(
-            channels.keys(), key=lambda x: int(x.replace("Channel ", ""))
-        )
-        self.channelSelector.addItems(channel_keys)
+            channel_keys = sorted(
+                channels.keys(), key=lambda x: int(x.replace("Channel ", ""))
+            )
+            for channel_key in channel_keys:
+                wrapper = channels[channel_key]
+                display_name = getattr(wrapper, "name", "") or channel_key
+                if display_name == "StarDist Labels":
+                    text = f"{channel_key} (StarDist Labels)"
+                elif display_name != channel_key:
+                    text = f"{channel_key} ({display_name})"
+                else:
+                    text = channel_key
+                self.channelSelector.addItem(text)
+
+            if self._pending_channel_index is not None and self.channelSelector.count() > 0:
+                max_index = self.channelSelector.count() - 1
+                safe_index = max(0, min(self._pending_channel_index, max_index))
+                self.channelSelector.setCurrentIndex(safe_index)
+                self._pending_channel_index = None
+        finally:
+            self.channelSelector.blockSignals(was_blocked)
         return
 
     def setChannelSelector(self, channel: int):
-        self.channelSelector.blockSignals(True)
-        self.channelSelector.setCurrentIndex(channel)
-        self.channelSelector.blockSignals(False)
+        if self.channelSelector.count() == 0:
+            self._pending_channel_index = channel
+            return
+
+        max_index = self.channelSelector.count() - 1
+        safe_index = max(0, min(channel, max_index))
+        was_blocked = self.channelSelector.blockSignals(True)
+        try:
+            self.channelSelector.setCurrentIndex(safe_index)
+        finally:
+            self.channelSelector.blockSignals(was_blocked)
 
     def clearChannelSelector(self):
         self.channelSelector.clear()

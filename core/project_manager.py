@@ -109,6 +109,7 @@ class ProjectManager:
         channel_count: int,
         original_filename: str = "",
         contrast_settings: Optional[Dict[str, Tuple[int, int]]] = None,
+        channel_display_names: Optional[Dict[str, str]] = None,
     ) -> ImageMetadata:
         image_folder = project_path / "images" / image_uuid
         image_folder.mkdir(parents=True, exist_ok=True)
@@ -127,14 +128,10 @@ class ProjectManager:
                 logger.error("Failed to save channel '%s' to '%s': %s", channel_name, channel_path, e, exc_info=True)
                 raise
 
-        thumbnail_folder = project_path / "thumbnails"
-        thumbnail_path = thumbnail_folder / f"{image_uuid}.png"
-
-        import numpy as np
-        from core.image_utils import scale_adjust
-
         if contrast_settings is None:
             contrast_settings = {}
+        if channel_display_names is None:
+            channel_display_names = {}
 
         image_metadata = ImageMetadata(
             uuid=image_uuid,
@@ -142,11 +139,16 @@ class ProjectManager:
             channel_count=channel_count,
             original_filename=original_filename,
             contrast_settings=contrast_settings,
+            channel_display_names=channel_display_names,
         )
 
         metadata = ProjectManager.load_metadata(project_path)
         if metadata is not None:
-            metadata.add_image(image_metadata)
+            existing = metadata.get_image(image_uuid)
+            if existing is None:
+                metadata.add_image(image_metadata)
+            else:
+                metadata.update_image(image_metadata)
             ProjectManager._save_metadata(metadata)
 
         return image_metadata

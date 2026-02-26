@@ -10,14 +10,21 @@ logger = logging.getLogger(__name__)
 
 
 class ImageTreeItem(QStandardItem):
-    def __init__(self, uuid, channel="Channel 1", useItemName=False, image_ready=False):
+    def __init__(
+        self,
+        uuid,
+        channel="Channel 1",
+        useItemName=False,
+        image_ready=False,
+        display_text=None,
+    ):
         super().__init__()
         self.storage = ImageStorage()
         image_dict = self.storage.get_data(uuid)
         if not image_dict:
             raise ValueError(f"No image data found for UUID: {uuid}, type: {type(uuid)}")
         name = image_dict.get("name", "")
-        text = name if useItemName else channel
+        text = name if useItemName else (display_text or channel)
         data = image_dict.get("data", {})
         self.useItemName = useItemName
         self.channel = channel

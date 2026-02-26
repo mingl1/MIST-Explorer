@@ -525,15 +525,26 @@ class SignalConnectionManager:
         self.c.view.stardist_groupbox.radius.valueChanged.connect(
             self.c.model_stardist.set_dialation_radisu
         )
+        self.c.view.stardist_groupbox.use_contrasted_checkbox.toggled.connect(
+            self.c.model_stardist.set_use_contrasted_image
+        )
+        self.c.view.stardist_groupbox.overlay_toggle_button.toggled.connect(
+            self.c.model_canvas.set_stardist_overlay_enabled
+        )
 
         # Execution and results
         self.c.view.stardist_groupbox.stardist_run_button.pressed.connect(
             self.c.model_stardist.start
         )
-        self.c.model_stardist.stardist_done.connect(self.c.model_canvas.add_to_canvas)
+        self.c.model_stardist.stardist_done.connect(
+            self.c.model_canvas.load_stardist_labels
+        )
 
         self.c.model_stardist.stardist_done.connect(
             lambda x, y, z: self.c.model_cell_intensity.load_stardist_labels(x)
+        )
+        self.c.model_stardist.stardist_done.connect(
+            lambda *_: self.c.view.stardist_groupbox.overlay_toggle_button.setChecked(False)
         )
         self.c.model_stardist.error_signal.connect(self.c.handle_error)
         self.c.model_stardist.progress.connect(self.c.view.update_progress_bar)

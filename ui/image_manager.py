@@ -84,7 +84,12 @@ class ImageManager(QWidget):
         channels = sorted(channels, key=lambda x: int(x.replace("Channel ", "")))
         if len(channels) > 1:
             for channel in channels:
-                channel_item = ImageTreeItem(item_uuid, channel=channel, useItemName=False)
+                channel_item = ImageTreeItem(
+                    item_uuid,
+                    channel=channel,
+                    useItemName=False,
+                    display_text=self._channel_display_text(channel, item_data[channel]),
+                )
                 main_item.appendRow(channel_item)
         self.root_node.appendRow(main_item)
 
@@ -105,8 +110,10 @@ class ImageManager(QWidget):
         original_filename = item.get("original_filename", "")
 
         contrast_settings = {}
+        channel_display_names = {}
         for channel_name, wrapper in item_data.items():
             contrast_settings[channel_name] = (wrapper.contrast_min, wrapper.contrast_max)
+            channel_display_names[channel_name] = wrapper.name or channel_name
 
         ProjectManager.save_image(
             project_path=self.current_project_path,
@@ -116,7 +123,16 @@ class ImageManager(QWidget):
             channel_count=channel_count,
             original_filename=original_filename,
             contrast_settings=contrast_settings,
+            channel_display_names=channel_display_names,
         )
+
+    def _channel_display_text(self, channel: str, wrapper):
+        display_name = getattr(wrapper, "name", "") or channel
+        if display_name == "StarDist Labels":
+            return "StarDist Labels (Virtual)"
+        if display_name != channel:
+            return display_name
+        return channel
 
     def set_channel_icon(self, item_uuid, channel):
         """Set the icon for the channel item"""
@@ -153,6 +169,19 @@ class ImageManager(QWidget):
                 break
         if isinstance(channel_item, ImageTreeItem):
             channel_item.set_icon(image_data)
+        else:
+            if isinstance(main_item, ImageTreeItem):
+                channel_item = ImageTreeItem(
+                    item_uuid,
+                    channel=channel,
+                    useItemName=False,
+                    display_text=self._channel_display_text(channel, image_data[channel]),
+                )
+                main_item.appendRow(channel_item)
+
+        if self.current_project_path:
+            item = self.storage.get_data(item_uuid)
+            self._save_image_to_project(item_uuid, item)
 
     def add_to_storage(self, item_uuid, obj):
         """Add data to storage."""
@@ -247,6 +276,15 @@ class ImageTreeWidget(QTreeView):
             _, item_uuid = self._name_and_uuid_from_item(item)
             channel = int(self._get_channel_from_item(item))
             is_leaf = self._is_leaf(item)
+            channel_name = self._get_channel_from_item(item, as_int=False)
+            storage_item = self.storage.get_data(item_uuid)
+            image_data = storage_item.get("data", {}) if storage_item else {}
+            selected_wrapper = image_data.get(channel_name)
+            is_stardist_virtual = (
+                is_leaf
+                and selected_wrapper is not None
+                and getattr(selected_wrapper, "name", "") == "StarDist Labels"
+            )
             set_reference = QAction("Reference")
             set_cell_image = QAction("Cell Image (Stardist)")
 
@@ -270,7 +308,9 @@ class ImageTreeWidget(QTreeView):
                 lambda: self.set_as_stardist_label(item_uuid, channel)
             )
 
-            save_as_tiff.triggered.connect(lambda: self.save_as(item, "tif"))
+            save_as_tiff.triggered.connect(
+                lambda: self.save_as(item, "tif", single_channel=channel_name if is_leaf else None)
+            )
             delete = QAction("Delete", self)
             delete.triggered.connect(lambda: self.delete_item(item))
             model = self.model()
@@ -331,6 +371,9 @@ class ImageTreeWidget(QTreeView):
                 tissue_menu = menu.addMenu("Tissue")
                 tissue_menu.addAction(set_tissue_target_image)
                 tissue_menu.addAction(set_tissue_unaligned_image)
+                if is_stardist_virtual:
+                    menu.addAction(save_as_tiff)
+                    menu.addAction(delete)
             model_item = model.itemFromIndex(item)
             assert model_item is not None, "Item is None"
             # only add delete & save as tiff action if the item is a root item
@@ -357,11 +400,33 @@ class ImageTreeWidget(QTreeView):
         model = self.model()
         assert isinstance(model, ImageTreeModel), "Model is not set"
         item = model.itemFromIndex(index)
-        _, item_uuid = self._name_and_uuid_from_item(index)
         assert item is not None, "Item is None"
-        row = model.indexFromItem(item).row()
-        self.item_deleted.emit(item_uuid)
-        model.removeRow(row)
+        parent_item = item.parent()
+        _, item_uuid = self._name_and_uuid_from_item(index)
+        if parent_item is None:
+            row = model.indexFromItem(item).row()
+            self.item_deleted.emit(item_uuid)
+            model.removeRow(row)
+            return
+
+        channel_name = item.data(Qt.ItemDataRole.WhatsThisRole)
+        image_entry = self.storage.get_data(item_uuid)
+        if image_entry is None:
+            return
+        data = image_entry.get("data", {})
+        wrapper = data.get(channel_name)
+        if wrapper is None or getattr(wrapper, "name", "") != "StarDist Labels":
+            return
+
+        del data[channel_name]
+        parent_item.removeRow(item.row())
+
+        if self.model_canvas is not None and str(self.model_canvas.uuid) == str(item_uuid):
+            self.model_canvas.remove_virtual_stardist_channel(channel_name)
+
+        manager = self.parent()
+        if isinstance(manager, ImageManager) and manager.current_project_path:
+            manager._save_image_to_project(item_uuid, image_entry)
 
     def _name_and_uuid_from_item(self, item, tooltip=False) -> tuple[str, uuid.UUID]:
         item = self.model().itemFromIndex(item)  # type: ignore
@@ -401,7 +466,7 @@ class ImageTreeWidget(QTreeView):
         assert item is not None, "Item is None"
         return not item.hasChildren()
 
-    def save_as(self, item, file_type):
+    def save_as(self, item, file_type, single_channel=None):
         """Save the item to file."""
         name, item_uuid = self._name_and_uuid_from_item(item)
         name = os.path.splitext(name)[0]
@@ -415,13 +480,21 @@ class ImageTreeWidget(QTreeView):
             )
             if folder_path:
                 file_path = os.path.join(folder_path, f"{name}.tif")
-                arrays = [
-                    channel_obj.data for _, channel_obj in sorted(channel_dict.items())
-                ]
-                stacked = np.stack(arrays, axis=0)  # Shape: (channels, H, W)
-                tifffile.imwrite(
-                    file_path, stacked, photometric="minisblack", imagej=True
-                )
+                if single_channel is not None and single_channel in channel_dict:
+                    tifffile.imwrite(
+                        file_path,
+                        channel_dict[single_channel].data,
+                        photometric="minisblack",
+                        imagej=True,
+                    )
+                else:
+                    arrays = [
+                        channel_obj.data for _, channel_obj in sorted(channel_dict.items())
+                    ]
+                    stacked = np.stack(arrays, axis=0)  # Shape: (channels, H, W)
+                    tifffile.imwrite(
+                        file_path, stacked, photometric="minisblack", imagej=True
+                    )
 
     def set_as_tissue_target(self, i_uuid: UUID, is_leaf: bool, channel: int):
         """Set the selected image as the tissue target image for alignment"""
