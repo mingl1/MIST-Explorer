@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 if typing.TYPE_CHECKING:
     from ui.app import MainWindow
 
+TOOLTIP_PERSIST_MS = 120000
+
 pg.setConfigOption("imageAxisOrder", "row-major")
 pg.setConfigOption("useOpenGL", True)
 pg.setConfigOption("useCupy", True)
@@ -853,7 +855,6 @@ class ImageGraphicsViewUI(QGraphicsView):
                 r, g, b = color.red(), color.green(), color.blue()
 
                 global_pos = self.mapToGlobal(event.pos())
-                QToolTip.showText(global_pos, "", self)
 
                 # Get layer values if available
                 if self.enc and self.enc.tool_bar.tabButtonGroup.checkedId() != 0:
@@ -866,9 +867,17 @@ class ImageGraphicsViewUI(QGraphicsView):
                 if layers:
                     layers = [f"{layer}: {value}\n" for layer, value in layers]
                     combined_layers = "".join(layers)[:-1]
-                    QToolTip.showText(global_pos, combined_layers, self)
+                    QToolTip.showText(
+                        global_pos, combined_layers, self, self.rect(), TOOLTIP_PERSIST_MS
+                    )
                 else:
-                    QToolTip.showText(global_pos, f"R: {r}, G: {g}, B: {b}", self)
+                    QToolTip.showText(
+                        global_pos,
+                        f"R: {r}, G: {g}, B: {b}",
+                        self,
+                        self.rect(),
+                        TOOLTIP_PERSIST_MS,
+                    )
 
                 # Update position display in main window
                 if combined_layers:
@@ -888,6 +897,7 @@ class ImageGraphicsViewUI(QGraphicsView):
                 #     self.reference_view.highlight_pixel(x, y)
             else:
                 self.enc.update_mouse_position_label("")
+                QToolTip.hideText()
                 # Hide pixel highlight when outside image bounds
                 self.hide_pixel_highlight()
                 # if self.reference_view:
@@ -1051,6 +1061,7 @@ class ImageGraphicsViewUI(QGraphicsView):
     def leaveEvent(self, event):
         """Cancel ROI dragging when pointer leaves the view."""
         self._cancel_rubber_band_drag()
+        QToolTip.hideText()
         super().leaveEvent(event)
 
     # pylint: disable=invalid-name

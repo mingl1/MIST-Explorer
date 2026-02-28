@@ -1,0 +1,193 @@
+import uuid
+from types import SimpleNamespace
+
+import numpy as np
+from PyQt6.QtCore import QRect
+
+import core.canvas as canvas_module
+from core.canvas import ImageGraphicsView, ImageWrapper
+
+
+def _make_channels(offset: int = 0):
+    return {
+        "Channel 1": ImageWrapper(
+            np.array([[1, 2], [3, 4]], dtype=np.uint16) + offset, "Channel 1"
+        ),
+        "Channel 2": ImageWrapper(
+            np.array([[10, 20], [30, 40]], dtype=np.uint16) + offset, "Channel 2"
+        ),
+    }
+
+
+def _make_channels_with_stardist():
+    labels = np.array([[0, 1], [2, 0]], dtype=np.uint16)
+    return {
+        "Channel 1": ImageWrapper(np.array([[1, 2], [3, 4]], dtype=np.uint16), "Channel 1"),
+        "Channel 2": ImageWrapper(
+            np.array([[10, 20], [30, 40]], dtype=np.uint16), "Channel 2"
+        ),
+        "Channel 3": ImageWrapper(labels, name="StarDist Labels", cmap="label_image"),
+    }
+
+
+def _make_view():
+    controller = SimpleNamespace(model_stardist=SimpleNamespace(params={}))
+    view = ImageGraphicsView(controller)
+    view.set_pixmap = lambda *_args, **_kwargs: None
+    view._schedule_caching_task = lambda *_args, **_kwargs: None
+    return view
+
+
+def _load_uuid_on_channel(view: ImageGraphicsView, image_uuid: uuid.UUID, channel: str):
+    item = view.storage.get_data(str(image_uuid))
+    assert item is not None
+    view.set_uuid(image_uuid)
+    view._replace_canvas_multichannel(item["data"], target_channel=channel)
+
+
+def test_auto_contrast_uses_active_channel_after_uuid_switch(qapp):
+    view = _make_view()
+    first_uuid = uuid.uuid4()
+    second_uuid = uuid.uuid4()
+    view.storage.add_data(str(first_uuid), {"name": "first", "data": _make_channels(0)})
+    view.storage.add_data(
+        str(second_uuid), {"name": "second", "data": _make_channels(100)}
+    )
+
+    _load_uuid_on_channel(view, second_uuid, "Channel 2")
+    assert view.current_channel == 1
+
+    view.working_channels["Channel 1"].contrast_min = 11
+    view.working_channels["Channel 1"].contrast_max = 22
+    view.working_channels["Channel 2"].contrast_min = 33
+    view.working_channels["Channel 2"].contrast_max = 44
+    view.image_wrapper = view.working_channels["Channel 2"]
+
+    view.auto_contrast()
+
+    assert view.current_channel == 1
+    assert view.image_wrapper is view.working_channels["Channel 2"]
+    assert (
+        view.working_channels["Channel 1"].contrast_min,
+        view.working_channels["Channel 1"].contrast_max,
+    ) == (11, 22)
+    assert (
+        view.working_channels["Channel 2"].contrast_min,
+        view.working_channels["Channel 2"].contrast_max,
+    ) != (33, 44)
+
+
+def test_cmap_update_keeps_active_channel_after_uuid_switch(qapp):
+    view = _make_view()
+    image_uuid = uuid.uuid4()
+    view.storage.add_data(str(image_uuid), {"name": "sample", "data": _make_channels(0)})
+
+    _load_uuid_on_channel(view, image_uuid, "Channel 2")
+    view.update_image(cmap_text="viridis")
+
+    assert view.current_channel == 1
+    assert view.image_wrapper is view.working_channels["Channel 2"]
+    assert view.working_channels["Channel 2"].cmap == "viridis"
+    assert view.working_channels["Channel 1"].cmap == "gray"
+
+
+def test_swap_to_stardist_virtual_channel_keeps_non_label_cmap(qapp):
+    view = _make_view()
+    image_uuid = uuid.uuid4()
+    view.storage.add_data(
+        str(image_uuid), {"name": "sample", "data": _make_channels_with_stardist()}
+    )
+
+    _load_uuid_on_channel(view, image_uuid, "Channel 1")
+    view.update_image(cmap_text="viridis")
+
+    view.swap_channel(2)
+
+    assert view.current_channel == 2
+    assert view.image_wrapper is view.working_channels["Channel 3"]
+    assert view.working_channels["Channel 3"].cmap == "viridis"
+
+
+def test_rotate_and_flip_keep_active_channel(qapp):
+    view = _make_view()
+    image_uuid = uuid.uuid4()
+    view.storage.add_data(str(image_uuid), {"name": "sample", "data": _make_channels(0)})
+
+    _load_uuid_on_channel(view, image_uuid, "Channel 2")
+    view.flip_horizontal()
+    view.flip_vertical()
+
+    assert view.current_channel == 1
+    assert view.image_wrapper is view.working_channels["Channel 2"]
+
+    rotated_result = {}
+    for channel_name, wrapper in view.working_channels.items():
+        updated = wrapper.copy()
+        updated.data = wrapper.data + 1
+        rotated_result[channel_name] = updated
+
+    view.on_rotation_completed((image_uuid, rotated_result))
+
+    assert view.current_channel == 1
+    assert view.image_wrapper is view.working_channels["Channel 2"]
+
+
+def test_crop_new_image_opens_on_active_channel(qapp, monkeypatch):
+    view = _make_view()
+    image_uuid = uuid.uuid4()
+    view.storage.add_data(str(image_uuid), {"name": "sample", "data": _make_channels(0)})
+    _load_uuid_on_channel(view, image_uuid, "Channel 2")
+
+    class DummyDialog:
+        confirm_crop = True
+
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def exec(self):
+            return 0
+
+    class DummySignal:
+        def connect(self, *_args, **_kwargs):
+            return None
+
+    class DummyWorker:
+        def __init__(self, fn, *args):
+            self.fn = fn
+            self.args = args
+            self.finished = DummySignal()
+
+        def quit(self):
+            return None
+
+        def deleteLater(self):
+            return None
+
+        def start(self):
+            return None
+
+    monkeypatch.setattr(canvas_module, "ImageDialog", DummyDialog)
+    monkeypatch.setattr(canvas_module, "Worker", DummyWorker)
+
+    view.crop(QRect(0, 0, 2, 2))
+
+    assert isinstance(view.crop_worker, DummyWorker)
+    assert view.crop_worker.args[-1] == "Channel 2"
+
+
+def test_uuid_reload_restores_stardist_overlay_state(qapp):
+    view = _make_view()
+    image_uuid = uuid.uuid4()
+    view.storage.add_data(
+        str(image_uuid), {"name": "sample", "data": _make_channels_with_stardist()}
+    )
+
+    _load_uuid_on_channel(view, image_uuid, "Channel 1")
+
+    assert view.stardist_labels is not None
+    assert view.stardist_virtual_channel == "Channel 3"
+    assert view.stardist_source_channel == "Channel 1"
+
+    view.set_stardist_overlay_enabled(True)
+
+    assert view.stardist_overlay_enabled is True

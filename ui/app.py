@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (QFileDialog, QGroupBox, QHBoxLayout, QLabel,
 
 from core import MetaData
 from core.project_manager import ProjectManager
+from core.project_naming import is_stardist_label_name
 from ui.toolbar.menubar_ui import MenuBarUI
 from ui.toolbar.toolbar_ui import ToolBarUI
 from utils import resource_path
@@ -154,8 +155,16 @@ class MainWindow(QMainWindow):
 
         for image_meta in metadata.images:
             image_data = {}
-            for channel_num in range(1, image_meta.channel_count + 1):
-                channel_name = f"Channel {channel_num}"
+            channel_names = ProjectManager.list_saved_channels(
+                project_path, image_meta.uuid
+            )
+            if not channel_names:
+                channel_names = [
+                    f"Channel {channel_num}"
+                    for channel_num in range(1, image_meta.channel_count + 1)
+                ]
+
+            for channel_name in channel_names:
                 channel_array = ProjectManager.load_image(
                     project_path, image_meta.uuid, channel_name
                 )
@@ -165,7 +174,7 @@ class MainWindow(QMainWindow):
                         channel_name, channel_name
                     )
                     channel_cmap = (
-                        "label_image" if display_name == "StarDist Labels" else "gray"
+                        "label_image" if is_stardist_label_name(display_name) else "gray"
                     )
                     wrapper = ImageWrapper(
                         channel_array,

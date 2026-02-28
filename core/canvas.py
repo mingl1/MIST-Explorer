@@ -48,6 +48,7 @@ from core.image_utils import (
     scale_adjust,
     to_pixmap,
 )
+from core.project_naming import STARDIST_LABEL_BASE_NAME, is_stardist_label_name
 
 # Local/project imports
 from core.metadata_utils import parse_metadata
@@ -936,6 +937,35 @@ class ImageGraphicsView(BaseGraphicsView):
         self.clear_stardist_overlay()
         self.update_canvas.emit(QPixmap())
 
+    def _resolve_stardist_virtual_cmap(self, fallback_cmap: str = "gray") -> str:
+        """Choose a non-label cmap for StarDist virtual label channel selection."""
+        if (
+            self.stardist_source_channel is not None
+            and self.stardist_source_channel in self.working_channels
+        ):
+            source_cmap = self.working_channels[self.stardist_source_channel].cmap
+            if source_cmap != "label_image":
+                return source_cmap
+        if fallback_cmap != "label_image":
+            return fallback_cmap
+        return "gray"
+
+    def _effective_channel_cmap(self, channel_key: str, fallback_cmap: str = "gray") -> str:
+        """Return display cmap for a selected channel, normalizing StarDist virtual labels."""
+        wrapper = self.working_channels.get(channel_key)
+        if wrapper is None:
+            return "gray" if fallback_cmap == "label_image" else fallback_cmap
+
+        if (
+            is_stardist_label_name(getattr(wrapper, "name", ""))
+            and wrapper.cmap == "label_image"
+        ):
+            resolved_cmap = self._resolve_stardist_virtual_cmap(fallback_cmap)
+            wrapper.cmap = resolved_cmap
+            return resolved_cmap
+
+        return wrapper.cmap
+
     def swap_channel(self, index):
         """Modified swap_channel to wait for background processing if needed."""
         channel_num = f"Channel {index + 1}"
@@ -943,10 +973,12 @@ class ImageGraphicsView(BaseGraphicsView):
             logger.debug("Channel %s not available. swap ignored.", channel_num)
             return
 
+        previous_cmap = self.image_wrapper.cmap
         # not 100% so need the len check later
         self.current_channel = index
         self.image_wrapper = self.working_channels[channel_num]
-        self.update_image()
+        target_cmap = self._effective_channel_cmap(channel_num, previous_cmap)
+        self.update_image(cmap_text=target_cmap)
 
     def _prepare_channels_for_new_image(self):
         super()._prepare_channels_for_new_image()
@@ -962,7 +994,7 @@ class ImageGraphicsView(BaseGraphicsView):
     def _restore_stardist_state_from_channels(self):
         self.clear_stardist_overlay()
         for channel_key, wrapper in self.working_channels.items():
-            if getattr(wrapper, "name", "") == "StarDist Labels":
+            if is_stardist_label_name(getattr(wrapper, "name", "")):
                 self.stardist_virtual_channel = channel_key
                 self.stardist_labels = wrapper.data.copy()
                 break
@@ -993,7 +1025,7 @@ class ImageGraphicsView(BaseGraphicsView):
 
     def remove_virtual_stardist_channel(self, channel_key: str) -> bool:
         wrapper = self.working_channels.get(channel_key)
-        if wrapper is None or getattr(wrapper, "name", "") != "StarDist Labels":
+        if wrapper is None or not is_stardist_label_name(getattr(wrapper, "name", "")):
             return False
 
         self.working_channels.pop(channel_key, None)
@@ -1045,17 +1077,19 @@ class ImageGraphicsView(BaseGraphicsView):
             next_index = max(next_index, idx)
         return f"Channel {next_index + 1}"
 
-    def _upsert_stardist_virtual_channel(self, labels: np.ndarray):
+    def _upsert_stardist_virtual_channel(
+        self, labels: np.ndarray, label_name: str = STARDIST_LABEL_BASE_NAME
+    ):
         if self.stardist_virtual_channel is None:
             for channel_key, wrapper in self.working_channels.items():
-                if getattr(wrapper, "name", "") == "StarDist Labels":
+                if is_stardist_label_name(getattr(wrapper, "name", "")):
                     self.stardist_virtual_channel = channel_key
                     break
             if self.stardist_virtual_channel is None:
                 self.stardist_virtual_channel = self._next_available_channel_key()
 
         channel_key = self.stardist_virtual_channel
-        wrapper = ImageWrapper(labels, name="StarDist Labels", cmap="label_image")
+        wrapper = ImageWrapper(labels, name=label_name, cmap="label_image")
         wrapper.contrast_min = 0
         wrapper.contrast_max = 255
         self.working_channels[channel_key] = wrapper
@@ -1290,11 +1324,16 @@ class ImageGraphicsView(BaseGraphicsView):
             channel_num, cache_key, contrast_min, contrast_max
         )
 
-    def load_stardist_labels(self, stardist: ImageWrapper, *_):
+    def load_stardist_labels(self, stardist: ImageWrapper, *metadata):
+        label_name = STARDIST_LABEL_BASE_NAME
+        if metadata:
+            candidate_name = metadata[-1]
+            if isinstance(candidate_name, str) and candidate_name.strip():
+                label_name = candidate_name
         self.stardist_labels = stardist.data.copy()
         self.stardist_overlay_enabled = False
         self._stardist_overlay_rgb = None
-        self._upsert_stardist_virtual_channel(self.stardist_labels)
+        self._upsert_stardist_virtual_channel(self.stardist_labels, label_name=label_name)
         self._set_stardist_source_channel()
         if self.image_wrapper.cmap == "label_image":
             self.image_wrapper.cmap = "gray"
@@ -1430,6 +1469,7 @@ class ImageGraphicsView(BaseGraphicsView):
         if target_channel not in channels_data:
             raise ValueError(f"{target_channel} was not found in the data")
 
+        previous_cmap = self.image_wrapper.cmap
         target_image_wrapper = channels_data[target_channel]
 
         # Process target channel immediately
@@ -1443,7 +1483,7 @@ class ImageGraphicsView(BaseGraphicsView):
         self.current_channel = int(target_channel.split(" ")[-1]) - 1
 
         display_channel_data = target_image_wrapper.data
-        self.update_cmap.emit(target_image_wrapper.cmap)
+        self.update_cmap.emit(self._effective_channel_cmap(target_channel, previous_cmap))
 
         # Emit target channel immediately for display
         emit_data = {target_channel: display_channel_data}
@@ -1457,6 +1497,9 @@ class ImageGraphicsView(BaseGraphicsView):
 
         if remaining_channels:
             self._schedule_caching_task(remaining_channels, self.uuid)
+
+        if hasattr(self, "_restore_stardist_state_from_channels"):
+            self._restore_stardist_state_from_channels()
 
         self.image_count += 1
 

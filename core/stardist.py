@@ -11,6 +11,7 @@ from stardist.models import StarDist2D
 
 from core import ImageWrapper
 from core.image_utils import create_lut, scale_adjust
+from core.project_naming import STARDIST_LABEL_BASE_NAME, prefix_with_project_name
 
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 
@@ -54,6 +55,8 @@ class StarDist(QThread):
         super().__init__()
         self.protein_channels = None
         self.np_image = None
+        self.project_name = None
+        self.is_temp_project = False
         self.params = {
             "channel": "Channel 1",
             "model": "2D_versatile_fluo",
@@ -219,7 +222,12 @@ class StarDist(QThread):
         result = ImageWrapper(
             self.stardist_labels_grayscale, name="Channel 1", cmap="gray"
         )
-        self.stardist_done.emit(result, True, "StarDist Labels")
+        label_name = prefix_with_project_name(
+            STARDIST_LABEL_BASE_NAME,
+            self.project_name,
+            is_temp_project=self.is_temp_project,
+        )
+        self.stardist_done.emit(result, True, label_name)
 
     def cancel(self):
         self._cancel_requested = True
@@ -257,6 +265,10 @@ class StarDist(QThread):
     def set_image_to_process(self, np_image):
         self.protein_channels = None
         self.np_image = np_image
+
+    def set_project_context(self, project_name, is_temp_project=False):
+        self.project_name = project_name
+        self.is_temp_project = bool(is_temp_project)
 
     def set_channel(self, channel):
         self.params["channel"] = channel

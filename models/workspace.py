@@ -45,6 +45,7 @@ class ProjectMetadata:
     path: Path
     created_at: datetime
     modified_at: datetime
+    is_temporary: bool = False
     images: List[ImageMetadata] = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -53,6 +54,7 @@ class ProjectMetadata:
             "path": str(self.path),
             "created_at": self.created_at.isoformat(),
             "modified_at": self.modified_at.isoformat(),
+            "is_temporary": self.is_temporary,
             "images": [img.to_dict() for img in self.images],
         }
 
@@ -63,6 +65,7 @@ class ProjectMetadata:
             path=Path(data["path"]),
             created_at=datetime.fromisoformat(data["created_at"]),
             modified_at=datetime.fromisoformat(data["modified_at"]),
+            is_temporary=data.get("is_temporary", False),
             images=[ImageMetadata.from_dict(img) for img in data.get("images", [])],
         )
 

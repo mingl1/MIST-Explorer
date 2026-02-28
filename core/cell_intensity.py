@@ -11,8 +11,45 @@ from skimage.measure import regionprops
 
 from core import ImageWrapper
 from core.canvas import ImageStorage
+from core.project_naming import (
+    default_project_prefixed_filename,
+    is_stardist_label_name,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def build_channel_cell_dataframe(
+    median_values_for_cell_data_dict, cell_centroids, protein_headers
+):
+    """Build one per-channel cell table keyed by CellID."""
+    rows = []
+    ordered_cell_ids = sorted(median_values_for_cell_data_dict.keys())
+    for cell_id in ordered_cell_ids:
+        centroid = cell_centroids.get(cell_id)
+        if centroid is None:
+            continue
+        cx, cy = centroid
+        rows.append(
+            [cell_id, int(cx), int(cy), *median_values_for_cell_data_dict[cell_id]]
+        )
+
+    columns = ["CellID", "Global X", "Global Y", *protein_headers]
+    df = pd.DataFrame(rows, columns=columns)
+    if "CellID" in df.columns:
+        df["CellID"] = df["CellID"].astype(np.int64, copy=False)
+    return df
+
+
+def merge_channel_cell_data(existing_df, curr_cell_data, first_channel_num, channel_num):
+    """Merge per-channel cell tables by CellID while preserving first-channel coords."""
+    curr_payload = curr_cell_data.drop(columns=["Global X", "Global Y"], errors="ignore")
+    return existing_df.merge(
+        curr_payload,
+        on=["CellID"],
+        suffixes=(f"_cy{first_channel_num}", f"_cy{channel_num}"),
+        validate="one_to_one",
+    )
 
 
 class CellIntensity(QThread):
@@ -35,20 +72,27 @@ class CellIntensity(QThread):
         self.df_cell_data = None
         self.storage = ImageStorage()
         self.protein_signal_array = None
+        self.source_uuid = None
+        self.project_name = None
+        self.is_temp_project = False
 
     def load_protein_signal_array_from_storage(self, uuid, channel):
         if uuid is None:
-            uuid = self.storage.get_data("canvas_uuid")
+            uuid = self.source_uuid
             if uuid is None:
-                raise ValueError("Protein Image not found in storage.")
-            uuid = uuid["value"]
+                uuid = self.storage.get_data("canvas_uuid")
+                if uuid is None:
+                    raise ValueError("Protein Image not found in storage.")
+                uuid = uuid["value"]
         c = "Channel " + str(channel + 1)
         item = self.storage.get_data(uuid)
         assert item is not None, "item not found in storage"
         data = item.get("data", None)
         assert data is not None, "data not found in storage item"
-
-        self.load_protein_signal_array(data[c].data)
+        wrapper = data[c]
+        if is_stardist_label_name(getattr(wrapper, "name", "")):
+            raise ValueError(f"{c} is a virtual StarDist channel and cannot be used for generation.")
+        self.load_protein_signal_array(wrapper.data)
         logger.info("loaded protein signal array from storage")
 
     def load_stardist_labels_from_storage(self, uuid, channel):
@@ -120,15 +164,21 @@ class CellIntensity(QThread):
             channel = channel_num - 1
             logger.info(f"generating channel {channel}")
             # this func expects channel to be zero-indexed integer.
-            self.load_protein_signal_array_from_storage(None, channel)
+            try:
+                self.load_protein_signal_array_from_storage(None, channel)
+            except Exception as exc:
+                logger.error("Failed to load generation channel %s: %s", channel_num, exc)
+                self.critical_error(str(exc))
+                return
             if (
                 self.stardist_labels is None
+                or self.stardist_labels.size == 0
                 or self.bead_data is None
                 or self.channel_to_color_code is None
                 or self.protein_signal_array is None
             ):
                 err_msg = "Missing: "
-                if self.stardist_labels is None:
+                if self.stardist_labels is None or self.stardist_labels.size == 0:
                     err_msg += "stardist labels, "
                 if self.bead_data is None:
                     err_msg += "bead data, "
@@ -378,7 +428,7 @@ class CellIntensity(QThread):
                         code = None
 
                 # then we use this to build the header string
-                header = ["Global X", "Global Y"]
+                protein_headers = []
                 for subarray_index in index_to_color_code:
                     coresponding_protein_code = index_to_color_code[subarray_index]
                     # print(coresponding_protein_code)
@@ -386,32 +436,28 @@ class CellIntensity(QThread):
                         readable_protein_name = color_code_translation_dict[
                             coresponding_protein_code
                         ]
-                        header.append(readable_protein_name)
+                        protein_headers.append(readable_protein_name)
                     else:
-                        header.append("N/A")
+                        protein_headers.append("N/A")
                 self.progress.emit(
                     75,
                     f"Finishing Up",
                 )
-                # Now get all the data out of the subarrays
-                save_this = np.array(
-                    [v for k, v in median_values_for_cell_data_dict.items()]
-                )
-                # and all the centroid data
-                save_this = np.hstack(
-                    ([v for k, v in cell_centroids.items()], save_this)
+                curr_cell_data = build_channel_cell_dataframe(
+                    median_values_for_cell_data_dict=median_values_for_cell_data_dict,
+                    cell_centroids=cell_centroids,
+                    protein_headers=protein_headers,
                 )
                 # and finally save everything
                 if self.df_cell_data is None:
                     first_channel_num = channel_num
-                    self.df_cell_data = pd.DataFrame(
-                        save_this, columns=header
-                    )  # --> use this to visualize
+                    self.df_cell_data = curr_cell_data  # --> use this to visualize
                 else:
-                    curr_cell_data = pd.DataFrame(save_this, columns=header)
-                    self.df_cell_data = self.df_cell_data.merge(
-                        curr_cell_data, on=["Global X", "Global Y"],
-                        suffixes=(f"_cy{first_channel_num}", f"_cy{channel_num}"),
+                    self.df_cell_data = merge_channel_cell_data(
+                        existing_df=self.df_cell_data,
+                        curr_cell_data=curr_cell_data,
+                        first_channel_num=first_channel_num,
+                        channel_num=channel_num,
                     )
         self.progress.emit(100, "Cell Data is Generated")
 
@@ -423,10 +469,25 @@ class CellIntensity(QThread):
         assert isinstance(channel_to_code, dict)
         self.channel_to_color_code = channel_to_code.copy()
 
+    def set_source_uuid(self, source_uuid):
+        if source_uuid is None:
+            self.source_uuid = None
+            return
+        self.source_uuid = str(source_uuid)
+
+    def set_project_context(self, project_name, is_temp_project=False):
+        self.project_name = project_name
+        self.is_temp_project = bool(is_temp_project)
+
     def save_cell_data(self):
         logger.info("saving cell data")
+        suggested_name = default_project_prefixed_filename(
+            "cell_data.csv",
+            self.project_name,
+            is_temp_project=self.is_temp_project,
+        )
         file_name, _ = QFileDialog.getSaveFileName(
-            None, "Save Cell Data File", "cell_data.csv", "*.csv;;*.xlsx;; All Files(*)")
+            None, "Save Cell Data File", suggested_name, "*.csv;;*.xlsx;; All Files(*)")
         if self.df_cell_data is not None:
             self.df_cell_data.to_csv(file_name, index=False)
         else:
@@ -509,7 +570,15 @@ class CellIntensity(QThread):
         """Define the linear function for the correction equation"""
         return 0.8266 * x + 3970.1
 
+    def clear_stardist_labels(self):
+        """Reset loaded StarDist labels."""
+        self.stardist_labels = np.array([], dtype=np.uint8)
+
     def load_stardist_labels(self, stardist: ImageWrapper) -> None:
+        if stardist.data.size == 0:
+            logger.warning("Received empty stardist label image")
+            self.clear_stardist_labels()
+            return
         logger.debug("stardist label dtype: %s", stardist.data.dtype)
         logger.debug(
             "stardist label max and min %s %s", np.max(

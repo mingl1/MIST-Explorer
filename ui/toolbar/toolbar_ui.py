@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
 )
 from qtrangeslider import QRangeSlider
 
+from core.project_naming import is_stardist_label_name
 from ui.toolbar.Action import Action
 from utils import resource_path
 
@@ -131,8 +132,8 @@ class ToolBarUI(QToolBar):
             for channel_key in channel_keys:
                 wrapper = channels[channel_key]
                 display_name = getattr(wrapper, "name", "") or channel_key
-                if display_name == "StarDist Labels":
-                    text = f"{channel_key} (StarDist Labels)"
+                if is_stardist_label_name(display_name):
+                    text = f"{channel_key} ({display_name})"
                 elif display_name != channel_key:
                     text = f"{channel_key} ({display_name})"
                 else:

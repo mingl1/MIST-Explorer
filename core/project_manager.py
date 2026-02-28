@@ -36,7 +36,9 @@ class ProjectManager:
         projects_path.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
-    def create_project(name: str, base_path: Optional[Path] = None) -> Path:
+    def create_project(
+        name: str, base_path: Optional[Path] = None, is_temporary: bool = False
+    ) -> Path:
         ProjectManager.ensure_storage_exists()
 
         if base_path is None:
@@ -54,10 +56,30 @@ class ProjectManager:
             path=project_folder,
             created_at=datetime.now(),
             modified_at=datetime.now(),
+            is_temporary=is_temporary,
         )
         ProjectManager._save_metadata(metadata)
 
         return project_folder
+
+    @staticmethod
+    def create_temp_project(base_path: Optional[Path] = None) -> Path:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H-%M-%S")
+        suffix = uuid.uuid4().hex[:6]
+        return ProjectManager.create_project(
+            f"Temp Project {timestamp} {suffix}",
+            base_path=base_path,
+            is_temporary=True,
+        )
+
+    @staticmethod
+    def _is_temp_project(metadata: ProjectMetadata) -> bool:
+        if metadata.is_temporary:
+            return True
+        # Backward-compat: hide temporary projects created before is_temporary existed.
+        name = metadata.name.strip().lower()
+        folder_stem = metadata.path.stem.strip().lower()
+        return name.startswith("temp project") or folder_stem.startswith("temp project")
 
     @staticmethod
     def _save_metadata(metadata: ProjectMetadata):
@@ -96,6 +118,8 @@ class ProjectManager:
             if folder.is_dir() and folder.suffix == ".mist":
                 metadata = ProjectManager.load_metadata(folder)
                 if metadata is not None:
+                    if ProjectManager._is_temp_project(metadata):
+                        continue
                     projects.append(metadata)
 
         return sorted(projects, key=lambda p: p.modified_at, reverse=True)
@@ -166,6 +190,24 @@ class ProjectManager:
                 logger.error("Failed to load image from '%s': %s", channel_path, e, exc_info=True)
                 return None
         return None
+
+    @staticmethod
+    def list_saved_channels(project_path: Path, image_uuid: str) -> List[str]:
+        image_folder = project_path / "images" / image_uuid
+        if not image_folder.exists():
+            return []
+
+        channels = []
+        for channel_path in image_folder.glob("channel_*.tif"):
+            suffix = channel_path.stem[len("channel_") :]
+            try:
+                channel_num = int(suffix)
+            except ValueError:
+                continue
+            channels.append(channel_num)
+
+        channels.sort()
+        return [f"Channel {channel_num}" for channel_num in channels]
 
     @staticmethod
     def get_image_metadata(

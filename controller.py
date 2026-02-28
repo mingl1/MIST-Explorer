@@ -21,6 +21,8 @@ from core import (
     Register,
     StarDist,
 )
+from core.project_manager import ProjectManager
+from core.project_naming import is_temp_project_name
 from ui.alignment.alignment_preview_dialog import AlignmentPreviewDialog
 
 logger = logging.getLogger(__name__)
@@ -100,6 +102,7 @@ class Controller:
         self.signal_manager = SignalConnectionManager(self)
         self.signal_manager.setup_all_connections()
         self.storage = self.view.images_tab.storage
+        self._apply_project_context()
 
         # Handle initial arguments
         initial_args = app.args
@@ -118,6 +121,20 @@ class Controller:
     def handle_error(self, error_message):
         """Displays an error message."""
         QMessageBox.critical(self.view, "Error", error_message)
+
+    def _apply_project_context(self):
+        project_path = getattr(self.view, "current_project_path", None)
+        project_name = None
+        is_temp_project = False
+        if project_path is not None:
+            metadata = ProjectManager.load_project(project_path)
+            if metadata is not None and metadata.name:
+                project_name = metadata.name
+            else:
+                project_name = project_path.stem
+            is_temp_project = is_temp_project_name(project_name)
+        self.model_stardist.set_project_context(project_name, is_temp_project)
+        self.model_cell_intensity.set_project_context(project_name, is_temp_project)
 
     def pixmap_to_image(self, pixmap: QPixmap):
         """Converts a QPixmap to a numpy array."""
@@ -181,6 +198,7 @@ class Controller:
         """Handles a new image by adding it to storage."""
         storage_item = {}
         storage_item["name"] = os.path.basename(file_name)
+        storage_item["original_filename"] = file_name
         storage_item["metadata"] = metadata
         self.image_count += 1
 
@@ -194,6 +212,7 @@ class Controller:
         """Handles a new reference image by adding it to storage."""
         storage_item = {}
         storage_item["name"] = os.path.basename(file_name)
+        storage_item["original_filename"] = file_name
         self.image_count += 1
 
         storage_item["data"] = data
@@ -603,6 +622,9 @@ class SignalConnectionManager:
         self.c.view.images_tab.image_tree_view.stardist_label.connect(
             self.c.model_cell_intensity.load_stardist_labels_from_storage
         )
+        self.c.view.images_tab.image_tree_view.generation_source_selected.connect(
+            self._handle_generation_source_selected
+        )
 
         self.c.view.cell_intensity_groupbox.emitBeadData.connect(
             self.c.model_cell_intensity.set_bead_data
@@ -632,6 +654,24 @@ class SignalConnectionManager:
         )
         self.c.model_cell_intensity.filtered_stats_ready[float].connect(
             self.c.view.cell_intensity_groupbox.show_filtered_stats
+        )
+        self.c.view.cell_intensity_groupbox.set_generation_enabled(False)
+
+    def _handle_generation_source_selected(self, item_uuid, stardist_channel):
+        """Enable generation only after source selection and auto-load virtual StarDist labels."""
+        has_source = item_uuid is not None
+        self.c.model_cell_intensity.set_source_uuid(item_uuid if has_source else None)
+        self.c.view.cell_intensity_groupbox.set_generation_enabled(has_source)
+        if not has_source:
+            self.c.model_cell_intensity.clear_stardist_labels()
+            return
+
+        if stardist_channel is None:
+            self.c.model_cell_intensity.clear_stardist_labels()
+            return
+
+        self.c.model_cell_intensity.load_stardist_labels_from_storage(
+            item_uuid, int(stardist_channel)
         )
 
     def _setup_img_broadcast_conns(self):

@@ -12,6 +12,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from core.project_naming import is_stardist_label_name
+
 
 class StarDistUI(QWidget):
     def __init__(self, parent=None, containing_layout: QVBoxLayout = None):
@@ -136,16 +138,19 @@ class StarDistUI(QWidget):
         self.stardist_channel_selector.setCurrentText(channel)
 
     def updateChannelSelector(self, channels: dict):
+        previous_channel = self.stardist_channel_selector.currentText()
         self.clearChannelSelector()
         channel_keys = sorted(
             [
                 key
                 for key, wrapper in channels.items()
-                if getattr(wrapper, "name", "") != "StarDist Labels"
+                if not is_stardist_label_name(getattr(wrapper, "name", ""))
             ],
             key=lambda x: int(x.replace("Channel ", "")),
         )
         self.stardist_channel_selector.addItems(channel_keys)
+        if previous_channel in channel_keys:
+            self.stardist_channel_selector.setCurrentText(previous_channel)
         self.overlay_toggle_button.setChecked(False)
         self.__retranslate_UI()
 

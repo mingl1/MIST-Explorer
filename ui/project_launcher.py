@@ -143,6 +143,11 @@ class ProjectLauncher(QDialog):
         new_project_btn.clicked.connect(self._on_new_project)
         layout.addWidget(new_project_btn)
 
+        temp_project_btn = QPushButton("Temp Project")
+        temp_project_btn.setFixedHeight(32)
+        temp_project_btn.clicked.connect(self._on_temp_project)
+        layout.addWidget(temp_project_btn)
+
         open_project_btn = QPushButton("Open Existing Project...")
         open_project_btn.setFixedHeight(32)
         open_project_btn.clicked.connect(self._on_open_existing)
@@ -205,6 +210,10 @@ class ProjectLauncher(QDialog):
         if ok and name.strip():
             self.selected_project_path = ProjectManager.create_project(name.strip())
             self.accept()
+
+    def _on_temp_project(self):
+        self.selected_project_path = ProjectManager.create_temp_project()
+        self.accept()
 
     def _on_open_existing(self):
         path = QFileDialog.getExistingDirectory(

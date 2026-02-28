@@ -1,6 +1,7 @@
 """
 Image Manager module.
 """
+
 import logging
 import os
 import uuid
@@ -10,15 +11,28 @@ from uuid import UUID
 
 import numpy as np
 import tifffile  # pylint: disable=import-error
+from PIL import Image
+
 # pylint: disable=no-name-in-module
-from PyQt6.QtCore import QSize, Qt, pyqtSignal
+from PyQt6.QtCore import QItemSelection, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QActionGroup
-from PyQt6.QtWidgets import (QFileDialog, QMenu, QMessageBox, QTreeView,
-                             QVBoxLayout, QWidget)
+from PyQt6.QtWidgets import (
+    QFileDialog,
+    QMenu,
+    QMessageBox,
+    QTreeView,
+    QVBoxLayout,
+    QWidget,
+)
 
 from core import ImageGraphicsView, ImageStorage, StarDist
 from core.canvas import ReferenceGraphicsView
 from core.project_manager import ProjectManager
+from core.project_naming import (
+    STARDIST_LABEL_BASE_NAME,
+    is_stardist_label_name,
+    is_temp_project_name,
+)
 from models.image_list_model import ImageTreeItem, ImageTreeModel
 
 logger = logging.getLogger(__name__)
@@ -28,6 +42,7 @@ class ImageManager(QWidget):
     """
     Widget to manage the list of loaded images.
     """
+
     # pylint: disable=too-many-instance-attributes
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -49,6 +64,8 @@ class ImageManager(QWidget):
         self.model_stardist: Optional[StarDist] = None
         self.model_reference_canvas: Optional[ReferenceGraphicsView] = None
         self.current_project_path: Optional[Path] = None
+        self.current_project_name: Optional[str] = None
+        self.current_project_is_temp: bool = False
 
         # Connect deletion signal to backend cleanup
         self.image_tree_view.item_deleted.connect(self._handle_item_deletion)
@@ -56,6 +73,12 @@ class ImageManager(QWidget):
     def set_project_path(self, project_path: Path):
         """Set the current project path for auto-saving."""
         self.current_project_path = project_path
+        metadata = ProjectManager.load_project(project_path)
+        if metadata is not None and metadata.name:
+            self.current_project_name = metadata.name
+        else:
+            self.current_project_name = project_path.stem
+        self.current_project_is_temp = is_temp_project_name(self.current_project_name)
 
     def set_model_canvas(self, model):
         """Set the model canvas."""
@@ -88,7 +111,9 @@ class ImageManager(QWidget):
                     item_uuid,
                     channel=channel,
                     useItemName=False,
-                    display_text=self._channel_display_text(channel, item_data[channel]),
+                    display_text=self._channel_display_text(
+                        channel, item_data[channel]
+                    ),
                 )
                 main_item.appendRow(channel_item)
         self.root_node.appendRow(main_item)
@@ -112,7 +137,10 @@ class ImageManager(QWidget):
         contrast_settings = {}
         channel_display_names = {}
         for channel_name, wrapper in item_data.items():
-            contrast_settings[channel_name] = (wrapper.contrast_min, wrapper.contrast_max)
+            contrast_settings[channel_name] = (
+                wrapper.contrast_min,
+                wrapper.contrast_max,
+            )
             channel_display_names[channel_name] = wrapper.name or channel_name
 
         ProjectManager.save_image(
@@ -128,8 +156,14 @@ class ImageManager(QWidget):
 
     def _channel_display_text(self, channel: str, wrapper):
         display_name = getattr(wrapper, "name", "") or channel
-        if display_name == "StarDist Labels":
-            return "StarDist Labels (Virtual)"
+        if is_stardist_label_name(display_name):
+            if (
+                display_name == STARDIST_LABEL_BASE_NAME
+                and self.current_project_name
+                and not self.current_project_is_temp
+            ):
+                display_name = f"{self.current_project_name}_{STARDIST_LABEL_BASE_NAME}"
+            return f"{display_name}"
         if display_name != channel:
             return display_name
         return channel
@@ -175,7 +209,9 @@ class ImageManager(QWidget):
                     item_uuid,
                     channel=channel,
                     useItemName=False,
-                    display_text=self._channel_display_text(channel, image_data[channel]),
+                    display_text=self._channel_display_text(
+                        channel, image_data[channel]
+                    ),
                 )
                 main_item.appendRow(channel_item)
 
@@ -202,10 +238,12 @@ class ImageTreeWidget(QTreeView):
     """
     Tree view widget for displaying images.
     """
+
     tissue_target_selected = pyqtSignal(UUID, bool, int)
     tissue_unaligned_selected = pyqtSignal(UUID, bool, int)
     protein_data = pyqtSignal(UUID, int)
     stardist_label = pyqtSignal(UUID, int)
+    generation_source_selected = pyqtSignal(object, object)
     item_deleted = pyqtSignal(UUID)
 
     def __init__(self, parent):
@@ -215,6 +253,15 @@ class ImageTreeWidget(QTreeView):
         self._model_stardist = None
         self._model_reference_canvas = None
         self.doubleClicked.connect(self.show_on_canvas)
+
+    def selectionChanged(self, selected: QItemSelection, deselected: QItemSelection):
+        """Emit generation context whenever image-manager selection changes."""
+        super().selectionChanged(selected, deselected)
+        indexes = self.selectedIndexes()
+        if not indexes:
+            self.generation_source_selected.emit(None, None)
+            return
+        self._emit_generation_source_selection(indexes[0])
 
     @property
     def model_canvas(self):
@@ -261,9 +308,9 @@ class ImageTreeWidget(QTreeView):
 
     def show_on_reference_canvas(self, item_uuid: UUID, channel: int):
         """Show selected item on reference canvas."""
-        assert (
-            self.model_reference_canvas is not None
-        ), "model_reference_canvas is not set"
+        assert self.model_reference_canvas is not None, (
+            "model_reference_canvas is not set"
+        )
         cname = f"Channel {channel + 1}"
         self.model_reference_canvas.add_to_canvas(item_uuid, cname)
 
@@ -283,7 +330,7 @@ class ImageTreeWidget(QTreeView):
             is_stardist_virtual = (
                 is_leaf
                 and selected_wrapper is not None
-                and getattr(selected_wrapper, "name", "") == "StarDist Labels"
+                and is_stardist_label_name(getattr(selected_wrapper, "name", ""))
             )
             set_reference = QAction("Reference")
             set_cell_image = QAction("Cell Image (Stardist)")
@@ -308,13 +355,22 @@ class ImageTreeWidget(QTreeView):
                 lambda: self.set_as_stardist_label(item_uuid, channel)
             )
 
+            export_single_channel = channel_name if is_leaf else None
             save_as_tiff.triggered.connect(
-                lambda: self.save_as(item, "tif", single_channel=channel_name if is_leaf else None)
+                lambda: self.save_as(item, "tif", single_channel=export_single_channel)
+            )
+            save_as_png = QAction("Save as PNG")
+            save_as_png.triggered.connect(
+                lambda: self.save_as(item, "png", single_channel=export_single_channel)
             )
             delete = QAction("Delete", self)
             delete.triggered.connect(lambda: self.delete_item(item))
             model = self.model()
             assert isinstance(model, ImageTreeModel), "Model is not set"
+            model_item = model.itemFromIndex(item)
+            assert model_item is not None, "Item is None"
+            is_root = model_item.parent() is None
+            export_formats = self._allowed_export_formats(item)
 
             if not is_leaf:
                 set_menu = QMenu("Set as...", self)
@@ -347,10 +403,8 @@ class ImageTreeWidget(QTreeView):
                     action.setCheckable(True)
                     action.setChecked(channel_name == current_default)
                     action.triggered.connect(
-                        lambda _, channel_name=channel_name: (
-                            model.setData(
-                                item, channel_name, Qt.ItemDataRole.WhatsThisRole
-                            )
+                        lambda _, channel_name=channel_name: model.setData(
+                            item, channel_name, Qt.ItemDataRole.WhatsThisRole
                         )
                     )
                     channel_group.addAction(action)
@@ -371,15 +425,19 @@ class ImageTreeWidget(QTreeView):
                 tissue_menu = menu.addMenu("Tissue")
                 tissue_menu.addAction(set_tissue_target_image)
                 tissue_menu.addAction(set_tissue_unaligned_image)
-                if is_stardist_virtual:
-                    menu.addAction(save_as_tiff)
+                if not is_root:
+                    if "tif" in export_formats:
+                        menu.addAction(save_as_tiff)
+                    if "png" in export_formats:
+                        menu.addAction(save_as_png)
+                if is_stardist_virtual and not is_root:
                     menu.addAction(delete)
-            model_item = model.itemFromIndex(item)
-            assert model_item is not None, "Item is None"
-            # only add delete & save as tiff action if the item is a root item
-            if model_item.parent() is None:
+            if is_root:
                 menu.addAction(delete)
-                menu.addAction(save_as_tiff)
+                if "tif" in export_formats:
+                    menu.addAction(save_as_tiff)
+                if "png" in export_formats:
+                    menu.addAction(save_as_png)
             menu.exec(event.globalPos())
 
     def set_for_stardist(self, item):
@@ -415,13 +473,15 @@ class ImageTreeWidget(QTreeView):
             return
         data = image_entry.get("data", {})
         wrapper = data.get(channel_name)
-        if wrapper is None or getattr(wrapper, "name", "") != "StarDist Labels":
+        if wrapper is None or not is_stardist_label_name(getattr(wrapper, "name", "")):
             return
 
         del data[channel_name]
         parent_item.removeRow(item.row())
 
-        if self.model_canvas is not None and str(self.model_canvas.uuid) == str(item_uuid):
+        if self.model_canvas is not None and str(self.model_canvas.uuid) == str(
+            item_uuid
+        ):
             self.model_canvas.remove_virtual_stardist_channel(channel_name)
 
         manager = self.parent()
@@ -466,6 +526,50 @@ class ImageTreeWidget(QTreeView):
         assert item is not None, "Item is None"
         return not item.hasChildren()
 
+    def _allowed_export_formats(self, item) -> list[str]:
+        model = self.model()
+        assert isinstance(model, ImageTreeModel), "Model is not set"
+        model_item = model.itemFromIndex(item)
+        assert model_item is not None, "Item is None"
+        is_root = model_item.parent() is None
+        child_count = model_item.rowCount()
+        is_leaf = child_count == 0
+
+        if is_root and child_count > 0:
+            return ["tif"]
+        if is_root and child_count == 0:
+            return ["tif", "png"]
+        if not is_root and is_leaf:
+            return ["tif", "png"]
+        return []
+
+    @staticmethod
+    def _normalize_to_uint8(image_data: np.ndarray) -> np.ndarray:
+        array = np.asarray(image_data)
+        if array.dtype == np.uint8:
+            return array
+        if array.dtype == np.bool_:
+            return (array.astype(np.uint8)) * 255
+        if array.size == 0:
+            return np.zeros(array.shape, dtype=np.uint8)
+
+        float_array = array.astype(np.float32, copy=False)
+        finite_mask = np.isfinite(float_array)
+        if not finite_mask.any():
+            return np.zeros(array.shape, dtype=np.uint8)
+
+        finite_values = float_array[finite_mask]
+        min_val = float(finite_values.min())
+        max_val = float(finite_values.max())
+        if max_val <= min_val:
+            return np.zeros(array.shape, dtype=np.uint8)
+
+        normalized = np.zeros_like(float_array, dtype=np.float32)
+        normalized[finite_mask] = (float_array[finite_mask] - min_val) / (
+            max_val - min_val
+        )
+        return np.clip(normalized * 255.0, 0, 255).astype(np.uint8)
+
     def save_as(self, item, file_type, single_channel=None):
         """Save the item to file."""
         name, item_uuid = self._name_and_uuid_from_item(item)
@@ -489,12 +593,38 @@ class ImageTreeWidget(QTreeView):
                     )
                 else:
                     arrays = [
-                        channel_obj.data for _, channel_obj in sorted(channel_dict.items())
+                        channel_obj.data
+                        for _, channel_obj in sorted(channel_dict.items())
                     ]
                     stacked = np.stack(arrays, axis=0)  # Shape: (channels, H, W)
                     tifffile.imwrite(
                         file_path, stacked, photometric="minisblack", imagej=True
                     )
+        elif file_type == "png":
+            folder_path = QFileDialog.getExistingDirectory(
+                self, "Select Folder to Save PNG"
+            )
+            if not folder_path:
+                return
+
+            channel_key = single_channel if single_channel in channel_dict else None
+            if channel_key is None:
+                if not channel_dict:
+                    return
+                channel_key = sorted(channel_dict.keys(), key=self._channel_sort_key)[0]
+
+            wrapper = channel_dict.get(channel_key)
+            if wrapper is None:
+                return
+            if hasattr(wrapper, "get_uint8_data"):
+                png_data = wrapper.get_uint8_data()
+            else:
+                png_data = self._normalize_to_uint8(wrapper.data)
+            if not isinstance(png_data, np.ndarray) or png_data.dtype != np.uint8:
+                png_data = self._normalize_to_uint8(np.asarray(png_data))
+
+            file_path = os.path.join(folder_path, f"{name}.png")
+            Image.fromarray(png_data).save(file_path)
 
     def set_as_tissue_target(self, i_uuid: UUID, is_leaf: bool, channel: int):
         """Set the selected image as the tissue target image for alignment"""
@@ -508,3 +638,46 @@ class ImageTreeWidget(QTreeView):
     def set_as_stardist_label(self, i_uuid: UUID, channel: int):
         """Set the selected image as the StarDist label image for alignment"""
         self.stardist_label.emit(i_uuid, channel)
+
+    def _emit_generation_source_selection(self, item_index):
+        model = self.model()
+        assert isinstance(model, ImageTreeModel), "Model is not set"
+        item = model.itemFromIndex(item_index)
+        if item is None:
+            self.generation_source_selected.emit(None, None)
+            return
+
+        item_uuid = item.data(Qt.ItemDataRole.UserRole)
+        if item_uuid is None:
+            self.generation_source_selected.emit(None, None)
+            return
+
+        stardist_channel = self._find_virtual_stardist_channel(item_uuid)
+        self.generation_source_selected.emit(item_uuid, stardist_channel)
+
+    def _find_virtual_stardist_channel(self, item_uuid):
+        storage_item = self.storage.get_data(item_uuid)
+        if storage_item is None:
+            return None
+        image_data = storage_item.get("data", {})
+        for channel_key in sorted(image_data.keys(), key=self._channel_sort_key):
+            wrapper = image_data.get(channel_key)
+            if wrapper is None:
+                continue
+            if is_stardist_label_name(getattr(wrapper, "name", "")):
+                return self._get_channel_idx(channel_key)
+        return None
+
+    @staticmethod
+    def _channel_sort_key(channel_key: str):
+        try:
+            return (0, int(channel_key.replace("Channel ", "")))
+        except ValueError:
+            return (1, channel_key)
+
+    @staticmethod
+    def _get_channel_idx(channel_key: str):
+        try:
+            return int(channel_key.replace("Channel ", "")) - 1
+        except ValueError:
+            return None

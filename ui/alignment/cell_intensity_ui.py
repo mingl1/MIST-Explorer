@@ -21,6 +21,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from core.project_naming import is_stardist_label_name
+
 
 # pylint: disable=too-many-instance-attributes
 class CellIntensityUI(QWidget):
@@ -65,8 +67,14 @@ class CellIntensityUI(QWidget):
 
     def update_channels(self, channels: dict):
         """Update available channels in dropdowns."""
+        valid_channels = {}
+        for channel_name, wrapper in channels.items():
+            if is_stardist_label_name(getattr(wrapper, "name", "")):
+                continue
+            valid_channels[channel_name] = wrapper
+
         self.available_channels = sorted(
-            channels.keys(), key=lambda x: int(x.replace("Channel ", ""))
+            valid_channels.keys(), key=lambda x: int(x.replace("Channel ", ""))
         )
         for row_widget in self.channel_rows:
             combo_box = row_widget.findChild(QComboBox)
@@ -125,6 +133,7 @@ class CellIntensityUI(QWidget):
         # run button
         self.run_button = QPushButton(self.cell_intensity_groupbox)
         self.run_button.clicked.connect(self._handle_generate_cell_data)
+        self.run_button.setEnabled(False)
         self.cellintensity_components_vlayout.addWidget(self.run_button)
 
         # cancel button
@@ -246,6 +255,10 @@ class CellIntensityUI(QWidget):
             self.requestFilteredStats.emit()
         else:
             self.errorSignal.emit("Please load bead data first.")
+
+    def set_generation_enabled(self, enabled: bool):
+        """Enable generation only when a source image is selected in the image manager."""
+        self.run_button.setEnabled(bool(enabled))
 
     def show_filtered_stats(self, percentage: float):
         QMessageBox.information(

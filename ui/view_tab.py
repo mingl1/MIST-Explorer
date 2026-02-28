@@ -242,6 +242,40 @@ def write_protein(protein_data, reduced_cell_img):
     return protein_image, cell_image
 
 
+def collapse_duplicate_cell_ids(df):
+    """Collapse duplicate CellID rows to a single row per cell."""
+    if "CellID" not in df.columns:
+        return df
+
+    duplicate_row_count = len(df) - df["CellID"].nunique(dropna=True)
+    if duplicate_row_count <= 0:
+        return df
+
+    coordinate_cols = [col for col in ("Global X", "Global Y") if col in df.columns]
+    protected_cols = {"CellID", *coordinate_cols}
+    numeric_cols = [
+        col
+        for col in df.columns
+        if col not in protected_cols and pd.api.types.is_numeric_dtype(df[col])
+    ]
+    other_cols = [
+        col for col in df.columns if col not in protected_cols and col not in numeric_cols
+    ]
+
+    agg_map = {col: "first" for col in coordinate_cols}
+    agg_map.update({col: "median" for col in numeric_cols})
+    agg_map.update({col: "first" for col in other_cols})
+
+    collapsed = df.groupby("CellID", as_index=False).agg(agg_map)
+    collapsed = collapsed[[col for col in df.columns if col in collapsed.columns]]
+    logger.warning(
+        "Collapsed %s duplicate CellID row(s) to %s unique cells.",
+        duplicate_row_count,
+        len(collapsed),
+    )
+    return collapsed
+
+
 def scale_image_to_255(image_array):
     try:
         if image_array.dtype == np.uint8:
@@ -541,7 +575,10 @@ class ImageOverlay(QWidget):
             df["CellID"] = cell_ids
 
         # Filter out rows that are in the background (don't map to a cell)
+        df["CellID"] = pd.to_numeric(df["CellID"], errors="coerce")
         df = df[df["CellID"] > 0].copy()
+        df["CellID"] = df["CellID"].astype(np.int64)
+        df = collapse_duplicate_cell_ids(df)
 
         # Set CellID as the index for fast lookups later
         self.df = df.set_index("CellID")
