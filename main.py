@@ -1,6 +1,7 @@
 """
 Main script for starting the MIST-Explorer application.
 """
+import argparse
 import io
 import logging
 import os
@@ -100,8 +101,56 @@ class LoadingDialog(QDialog):
         QCoreApplication.processEvents()
 
 
+def parse_cli_args(argv=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--temp",
+        action="store_true",
+        help="Start immediately with a temporary project.",
+    )
+    return parser.parse_known_args(argv)
+
+
+def launch_main_window(app: QApplication, project_path: Path):
+    loading_dialog = LoadingDialog()
+    loading_dialog.show()
+    app.processEvents()
+
+    steps = [
+        ("Loading numpy...", 20),
+        ("Initializing core modules...", 40),
+        ("Loading image processing...", 50),
+        ("Loading analysis tools...", 60),
+        ("Loading UI components...", 80),
+        ("Starting application...", 90),
+    ]
+
+    for message, value in steps:
+        loading_dialog.update_progress(value, message)
+        app.processEvents()
+
+    import numpy as np
+
+    if not hasattr(np, "bool"):
+        np.bool = np.bool_
+
+    from controller import Controller
+    from ui import app as ui_app
+
+    loading_dialog.update_progress(100, "Done")
+    app.processEvents()
+
+    window = ui_app.MainWindow(project_path=project_path)
+    Controller.init(window)
+    window.show()
+    loading_dialog.hide()
+
+    app.exec()
+
+
 if __name__ == "__main__":
-    __app = QApplication(sys.argv)
+    cli_args, qt_args = parse_cli_args(sys.argv[1:])
+    __app = QApplication([sys.argv[0], *qt_args])
 
     loading_dialog = LoadingDialog()
     loading_dialog.show()
@@ -127,45 +176,15 @@ if __name__ == "__main__":
     loading_dialog.accept()
     __app.processEvents()
 
-    from ui.project_launcher import ProjectLauncher
-
-    launcher = ProjectLauncher()
-    if launcher.exec() == ProjectLauncher.DialogCode.Accepted:
-        project_path = launcher.get_selected_project()
-        if project_path:
-            loading_dialog = LoadingDialog()
-            loading_dialog.show()
-            __app.processEvents()
-
-            steps = [
-                ("Loading numpy...", 20),
-                ("Initializing core modules...", 40),
-                ("Loading image processing...", 50),
-                ("Loading analysis tools...", 60),
-                ("Loading UI components...", 80),
-                ("Starting application...", 90),
-            ]
-
-            for message, value in steps:
-                loading_dialog.update_progress(value, message)
-                __app.processEvents()
-
-            import numpy as np
-
-            if not hasattr(np, "bool"):
-                np.bool = np.bool_
-
-            from controller import Controller
-            from ui import app
-
-            loading_dialog.update_progress(100, "Done")
-            __app.processEvents()
-
-            window = app.MainWindow(project_path=project_path)
-            Controller.init(window)
-            window.show()
-            loading_dialog.hide()
-
-            __app.exec()
+    if cli_args.temp:
+        launch_main_window(__app, ProjectManager.create_temp_project())
     else:
-        sys.exit(0)
+        from ui.project_launcher import ProjectLauncher
+
+        launcher = ProjectLauncher()
+        if launcher.exec() == ProjectLauncher.DialogCode.Accepted:
+            project_path = launcher.get_selected_project()
+            if project_path:
+                launch_main_window(__app, project_path)
+        else:
+            sys.exit(0)

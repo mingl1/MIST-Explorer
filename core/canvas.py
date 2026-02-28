@@ -15,7 +15,6 @@ from uuid import UUID as UUID_Type
 import cv2
 import numpy as np
 import tifffile as tiff
-from cv2 import LUT
 from matplotlib import colormaps
 
 # Third-party imports
@@ -48,10 +47,10 @@ from core.image_utils import (
     scale_adjust,
     to_pixmap,
 )
-from core.project_naming import STARDIST_LABEL_BASE_NAME, is_stardist_label_name
 
 # Local/project imports
 from core.metadata_utils import parse_metadata
+from core.project_naming import STARDIST_LABEL_BASE_NAME, is_stardist_label_name
 from core.Worker import Worker
 
 logger = logging.getLogger("core.canvas")
@@ -522,7 +521,9 @@ class BaseGraphicsView(QWidget):
         try:
             channel_one_image = np.array(Image.open(file_name))
         except Exception as e:
-            logger.error("Failed to open image file '%s': %s", file_name, e, exc_info=True)
+            logger.error(
+                "Failed to open image file '%s': %s", file_name, e, exc_info=True
+            )
             raise
         channel_name = "Channel 1"
         channel_one_wrapper = ImageWrapper(channel_one_image, channel_name)
@@ -642,7 +643,9 @@ class BaseGraphicsView(QWidget):
                 )
                 self.memory_cache.put(uuid, channel_name, cache_key, contrasted)
             except Exception as e:
-                logger.error(f"Error processing {channel_name} in background: {e}", exc_info=True)
+                logger.error(
+                    f"Error processing {channel_name} in background: {e}", exc_info=True
+                )
                 continue
 
         return processed_channels
@@ -950,7 +953,9 @@ class ImageGraphicsView(BaseGraphicsView):
             return fallback_cmap
         return "gray"
 
-    def _effective_channel_cmap(self, channel_key: str, fallback_cmap: str = "gray") -> str:
+    def _effective_channel_cmap(
+        self, channel_key: str, fallback_cmap: str = "gray"
+    ) -> str:
         """Return display cmap for a selected channel, normalizing StarDist virtual labels."""
         wrapper = self.working_channels.get(channel_key)
         if wrapper is None:
@@ -1018,7 +1023,9 @@ class ImageGraphicsView(BaseGraphicsView):
                 return
 
     def set_stardist_overlay_enabled(self, enabled: bool):
-        self.stardist_overlay_enabled = bool(enabled) and self.stardist_labels is not None
+        self.stardist_overlay_enabled = (
+            bool(enabled) and self.stardist_labels is not None
+        )
         if not self.stardist_overlay_enabled:
             self._stardist_overlay_rgb = None
         self.update_image()
@@ -1333,7 +1340,9 @@ class ImageGraphicsView(BaseGraphicsView):
         self.stardist_labels = stardist.data.copy()
         self.stardist_overlay_enabled = False
         self._stardist_overlay_rgb = None
-        self._upsert_stardist_virtual_channel(self.stardist_labels, label_name=label_name)
+        self._upsert_stardist_virtual_channel(
+            self.stardist_labels, label_name=label_name
+        )
         self._set_stardist_source_channel()
         if self.image_wrapper.cmap == "label_image":
             self.image_wrapper.cmap = "gray"
@@ -1483,7 +1492,9 @@ class ImageGraphicsView(BaseGraphicsView):
         self.current_channel = int(target_channel.split(" ")[-1]) - 1
 
         display_channel_data = target_image_wrapper.data
-        self.update_cmap.emit(self._effective_channel_cmap(target_channel, previous_cmap))
+        self.update_cmap.emit(
+            self._effective_channel_cmap(target_channel, previous_cmap)
+        )
 
         # Emit target channel immediately for display
         emit_data = {target_channel: display_channel_data}
@@ -1911,7 +1922,7 @@ class ImageDialog(QDialog):
 
     def apply_contrast(self, image, new_min, new_max):
         lut = self.create_lut(new_min, new_max)
-        return LUT(image, lut)
+        return cv2.LUT(image, lut)
 
     def create_lut(self, new_min, new_max):
         lut = np.zeros(256, dtype=np.uint8)  # uint8 for display
