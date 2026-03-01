@@ -64,6 +64,7 @@ class StarDist(QThread):
             "percentile_high": 99.80,
             "prob_threshold": 0.48,
             "nms_threshold": 0.3,
+            "scale": 1.0,
             "n_tiles": 0,
             "radius": 5,
             "use_contrasted_image": False,
@@ -176,6 +177,7 @@ class StarDist(QThread):
                 norm_img,
                 prob_thresh=self.params["prob_threshold"],
                 nms_thresh=self.params["nms_threshold"],
+                scale=self.params["scale"],
                 n_tiles=guess_tiles,
             )
         except Exception as e:
@@ -293,6 +295,10 @@ class StarDist(QThread):
 
     def set_nms_thresh(self, value):
         self.params["nms_threshold"] = value
+
+    def set_scale(self, value):
+        scale = float(value)
+        self.params["scale"] = scale if scale > 0 else 1.0
 
     def set_num_tiles(self, value):
         self.params["n_tiles"] = value

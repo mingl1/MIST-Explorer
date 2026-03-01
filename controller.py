@@ -538,6 +538,9 @@ class SignalConnectionManager:
         self.c.view.stardist_groupbox.nms_threshold.valueChanged.connect(
             self.c.model_stardist.set_nms_thresh
         )
+        self.c.view.stardist_groupbox.scale_factor.valueChanged.connect(
+            self.c.model_stardist.set_scale
+        )
         self.c.view.stardist_groupbox.n_tiles.valueChanged.connect(
             self.c.model_stardist.set_num_tiles
         )

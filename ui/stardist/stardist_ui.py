@@ -91,23 +91,35 @@ class StarDistUI(QWidget):
         self.stardist_hlayout5.addWidget(self.nms_threshold)
         self.stardist_components_vlayout.addLayout(self.stardist_hlayout5)
 
-        # number of tiles
+        # scale
         self.stardist_hlayout6 = QHBoxLayout()
         self.stardist_label6 = QLabel(self.stardist_groupbox)
         self.stardist_hlayout6.addWidget(self.stardist_label6)
-        self.n_tiles = QSpinBox(self.stardist_groupbox)
-        self.n_tiles.setProperty("value", 0)
-        self.stardist_hlayout6.addWidget(self.n_tiles)
+        self.scale_factor = QDoubleSpinBox(self.stardist_groupbox)
+        self.scale_factor.setDecimals(2)
+        self.scale_factor.setRange(0.1, 10.0)
+        self.scale_factor.setSingleStep(0.1)
+        self.scale_factor.setProperty("value", 1.0)
+        self.stardist_hlayout6.addWidget(self.scale_factor)
         self.stardist_components_vlayout.addLayout(self.stardist_hlayout6)
 
-        # dilation
+        # number of tiles
         self.stardist_hlayout7 = QHBoxLayout()
         self.stardist_label7 = QLabel(self.stardist_groupbox)
         self.stardist_hlayout7.addWidget(self.stardist_label7)
+        self.n_tiles = QSpinBox(self.stardist_groupbox)
+        self.n_tiles.setProperty("value", 0)
+        self.stardist_hlayout7.addWidget(self.n_tiles)
+        self.stardist_components_vlayout.addLayout(self.stardist_hlayout7)
+
+        # dilation
+        self.stardist_hlayout8 = QHBoxLayout()
+        self.stardist_label8 = QLabel(self.stardist_groupbox)
+        self.stardist_hlayout8.addWidget(self.stardist_label8)
         self.radius = QSpinBox(self.stardist_groupbox)
         self.radius.setProperty("value", 5)
-        self.stardist_hlayout7.addWidget(self.radius)
-        self.stardist_components_vlayout.addLayout(self.stardist_hlayout7)
+        self.stardist_hlayout8.addWidget(self.radius)
+        self.stardist_components_vlayout.addLayout(self.stardist_hlayout8)
 
         self.use_contrasted_checkbox = QCheckBox(self.stardist_groupbox)
         self.use_contrasted_checkbox.setChecked(False)
@@ -171,8 +183,9 @@ class StarDistUI(QWidget):
             _translate("MainWindow", "Probability/ Score Threshold")
         )
         self.stardist_label5.setText(_translate("MainWindow", "Overlap Threshold"))
-        self.stardist_label6.setText(_translate("MainWindow", "Number of Tiles"))
-        self.stardist_label7.setText(_translate("MainWindow", "Radius"))
+        self.stardist_label6.setText(_translate("MainWindow", "Scale"))
+        self.stardist_label7.setText(_translate("MainWindow", "Number of Tiles"))
+        self.stardist_label8.setText(_translate("MainWindow", "Radius"))
         self.use_contrasted_checkbox.setText(
             _translate("MainWindow", "Use contrasted image (toolbar sliders)")
         )

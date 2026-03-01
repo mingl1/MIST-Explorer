@@ -2,6 +2,7 @@ import uuid
 
 import numpy as np
 import pytest
+from PyQt6.QtCore import Qt
 
 from core.canvas import ImageStorage, ImageWrapper
 from ui.image_manager import ImageManager
@@ -76,7 +77,48 @@ def test_allowed_exports_for_single_layer_root_is_tif_and_png(qapp):
     )
     root_index = manager.image_tree_model.index(0, 0)
 
-    assert manager.image_tree_view._allowed_export_formats(root_index) == ["tif", "png"]
+    assert manager.image_tree_view._allowed_export_formats(root_index) == [
+        "tif",
+        "png",
+    ]
+
+
+@pytest.mark.parametrize(
+    "image_name", ["single_layer.tif", "single_layer.png", "single_layer.jpg"]
+)
+def test_single_layer_adds_channel_one_child_when_new_channel_added(qapp, image_name):
+    manager = ImageManager()
+    image_uuid = _add_image(
+        manager,
+        image_name,
+        {
+            "Channel 1": ImageWrapper(
+                np.array([[10, 20], [30, 40]], dtype=np.uint16), name="Channel 1"
+            )
+        },
+    )
+    root_index = manager.image_tree_model.index(0, 0)
+    root_item = manager.image_tree_model.itemFromIndex(root_index)
+    assert root_item is not None
+    assert root_item.rowCount() == 0
+
+    storage_item = manager.storage.get_data(image_uuid)
+    assert storage_item is not None
+    storage_item["data"]["Channel 2"] = ImageWrapper(
+        np.array([[0, 1], [1, 2]], dtype=np.uint16),
+        name="StarDist Labels",
+        cmap="label_image",
+    )
+
+    manager.set_channel_icon(image_uuid, "Channel 2")
+
+    root_item = manager.image_tree_model.itemFromIndex(root_index)
+    assert root_item is not None
+    child_channels = [
+        root_item.child(i).data(Qt.ItemDataRole.WhatsThisRole)
+        for i in range(root_item.rowCount())
+    ]
+    assert child_channels == ["Channel 1", "Channel 2"]
 
 
 def test_allowed_exports_for_multi_layer_root_is_tif_only(qapp):

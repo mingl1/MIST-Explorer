@@ -78,3 +78,35 @@ def test_resolve_segmentation_input_uses_selected_channel_contrast():
         * 257
     )
     assert np.array_equal(resolved, expected)
+
+
+def test_run_passes_scale_to_stardist_predictor(monkeypatch):
+    model = StarDist()
+    model.set_image_to_process(np.array([[1, 2], [3, 4]], dtype=np.uint16))
+    model.set_scale(1.7)
+
+    class _FakeConfig:
+        axes = "YX"
+        n_channel_in = 1
+
+    class _FakeModel:
+        config = _FakeConfig()
+
+        def __init__(self):
+            self.last_kwargs = None
+
+        def _guess_n_tiles(self, _image):
+            return (1, 1)
+
+        def _predict_instances_generator(self, _img, **kwargs):
+            self.last_kwargs = kwargs
+            yield (np.array([[1, 0], [0, 2]], dtype=np.uint16),)
+
+    fake_model = _FakeModel()
+    model.model = fake_model
+    model.current_model = str(model.params["model"])
+    monkeypatch.setattr("core.stardist.dilate_labels", lambda labels, radius: labels)
+
+    model.run()
+
+    assert fake_model.last_kwargs["scale"] == 1.7

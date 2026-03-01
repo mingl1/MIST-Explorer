@@ -103,19 +103,7 @@ class ImageManager(QWidget):
         item = self.storage.get_data(item_uuid)
         assert item is not None, f"No data found for UUID: {item_uuid}"
         item_data = item["data"]
-        channels = item_data.keys()
-        channels = sorted(channels, key=lambda x: int(x.replace("Channel ", "")))
-        if len(channels) > 1:
-            for channel in channels:
-                channel_item = ImageTreeItem(
-                    item_uuid,
-                    channel=channel,
-                    useItemName=False,
-                    display_text=self._channel_display_text(
-                        channel, item_data[channel]
-                    ),
-                )
-                main_item.appendRow(channel_item)
+        self._sync_channel_children(main_item, item_uuid, item_data)
         self.root_node.appendRow(main_item)
 
         if self.current_project_path:
@@ -168,6 +156,44 @@ class ImageManager(QWidget):
             return display_name
         return channel
 
+    @staticmethod
+    def _channel_sort_key(channel_key: str):
+        try:
+            return (0, int(channel_key.replace("Channel ", "")))
+        except ValueError:
+            return (1, channel_key)
+
+    def _sync_channel_children(self, main_item, item_uuid, image_data):
+        desired_channels = []
+        if len(image_data) > 1:
+            desired_channels = sorted(image_data.keys(), key=self._channel_sort_key)
+
+        existing_channels = []
+        for i in range(main_item.rowCount()):
+            child = main_item.child(i)
+            if child is None:
+                continue
+            channel_name = child.data(Qt.ItemDataRole.WhatsThisRole)
+            if isinstance(channel_name, str):
+                existing_channels.append(channel_name)
+
+        if existing_channels == desired_channels:
+            return
+
+        if main_item.rowCount() > 0:
+            main_item.removeRows(0, main_item.rowCount())
+
+        for channel_name in desired_channels:
+            channel_item = ImageTreeItem(
+                item_uuid,
+                channel=channel_name,
+                useItemName=False,
+                display_text=self._channel_display_text(
+                    channel_name, image_data[channel_name]
+                ),
+            )
+            main_item.appendRow(channel_item)
+
     def set_channel_icon(self, item_uuid, channel):
         """Set the icon for the channel item"""
         assert self.root_node is not None, "Root node is not initialized"
@@ -190,6 +216,9 @@ class ImageManager(QWidget):
                 break
         if main_item is None:
             raise ValueError(f"No main item found for UUID: {item_uuid}")
+
+        self._sync_channel_children(main_item, item_uuid, image_data)
+
         channel_item = None
         if main_item.data(Qt.ItemDataRole.WhatsThisRole) == channel:
             if isinstance(main_item, ImageTreeItem):
@@ -204,7 +233,7 @@ class ImageManager(QWidget):
         if isinstance(channel_item, ImageTreeItem):
             channel_item.set_icon(image_data)
         else:
-            if isinstance(main_item, ImageTreeItem):
+            if isinstance(main_item, ImageTreeItem) and len(image_data) > 1:
                 channel_item = ImageTreeItem(
                     item_uuid,
                     channel=channel,
@@ -477,14 +506,17 @@ class ImageTreeWidget(QTreeView):
             return
 
         del data[channel_name]
-        parent_item.removeRow(item.row())
+        manager = self.parent()
+        if isinstance(manager, ImageManager):
+            manager._sync_channel_children(parent_item, item_uuid, data)
+        else:
+            parent_item.removeRow(item.row())
 
         if self.model_canvas is not None and str(self.model_canvas.uuid) == str(
             item_uuid
         ):
             self.model_canvas.remove_virtual_stardist_channel(channel_name)
 
-        manager = self.parent()
         if isinstance(manager, ImageManager) and manager.current_project_path:
             manager._save_image_to_project(item_uuid, image_entry)
 

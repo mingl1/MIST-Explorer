@@ -46,3 +46,13 @@ def test_stardist_channel_selector_falls_back_when_previous_selection_missing(qa
     stardist_ui.updateChannelSelector({"Channel 1": SimpleNamespace(name="Channel 1")})
 
     assert stardist_ui.stardist_channel_selector.currentText() == "Channel 1"
+
+
+def test_stardist_scale_factor_defaults_and_updates(qapp, qtbot):
+    stardist_ui = _make_stardist_ui(qtbot)
+
+    assert stardist_ui.scale_factor.value() == 1.0
+
+    stardist_ui.scale_factor.setValue(1.7)
+
+    assert stardist_ui.scale_factor.value() == 1.7
