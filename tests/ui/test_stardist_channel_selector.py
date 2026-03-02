@@ -62,16 +62,40 @@ def test_segmentation_method_defaults_to_stardist_controls_enabled(qapp, qtbot):
     stardist_ui = _make_stardist_ui(qtbot)
 
     assert stardist_ui.segmentation_method_selector.currentText() == "StarDist"
+    assert stardist_ui.segmentation_tabs.tabText(0) == "Basic"
+    assert stardist_ui.segmentation_tabs.tabText(1) == "Advanced"
+    assert stardist_ui.segmentation_tabs.isTabEnabled(1)
     assert not stardist_ui.stardist_pretrained_models.isHidden()
+    assert not stardist_ui.use_contrasted_checkbox.isHidden()
+    assert not stardist_ui.radius.isHidden()
     assert stardist_ui.min_size.isHidden()
     assert stardist_ui.max_size.isHidden()
 
 
-def test_segmentation_method_cellprofiler_enables_size_controls(qapp, qtbot):
+def test_segmentation_method_cellprofiler_disables_advanced_tab(qapp, qtbot):
+    stardist_ui = _make_stardist_ui(qtbot)
+
+    stardist_ui.segmentation_tabs.setCurrentIndex(1)
+    stardist_ui.segmentation_method_selector.setCurrentText("CellProfiler-like")
+
+    assert stardist_ui.segmentation_tabs.currentIndex() == 0
+    assert not stardist_ui.segmentation_tabs.isTabEnabled(1)
+    assert stardist_ui.stardist_pretrained_models.isHidden()
+    assert not stardist_ui.use_contrasted_checkbox.isHidden()
+    assert stardist_ui.radius.isHidden()
+    assert not stardist_ui.min_size.isHidden()
+    assert not stardist_ui.max_size.isHidden()
+
+
+def test_segmentation_method_switch_back_to_stardist_reenables_advanced_tab(qapp, qtbot):
     stardist_ui = _make_stardist_ui(qtbot)
 
     stardist_ui.segmentation_method_selector.setCurrentText("CellProfiler-like")
+    stardist_ui.segmentation_method_selector.setCurrentText("StarDist")
 
-    assert not stardist_ui.min_size.isHidden()
-    assert not stardist_ui.max_size.isHidden()
-    assert stardist_ui.stardist_pretrained_models.isHidden()
+    assert stardist_ui.segmentation_tabs.isTabEnabled(1)
+    assert not stardist_ui.stardist_pretrained_models.isHidden()
+    assert not stardist_ui.use_contrasted_checkbox.isHidden()
+    assert not stardist_ui.radius.isHidden()
+    assert stardist_ui.min_size.isHidden()
+    assert stardist_ui.max_size.isHidden()

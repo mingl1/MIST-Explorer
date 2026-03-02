@@ -1,4 +1,4 @@
-from PyQt6.QtCore import QCoreApplication, QMetaObject, QSize
+from PyQt6.QtCore import QCoreApplication, QMetaObject
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QPushButton,
     QSpinBox,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -23,26 +24,34 @@ class StarDistUI(QWidget):
     def setupUI(self, parent, containing_layout: QVBoxLayout):
 
         self.stardist_groupbox = QGroupBox(parent)
-        # self.stardist_groupbox.setMinimumSize(QSize(300, 400))
-        # self.stardist_groupbox.setMaximumSize(QSize(500, 300))
-
-        self.horizontalLayout_4 = QHBoxLayout(self.stardist_groupbox)
+        self.horizontalLayout_4 = QVBoxLayout(self.stardist_groupbox)
         self.stardist_components_vlayout = QVBoxLayout()
         self.stardist_components_vlayout.setSpacing(0)
         self.stardist_components_vlayout.setContentsMargins(0, 0, 0, 0)
 
+        self.segmentation_tabs = QTabWidget(self.stardist_groupbox)
+        self.basic_tab = QWidget(self.segmentation_tabs)
+        self.advanced_tab = QWidget(self.segmentation_tabs)
+        self.segmentation_tabs.addTab(self.basic_tab, "")
+        self.segmentation_tabs.addTab(self.advanced_tab, "")
+
+        self.basic_tab_layout = QVBoxLayout(self.basic_tab)
+        self.basic_tab_layout.setSpacing(0)
+        self.basic_tab_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.advanced_tab_layout = QVBoxLayout(self.advanced_tab)
+        self.advanced_tab_layout.setSpacing(0)
+        self.advanced_tab_layout.setContentsMargins(0, 0, 0, 0)
+
         # channel selector
         self.stardist_channel_selector_layout = QHBoxLayout()
         self.stardist_channel_selector = QComboBox(self.stardist_groupbox)
-        self.stardist_channel_selector_label = QLabel()
-        self.stardist_channel_selector_label.setText("Select Cell Channel")
+        self.stardist_channel_selector_label = QLabel(self.stardist_groupbox)
         self.stardist_channel_selector_layout.addWidget(
             self.stardist_channel_selector_label
         )
         self.stardist_channel_selector_layout.addWidget(self.stardist_channel_selector)
-        self.stardist_components_vlayout.addLayout(
-            self.stardist_channel_selector_layout
-        )
+        self.basic_tab_layout.addLayout(self.stardist_channel_selector_layout)
 
         # segmentation method selector
         self.segmentation_method_layout = QHBoxLayout()
@@ -51,7 +60,37 @@ class StarDistUI(QWidget):
         self.segmentation_method_selector.addItems(["StarDist", "CellProfiler-like"])
         self.segmentation_method_layout.addWidget(self.segmentation_method_label)
         self.segmentation_method_layout.addWidget(self.segmentation_method_selector)
-        self.stardist_components_vlayout.addLayout(self.segmentation_method_layout)
+        self.horizontalLayout_4.addLayout(self.segmentation_method_layout)
+        self.horizontalLayout_4.addWidget(self.segmentation_tabs)
+
+        # dilation
+        self.stardist_hlayout8 = QHBoxLayout()
+        self.stardist_label8 = QLabel(self.stardist_groupbox)
+        self.stardist_hlayout8.addWidget(self.stardist_label8)
+        self.radius = QSpinBox(self.stardist_groupbox)
+        self.radius.setProperty("value", 5)
+        self.stardist_hlayout8.addWidget(self.radius)
+        self.basic_tab_layout.addLayout(self.stardist_hlayout8)
+
+        # min size
+        self.min_size_layout = QHBoxLayout()
+        self.min_size_label = QLabel(self.stardist_groupbox)
+        self.min_size_layout.addWidget(self.min_size_label)
+        self.min_size = QSpinBox(self.stardist_groupbox)
+        self.min_size.setRange(1, 10000)
+        self.min_size.setProperty("value", 60)
+        self.min_size_layout.addWidget(self.min_size)
+        self.basic_tab_layout.addLayout(self.min_size_layout)
+
+        # max size
+        self.max_size_layout = QHBoxLayout()
+        self.max_size_label = QLabel(self.stardist_groupbox)
+        self.max_size_layout.addWidget(self.max_size_label)
+        self.max_size = QSpinBox(self.stardist_groupbox)
+        self.max_size.setRange(1, 10000)
+        self.max_size.setProperty("value", 180)
+        self.max_size_layout.addWidget(self.max_size)
+        self.basic_tab_layout.addLayout(self.max_size_layout)
 
         # pretrained 2D Model
         self.stardist_hlayout1 = QHBoxLayout()
@@ -62,7 +101,7 @@ class StarDistUI(QWidget):
             ["2D_versatile_fluo", "2D_paper_dsb2018", "2D_versatile_he"]
         )
         self.stardist_hlayout1.addWidget(self.stardist_pretrained_models)
-        self.stardist_components_vlayout.addLayout(self.stardist_hlayout1)
+        self.advanced_tab_layout.addLayout(self.stardist_hlayout1)
 
         # percentile low
         self.stardist_hlayout2 = QHBoxLayout()
@@ -71,7 +110,7 @@ class StarDistUI(QWidget):
         self.percentile_low = QDoubleSpinBox(self.stardist_groupbox)
         self.percentile_low.setProperty("value", 3.0)
         self.stardist_hlayout2.addWidget(self.percentile_low)
-        self.stardist_components_vlayout.addLayout(self.stardist_hlayout2)
+        self.advanced_tab_layout.addLayout(self.stardist_hlayout2)
 
         # percentile high
         self.stardist_hlayout3 = QHBoxLayout()
@@ -80,7 +119,7 @@ class StarDistUI(QWidget):
         self.percentile_high = QDoubleSpinBox(self.stardist_groupbox)
         self.percentile_high.setProperty("value", 99.80)
         self.stardist_hlayout3.addWidget(self.percentile_high)
-        self.stardist_components_vlayout.addLayout(self.stardist_hlayout3)
+        self.advanced_tab_layout.addLayout(self.stardist_hlayout3)
 
         # prob threshold
         self.stardist_hlayout4 = QHBoxLayout()
@@ -89,7 +128,7 @@ class StarDistUI(QWidget):
         self.prob_threshold = QDoubleSpinBox(self.stardist_groupbox)
         self.prob_threshold.setProperty("value", 0.48)
         self.stardist_hlayout4.addWidget(self.prob_threshold)
-        self.stardist_components_vlayout.addLayout(self.stardist_hlayout4)
+        self.advanced_tab_layout.addLayout(self.stardist_hlayout4)
 
         # nms threshold
         self.stardist_hlayout5 = QHBoxLayout()
@@ -98,7 +137,7 @@ class StarDistUI(QWidget):
         self.nms_threshold = QDoubleSpinBox(self.stardist_groupbox)
         self.nms_threshold.setProperty("value", 0.3)
         self.stardist_hlayout5.addWidget(self.nms_threshold)
-        self.stardist_components_vlayout.addLayout(self.stardist_hlayout5)
+        self.advanced_tab_layout.addLayout(self.stardist_hlayout5)
 
         # scale
         self.stardist_hlayout6 = QHBoxLayout()
@@ -110,7 +149,7 @@ class StarDistUI(QWidget):
         self.scale_factor.setSingleStep(0.1)
         self.scale_factor.setProperty("value", 1.0)
         self.stardist_hlayout6.addWidget(self.scale_factor)
-        self.stardist_components_vlayout.addLayout(self.stardist_hlayout6)
+        self.advanced_tab_layout.addLayout(self.stardist_hlayout6)
 
         # number of tiles
         self.stardist_hlayout7 = QHBoxLayout()
@@ -119,40 +158,11 @@ class StarDistUI(QWidget):
         self.n_tiles = QSpinBox(self.stardist_groupbox)
         self.n_tiles.setProperty("value", 0)
         self.stardist_hlayout7.addWidget(self.n_tiles)
-        self.stardist_components_vlayout.addLayout(self.stardist_hlayout7)
+        self.advanced_tab_layout.addLayout(self.stardist_hlayout7)
 
-        # dilation
-        self.stardist_hlayout8 = QHBoxLayout()
-        self.stardist_label8 = QLabel(self.stardist_groupbox)
-        self.stardist_hlayout8.addWidget(self.stardist_label8)
-        self.radius = QSpinBox(self.stardist_groupbox)
-        self.radius.setProperty("value", 5)
-        self.stardist_hlayout8.addWidget(self.radius)
-        self.stardist_components_vlayout.addLayout(self.stardist_hlayout8)
-
-        # min size
-        self.min_size_layout = QHBoxLayout()
-        self.min_size_label = QLabel(self.stardist_groupbox)
-        self.min_size_layout.addWidget(self.min_size_label)
-        self.min_size = QSpinBox(self.stardist_groupbox)
-        self.min_size.setRange(1, 10000)
-        self.min_size.setProperty("value", 60)
-        self.min_size_layout.addWidget(self.min_size)
-        self.stardist_components_vlayout.addLayout(self.min_size_layout)
-
-        # max size
-        self.max_size_layout = QHBoxLayout()
-        self.max_size_label = QLabel(self.stardist_groupbox)
-        self.max_size_layout.addWidget(self.max_size_label)
-        self.max_size = QSpinBox(self.stardist_groupbox)
-        self.max_size.setRange(1, 10000)
-        self.max_size.setProperty("value", 180)
-        self.max_size_layout.addWidget(self.max_size)
-        self.stardist_components_vlayout.addLayout(self.max_size_layout)
-
-        self.use_contrasted_checkbox = QCheckBox(self.stardist_groupbox)
+        self.use_contrasted_checkbox = QCheckBox(self.basic_tab)
         self.use_contrasted_checkbox.setChecked(False)
-        self.stardist_components_vlayout.addWidget(self.use_contrasted_checkbox)
+        self.basic_tab_layout.addWidget(self.use_contrasted_checkbox)
 
         # run button
         self.stardist_run_button = QPushButton(self.stardist_groupbox)
@@ -167,7 +177,6 @@ class StarDistUI(QWidget):
         # cancel button
         self.cancel_button = QPushButton(self.stardist_groupbox)
         self.stardist_components_vlayout.addWidget(self.cancel_button)
-        # save button
         self.horizontalLayout_4.addLayout(self.stardist_components_vlayout)
         containing_layout.addWidget(self.stardist_groupbox)
 
@@ -180,13 +189,9 @@ class StarDistUI(QWidget):
             self.stardist_hlayout5,
             self.stardist_hlayout6,
             self.stardist_hlayout7,
-            self.stardist_hlayout8,
-            self.use_contrasted_checkbox,
         ]
-        self._primary_specific_rows = [
-            self.min_size_layout,
-            self.max_size_layout,
-        ]
+        self._basic_stardist_rows = [self.stardist_hlayout8]
+        self._basic_primary_rows = [self.min_size_layout, self.max_size_layout]
         self.segmentation_method_selector.currentTextChanged.connect(
             self._update_method_controls
         )
@@ -218,11 +223,19 @@ class StarDistUI(QWidget):
         self.stardist_channel_selector.clear()
 
     def _update_method_controls(self):
-        use_primary_objects = (
-            self.segmentation_method_selector.currentText() == "CellProfiler-like"
+        use_stardist = self.segmentation_method_selector.currentText() == "StarDist"
+        self._set_row_visibility(self._stardist_specific_rows, use_stardist)
+        self._set_row_visibility(self._basic_stardist_rows, use_stardist)
+        self._set_row_visibility(self._basic_primary_rows, not use_stardist)
+        self.segmentation_tabs.setTabEnabled(1, use_stardist)
+        if use_stardist:
+            self.segmentation_tabs.setTabToolTip(1, "")
+            return
+        if self.segmentation_tabs.currentIndex() == 1:
+            self.segmentation_tabs.setCurrentIndex(0)
+        self.segmentation_tabs.setTabToolTip(
+            1, "No advanced options available for this method."
         )
-        self._set_row_visibility(self._stardist_specific_rows, not use_primary_objects)
-        self._set_row_visibility(self._primary_specific_rows, use_primary_objects)
 
     def _set_row_visibility(self, rows, visible):
         for row in rows:
@@ -248,6 +261,11 @@ class StarDistUI(QWidget):
             _translate(
                 "MainWindow", "Cell Segmentation - Current Canvas Image"
             )
+        )
+        self.segmentation_tabs.setTabText(0, _translate("MainWindow", "Basic"))
+        self.segmentation_tabs.setTabText(1, _translate("MainWindow", "Advanced"))
+        self.stardist_channel_selector_label.setText(
+            _translate("MainWindow", "Cell Channel")
         )
         self.segmentation_method_label.setText(
             _translate("MainWindow", "Method")
