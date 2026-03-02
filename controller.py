@@ -517,6 +517,9 @@ class SignalConnectionManager:
         self.c.view.stardist_groupbox.stardist_channel_selector.currentTextChanged.connect(
             self.c.model_stardist.set_channel
         )
+        self.c.view.stardist_groupbox.segmentation_method_selector.currentTextChanged.connect(
+            self.c.model_stardist.set_segmentation_method
+        )
         self.c.model_stardist.cell_image_set.connect(
             self.c.view.stardist_groupbox.set_groupbox_title
         )
@@ -549,6 +552,12 @@ class SignalConnectionManager:
         )
         self.c.view.stardist_groupbox.use_contrasted_checkbox.toggled.connect(
             self.c.model_stardist.set_use_contrasted_image
+        )
+        self.c.view.stardist_groupbox.min_size.valueChanged.connect(
+            self.c.model_stardist.set_min_size
+        )
+        self.c.view.stardist_groupbox.max_size.valueChanged.connect(
+            self.c.model_stardist.set_max_size
         )
         self.c.view.stardist_groupbox.overlay_toggle_button.toggled.connect(
             self.c.model_canvas.set_stardist_overlay_enabled

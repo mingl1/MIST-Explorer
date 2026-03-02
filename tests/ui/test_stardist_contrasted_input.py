@@ -110,3 +110,27 @@ def test_run_passes_scale_to_stardist_predictor(monkeypatch):
     model.run()
 
     assert fake_model.last_kwargs["scale"] == 1.7
+
+
+def test_run_cellprofiler_like_method_skips_stardist_model_load(monkeypatch):
+    model = StarDist()
+    image = np.zeros((64, 64), dtype=np.float32)
+    image[20:36, 20:36] = 1.0
+    model.set_image_to_process(image)
+    model.set_segmentation_method("CellProfiler-like")
+    model.set_min_size(5)
+    model.set_max_size(80)
+
+    def _fail_model_load(*_args, **_kwargs):
+        raise AssertionError("StarDist model should not be loaded")
+
+    monkeypatch.setattr("core.stardist.StarDist2D.from_pretrained", _fail_model_load)
+
+    emitted = []
+    model.stardist_done.connect(lambda wrapper, *_: emitted.append(wrapper))
+
+    model.run()
+
+    assert emitted
+    assert emitted[0].data.dtype == np.uint16
+    assert int(emitted[0].data.max()) >= 1

@@ -44,6 +44,15 @@ class StarDistUI(QWidget):
             self.stardist_channel_selector_layout
         )
 
+        # segmentation method selector
+        self.segmentation_method_layout = QHBoxLayout()
+        self.segmentation_method_label = QLabel(self.stardist_groupbox)
+        self.segmentation_method_selector = QComboBox(self.stardist_groupbox)
+        self.segmentation_method_selector.addItems(["StarDist", "CellProfiler-like"])
+        self.segmentation_method_layout.addWidget(self.segmentation_method_label)
+        self.segmentation_method_layout.addWidget(self.segmentation_method_selector)
+        self.stardist_components_vlayout.addLayout(self.segmentation_method_layout)
+
         # pretrained 2D Model
         self.stardist_hlayout1 = QHBoxLayout()
         self.stardist_label1 = QLabel(self.stardist_groupbox)
@@ -121,6 +130,26 @@ class StarDistUI(QWidget):
         self.stardist_hlayout8.addWidget(self.radius)
         self.stardist_components_vlayout.addLayout(self.stardist_hlayout8)
 
+        # min size
+        self.min_size_layout = QHBoxLayout()
+        self.min_size_label = QLabel(self.stardist_groupbox)
+        self.min_size_layout.addWidget(self.min_size_label)
+        self.min_size = QSpinBox(self.stardist_groupbox)
+        self.min_size.setRange(1, 10000)
+        self.min_size.setProperty("value", 60)
+        self.min_size_layout.addWidget(self.min_size)
+        self.stardist_components_vlayout.addLayout(self.min_size_layout)
+
+        # max size
+        self.max_size_layout = QHBoxLayout()
+        self.max_size_label = QLabel(self.stardist_groupbox)
+        self.max_size_layout.addWidget(self.max_size_label)
+        self.max_size = QSpinBox(self.stardist_groupbox)
+        self.max_size.setRange(1, 10000)
+        self.max_size.setProperty("value", 180)
+        self.max_size_layout.addWidget(self.max_size)
+        self.stardist_components_vlayout.addLayout(self.max_size_layout)
+
         self.use_contrasted_checkbox = QCheckBox(self.stardist_groupbox)
         self.use_contrasted_checkbox.setChecked(False)
         self.stardist_components_vlayout.addWidget(self.use_contrasted_checkbox)
@@ -143,10 +172,29 @@ class StarDistUI(QWidget):
         containing_layout.addWidget(self.stardist_groupbox)
 
         self.__retranslate_UI()
+        self._stardist_specific_rows = [
+            self.stardist_hlayout1,
+            self.stardist_hlayout2,
+            self.stardist_hlayout3,
+            self.stardist_hlayout4,
+            self.stardist_hlayout5,
+            self.stardist_hlayout6,
+            self.stardist_hlayout7,
+            self.stardist_hlayout8,
+            self.use_contrasted_checkbox,
+        ]
+        self._primary_specific_rows = [
+            self.min_size_layout,
+            self.max_size_layout,
+        ]
+        self.segmentation_method_selector.currentTextChanged.connect(
+            self._update_method_controls
+        )
+        self._update_method_controls()
         QMetaObject.connectSlotsByName(self)
 
     def set_groupbox_title(self, name, channel):
-        self.stardist_groupbox.setTitle(f"StarDist Cell Segmentation - {name}")
+        self.stardist_groupbox.setTitle(f"Cell Segmentation - {name}")
         self.stardist_channel_selector.setCurrentText(channel)
 
     def updateChannelSelector(self, channels: dict):
@@ -169,12 +217,40 @@ class StarDistUI(QWidget):
     def clearChannelSelector(self):
         self.stardist_channel_selector.clear()
 
+    def _update_method_controls(self):
+        use_primary_objects = (
+            self.segmentation_method_selector.currentText() == "CellProfiler-like"
+        )
+        self._set_row_visibility(self._stardist_specific_rows, not use_primary_objects)
+        self._set_row_visibility(self._primary_specific_rows, use_primary_objects)
+
+    def _set_row_visibility(self, rows, visible):
+        for row in rows:
+            if isinstance(row, QWidget):
+                row.setVisible(visible)
+                continue
+            self._set_layout_visibility(row, visible)
+
+    def _set_layout_visibility(self, layout, visible):
+        for idx in range(layout.count()):
+            item = layout.itemAt(idx)
+            child_widget = item.widget()
+            if child_widget is not None:
+                child_widget.setVisible(visible)
+                continue
+            child_layout = item.layout()
+            if child_layout is not None:
+                self._set_layout_visibility(child_layout, visible)
+
     def __retranslate_UI(self):
         _translate = QCoreApplication.translate
         self.stardist_groupbox.setTitle(
             _translate(
-                "MainWindow", "StarDist Cell Segmentation - Current Canvas Image"
+                "MainWindow", "Cell Segmentation - Current Canvas Image"
             )
+        )
+        self.segmentation_method_label.setText(
+            _translate("MainWindow", "Method")
         )
         self.stardist_label1.setText(_translate("MainWindow", "Pre-trained 2D Model"))
         self.stardist_label2.setText(_translate("MainWindow", "Percentile Low"))
@@ -186,6 +262,8 @@ class StarDistUI(QWidget):
         self.stardist_label6.setText(_translate("MainWindow", "Scale"))
         self.stardist_label7.setText(_translate("MainWindow", "Number of Tiles"))
         self.stardist_label8.setText(_translate("MainWindow", "Radius"))
+        self.min_size_label.setText(_translate("MainWindow", "Min Size (diameter px)"))
+        self.max_size_label.setText(_translate("MainWindow", "Max Size (diameter px)"))
         self.use_contrasted_checkbox.setText(
             _translate("MainWindow", "Use contrasted image (toolbar sliders)")
         )
