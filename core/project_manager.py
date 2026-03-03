@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import uuid
 
+import numpy as np
 import tifffile
 
 from models.workspace import ImageMetadata, ProjectMetadata
@@ -14,6 +15,12 @@ logger = logging.getLogger(__name__)
 
 
 class ProjectManager:
+    @staticmethod
+    def imagej_compatible_dtype(dtype) -> bool:
+        """Return True when dtype can be written with imagej=True."""
+        resolved = np.dtype(dtype)
+        return resolved in (np.dtype(np.uint8), np.dtype(np.uint16), np.dtype(np.float32))
+
     @staticmethod
     def get_storage_path() -> Path:
         system = platform.system()
@@ -29,6 +36,10 @@ class ProjectManager:
     @staticmethod
     def get_projects_path() -> Path:
         return ProjectManager.get_storage_path() / "projects"
+
+    @staticmethod
+    def get_temp_projects_path() -> Path:
+        return ProjectManager.get_storage_path() / "temp_projects"
 
     @staticmethod
     def ensure_storage_exists():
@@ -66,6 +77,8 @@ class ProjectManager:
     def create_temp_project(base_path: Optional[Path] = None) -> Path:
         timestamp = datetime.now().strftime("%Y-%m-%d %H-%M-%S")
         suffix = uuid.uuid4().hex[:6]
+        if base_path is None:
+            base_path = ProjectManager.get_temp_projects_path()
         return ProjectManager.create_project(
             f"Temp Project {timestamp} {suffix}",
             base_path=base_path,
@@ -142,11 +155,12 @@ class ProjectManager:
             channel_num = channel_name.replace("Channel ", "")
             channel_path = image_folder / f"channel_{channel_num}.tif"
             try:
+                array = np.asarray(wrapper.data)
                 tifffile.imwrite(
                     str(channel_path),
-                    wrapper.data,
+                    array,
                     photometric="minisblack",
-                    imagej=True,
+                    imagej=ProjectManager.imagej_compatible_dtype(array.dtype),
                 )
             except Exception as e:
                 logger.error("Failed to save channel '%s' to '%s': %s", channel_name, channel_path, e, exc_info=True)

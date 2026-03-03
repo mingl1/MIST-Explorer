@@ -1,7 +1,11 @@
 import numpy as np
 import pandas as pd
 
-from core.cell_intensity import build_channel_cell_dataframe, merge_channel_cell_data
+from core.cell_intensity import (
+    CellIntensity,
+    build_channel_cell_dataframe,
+    merge_channel_cell_data,
+)
 from ui.view_tab import collapse_duplicate_cell_ids
 
 
@@ -104,3 +108,13 @@ def test_duplicate_collapse_prevents_lut_assignment_mismatch():
     assert len(valid_indices) == len(values)
     lut_data[valid_indices] = values
     assert lut_data.tolist() == [0.0, 20.0, 40.0, 50.0]
+
+
+def test_compute_all_centroids_supports_cancel():
+    worker = CellIntensity()
+    worker.stardist_labels = np.array([[0, 1], [1, 1]], dtype=np.uint16)
+
+    worker.cancel()
+    centroids = worker.compute_all_centroids()
+
+    assert centroids is None

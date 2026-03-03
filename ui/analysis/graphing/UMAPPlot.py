@@ -577,7 +577,6 @@ class PlotView(QWidget):
                 show=False,
                 title=f"PROJECTION :: {color_key.upper()}",
                 legend_loc="on data",
-                palette=c["plot_palette"],
                 frameon=False,
             )
             for text_obj in self.ax.texts:
@@ -651,15 +650,11 @@ class HeatmapView(QWidget):
         self,
         adata,
         cluster_key,
-        visible_indices,
-        rename_map,
         selected_features,
     ):
         self.last_params = (
             adata,
             cluster_key,
-            visible_indices,
-            rename_map,
             selected_features,
         )
 
@@ -687,14 +682,13 @@ class HeatmapView(QWidget):
             return
 
         try:
-            # Data subsetting logic
-            all_codes = adata.obs[cluster_key].cat.codes
-            mask_cells = np.isin(all_codes, visible_indices)
+            # Drop cells where cluster_key is nan
+            mask_cells = adata.obs[cluster_key].notna()
             if np.sum(mask_cells) == 0:
                 show_msg(Locale.get("HM_VOID"))
                 return
 
-            heatmap_data = adata[mask_cells, :][:, selected_features].copy()
+            heatmap_data = adata[mask_cells, :][:, list(selected_features)].copy()
 
             # Apply scaling if checkbox is checked
             if self.chk_scale.isChecked():
@@ -709,18 +703,10 @@ class HeatmapView(QWidget):
                 final_features.sort()
 
             # Handle Group Sorting (X)
-            current_codes = heatmap_data.obs[cluster_key].cat.codes
-            new_labels = [rename_map.get(c, str(c)) for c in current_codes]
-
-            # Determine unique labels in natural order (based on code)
-            present_codes = np.unique(current_codes)
-            natural_order = [rename_map.get(c, str(c)) for c in sorted(present_codes)]
-
-            final_categories = natural_order
-
-            heatmap_data.obs["display_label"] = pd.Categorical(
-                new_labels, categories=final_categories, ordered=True
-            )
+            heatmap_data.obs["display_label"] = heatmap_data.obs[cluster_key].copy()
+            final_categories = list(heatmap_data.obs["display_label"].cat.categories)
+            if f"{cluster_key}_colors" in heatmap_data.uns:
+                heatmap_data.uns["display_label_colors"] = heatmap_data.uns[f"{cluster_key}_colors"]
 
             # Apply Equiwidth Resampling
             if self.chk_equiwidth.isChecked():
@@ -874,17 +860,7 @@ class RankedGenesView(QWidget):
                 except Exception as e:
                     logger.error(f"Failed to rank genes: {e}")
 
-    def update_cluster_names(self, renames):
-        """
-        Updates the displayed names in the combo box based on the dictionary
-        renames: { int_code : str_new_name }
-        """
-        self.cluster_combo.blockSignals(True)
-        for i in range(self.cluster_combo.count()):
-            # Assuming the combo box items were added in order of codes (which they are in set_data)
-            if i in renames:
-                self.cluster_combo.setItemText(i, renames[i])
-        self.cluster_combo.blockSignals(False)
+
 
     def on_update(self):
         if self.adata is None or self.key is None:
@@ -948,7 +924,6 @@ class RankedGenesView(QWidget):
                     frameon=False,
                     title=color_key,
                     cmap=c["plot_cmap"],
-                    palette=c["plot_palette"],
                     colorbar_loc=None,
                 )
 
@@ -1081,14 +1056,18 @@ class SegmentationView(QWidget):
 
         self.refresh_theme()
         if f"{cluster_key}_colors" not in adata.uns:
-            sc.pl.umap(adata, color=cluster_key, show=False)
+            c = ThemeManager.get_current()
+            sc.pl.umap(adata, color=cluster_key, palette=c.get("plot_palette", "tab20"), show=False)
+            plt.close("all")
         cluster_colors = adata.uns[f"{cluster_key}_colors"]
         categories = adata.obs[cluster_key].cat.categories
         self.npy_cat_idx_to_rgb = np.array([to_rgb(c) for c in cluster_colors])
-        valid_ids = adata.obs["cell_id"].values.astype(int)
-        max_id = max(self.seg_data.max(), valid_ids.max())
-        self.npy_id_to_cat_idx = np.full(max_id + 1, -1, dtype=np.int32)
-        self.npy_id_to_cat_idx[valid_ids] = adata.obs[cluster_key].cat.codes.values
+        
+        if self.seg_data is not None:
+            valid_ids = adata.obs["cell_id"].values.astype(int)
+            max_id = max(self.seg_data.max(), valid_ids.max())
+            self.npy_id_to_cat_idx = np.full(max_id + 1, -1, dtype=np.int32)
+            self.npy_id_to_cat_idx[valid_ids] = adata.obs[cluster_key].cat.codes.values
 
         self.cluster_list.blockSignals(True)
         self.cluster_list.clear()
@@ -1271,12 +1250,48 @@ class UMAPVisualizer(QMainWindow):
             return
         if visible is None or renames is None:
             visible, renames = self.seg_view.get_state()
+            
+        adata = self.model.adata
+        base_key = "leiden"
+        view_key = f"{base_key}_view"
         
-        self.ranked_genes_view.update_cluster_names(renames)
+        orig_categories = list(adata.obs[base_key].cat.categories)
+        
+        present_codes = sorted([c for c in renames.keys() if c in visible])
+        unique_new_labels = []
+        for c in present_codes:
+            lbl = renames.get(c, str(orig_categories[c]))
+            if lbl not in unique_new_labels:
+                unique_new_labels.append(lbl)
+                
+        new_labels = []
+        for code in adata.obs[base_key].cat.codes:
+            if code >= 0 and code in visible:
+                new_labels.append(renames.get(code, str(orig_categories[code])))
+            else:
+                new_labels.append(np.nan)
+                
+        adata.obs[view_key] = pd.Categorical(new_labels, categories=unique_new_labels)
+        
+        if f"{base_key}_colors" in adata.uns:
+            orig_colors = adata.uns[f"{base_key}_colors"]
+            
+            color_map = {}
+            for i, cat_name in enumerate(orig_categories):
+                if i in visible:
+                    new_name = renames.get(i, str(cat_name))
+                    if new_name not in color_map:
+                        color_map[new_name] = orig_colors[i]
+                        
+            view_colors = [color_map[cat] for cat in unique_new_labels]
+            adata.uns[f"{view_key}_colors"] = np.array(view_colors)
+            
+        self.plot_view.update_plot(adata, view_key)
+        self.ranked_genes_view.set_data(adata, view_key)
         
         selected_features = self.controls.get_selected_features()
         self.heatmap_view.update_heatmap(
-            self.model.adata, "leiden", visible, renames, selected_features
+            adata, view_key, selected_features
         )
 
     def start_full_analysis(self, params):
@@ -1336,15 +1351,11 @@ class UMAPVisualizer(QMainWindow):
     def on_analysis_finished(self, adata, key):
         self.set_busy_state(False)
         self.is_running_full_pipeline = False
-        self.plot_view.update_plot(adata, key)
         n_clusters = len(adata.obs[key].unique())
         self.status_label.setText(
             f"COMPLETED: {n_clusters} CLUSTERS IDENTIFIED ({key.upper()})"
         )
-        if self.segmentation is not None:
-            self.seg_view.render_clusters(adata, key)
-        self.trigger_heatmap_update()
-        self.ranked_genes_view.set_data(adata, key)
+        self.seg_view.render_clusters(adata, key)
 
     def on_analysis_error(self, error_msg):
         self.set_busy_state(False)

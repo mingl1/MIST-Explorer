@@ -32,6 +32,20 @@ def test_create_temp_project_builds_valid_project_folder(tmp_path: Path):
     assert (project_path / "thumbnails").exists()
 
 
+def test_create_temp_project_defaults_to_temp_projects_path(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr(
+        ProjectManager, "get_storage_path", staticmethod(lambda: tmp_path)
+    )
+
+    project_path = ProjectManager.create_temp_project()
+
+    assert project_path.exists()
+    assert project_path.parent == tmp_path / "temp_projects"
+    assert project_path.parent != tmp_path / "projects"
+
+
 def test_temp_project_not_listed_in_recent_projects(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(
         ProjectManager, "get_projects_path", staticmethod(lambda: tmp_path)
@@ -62,3 +76,26 @@ def test_legacy_temp_named_project_not_listed_in_recent_projects(
 
     assert regular in recent_paths
     assert legacy_temp not in recent_paths
+
+
+def test_save_image_allows_int32_label_channels(tmp_path: Path):
+    class _Wrapper:
+        def __init__(self, data):
+            self.data = data
+
+    project_path = ProjectManager.create_project("Int32 Labels", base_path=tmp_path)
+    image_uuid = "int32-label-image"
+    labels = np.array([[0, 70000], [1, 2]], dtype=np.int32)
+
+    ProjectManager.save_image(
+        project_path=project_path,
+        image_uuid=image_uuid,
+        channel_data={"Channel 5": _Wrapper(labels)},
+        image_name="test",
+        channel_count=1,
+    )
+
+    loaded = ProjectManager.load_image(project_path, image_uuid, "Channel 5")
+    assert loaded is not None
+    assert loaded.dtype == np.int32
+    assert np.array_equal(loaded, labels)

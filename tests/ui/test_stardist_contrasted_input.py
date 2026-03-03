@@ -132,5 +132,5 @@ def test_run_cellprofiler_like_method_skips_stardist_model_load(monkeypatch):
     model.run()
 
     assert emitted
-    assert emitted[0].data.dtype == np.uint16
+    assert emitted[0].data.dtype == np.int32
     assert int(emitted[0].data.max()) >= 1

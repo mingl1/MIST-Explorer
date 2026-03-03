@@ -1,4 +1,5 @@
 import os
+import threading
 
 import cv2 as cv
 import numpy as np
@@ -275,7 +276,8 @@ def _identify_primary_objects_like_cellprofiler(image_2d, min_size, max_size):
         labeled = centrosome.cpmorphology.fill_labeled_holes(labeled)
 
     labeled, _ = centrosome.cpmorphology.relabel(labeled)
-    return np.asarray(labeled, dtype=np.uint16)
+    # Keep labels in int32 to avoid the uint16 instance-id ceiling (65,535).
+    return np.asarray(labeled, dtype=np.int32)
 
 
 class StarDist(QThread):
@@ -287,10 +289,13 @@ class StarDist(QThread):
 
     def __init__(self):
         super().__init__()
+        self._state_lock = threading.Lock()
         self.protein_channels = None
         self.np_image = None
         self.project_name = None
         self.is_temp_project = False
+        self.source_uuid = None
+        self._last_result_source_uuid = None
         self.params = {
             "channel": "Channel 1",
             "segmentation_method": SEGMENTATION_METHOD_STARDIST,
@@ -340,21 +345,28 @@ class StarDist(QThread):
         # Keep segmentation input high-bit depth while preserving display-window semantics.
         return contrasted_uint8.astype(np.uint16) * 257
 
-    def _resolve_segmentation_input(self):
+    def _resolve_segmentation_input(self, params=None, protein_channels=None, np_image=None):
+        if params is None:
+            params = self.params
+        if protein_channels is None:
+            protein_channels = self.protein_channels
+        if np_image is None:
+            np_image = self.np_image
+
         wrapper = None
         image = None
 
-        if self.protein_channels is not None and self.np_image is None:
-            wrapper = self.protein_channels.get(self.params["channel"])
+        if protein_channels is not None and np_image is None:
+            wrapper = protein_channels.get(params["channel"])
             if wrapper is not None:
                 image = wrapper.data
-        elif self.protein_channels is None and self.np_image is not None:
-            image = self.np_image
+        elif protein_channels is None and np_image is not None:
+            image = np_image
 
         if image is None:
             return None
 
-        if not self.params.get("use_contrasted_image", False):
+        if not params.get("use_contrasted_image", False):
             return image
 
         if wrapper is None:
@@ -369,21 +381,44 @@ class StarDist(QThread):
 
     def run(self):
         self._cancel_requested = False  # reset each run
+        with self._state_lock:
+            run_params = dict(self.params)
+            run_protein_channels = self.protein_channels
+            run_np_image = self.np_image
+            run_project_name = self.project_name
+            run_is_temp_project = self.is_temp_project
+            run_source_uuid = self.source_uuid
 
-        cell_image = self._resolve_segmentation_input()
+        cell_image = self._resolve_segmentation_input(
+            params=run_params,
+            protein_channels=run_protein_channels,
+            np_image=run_np_image,
+        )
         if cell_image is None:
             self._fatal_error_message("No cell image available for processing")
             return
         assert isinstance(cell_image, np.ndarray), "cell_image must be a numpy array"
 
-        segmentation_method = self.params.get(
+        segmentation_method = run_params.get(
             "segmentation_method", SEGMENTATION_METHOD_STARDIST
         )
         if segmentation_method == SEGMENTATION_METHOD_PRIMARY_OBJECTS:
-            self._run_primary_objects(cell_image)
+            self._run_primary_objects(
+                cell_image,
+                run_params,
+                run_project_name,
+                run_is_temp_project,
+                run_source_uuid,
+            )
             return
 
-        self._run_stardist(cell_image)
+        self._run_stardist(
+            cell_image,
+            run_params,
+            run_project_name,
+            run_is_temp_project,
+            run_source_uuid,
+        )
 
     def cancel(self):
         self._cancel_requested = True
@@ -409,80 +444,111 @@ class StarDist(QThread):
         return cv.LUT(cv.merge((labels, labels, labels)), lut)
 
     def update_channels(self, protein_channels, _):
-        self.np_image = None
-        self.protein_channels = protein_channels
+        with self._state_lock:
+            self.np_image = None
+            self.protein_channels = protein_channels
 
-    def set_protein_image(self, protein_channels, channel="Channel 1", name=None):
-        self.protein_channels = protein_channels
-        self.params["channel"] = channel
+    def set_protein_image(self, protein_channels, channel="Channel 1", name=None, source_uuid=None):
+        with self._state_lock:
+            self.protein_channels = protein_channels
+            self.params["channel"] = channel
+            if source_uuid is not None:
+                self.source_uuid = str(source_uuid)
         self.cell_image_set.emit(name, channel)
-        self.np_image = None
+        with self._state_lock:
+            self.np_image = None
 
     def set_image_to_process(self, np_image):
-        self.protein_channels = None
-        self.np_image = np_image
+        with self._state_lock:
+            self.protein_channels = None
+            self.np_image = np_image
 
     def set_project_context(self, project_name, is_temp_project=False):
-        self.project_name = project_name
-        self.is_temp_project = bool(is_temp_project)
+        with self._state_lock:
+            self.project_name = project_name
+            self.is_temp_project = bool(is_temp_project)
+
+    def set_source_uuid(self, source_uuid):
+        with self._state_lock:
+            self.source_uuid = str(source_uuid) if source_uuid is not None else None
+
+    @property
+    def last_result_source_uuid(self):
+        with self._state_lock:
+            return self._last_result_source_uuid
 
     def set_channel(self, channel):
-        self.params["channel"] = channel
+        with self._state_lock:
+            self.params["channel"] = channel
 
     def set_segmentation_method(self, method):
         normalized = str(method).strip()
-        if normalized == SEGMENTATION_METHOD_PRIMARY_OBJECTS:
-            self.params["segmentation_method"] = SEGMENTATION_METHOD_PRIMARY_OBJECTS
-            return
-        self.params["segmentation_method"] = SEGMENTATION_METHOD_STARDIST
+        with self._state_lock:
+            if normalized == SEGMENTATION_METHOD_PRIMARY_OBJECTS:
+                self.params["segmentation_method"] = SEGMENTATION_METHOD_PRIMARY_OBJECTS
+                return
+            self.params["segmentation_method"] = SEGMENTATION_METHOD_STARDIST
 
     def set_model(self, model):
-        self.params["model"] = model
+        with self._state_lock:
+            self.params["model"] = model
 
     def set_percentile_low(self, value):
-        self.params["percentile_low"] = value
+        with self._state_lock:
+            self.params["percentile_low"] = value
 
     def set_percentile_high(self, value):
-        self.params["percentile_high"] = value
+        with self._state_lock:
+            self.params["percentile_high"] = value
 
     def set_prob_thresh(self, value):
-        self.params["prob_threshold"] = value
+        with self._state_lock:
+            self.params["prob_threshold"] = value
 
     def set_number_tiles(self, value):
-        self.params["n_tiles"] = value
+        with self._state_lock:
+            self.params["n_tiles"] = value
 
     def set_dilation_radius(self, value):
-        self.params["radius"] = value
+        with self._state_lock:
+            self.params["radius"] = value
 
     def set_nms_thresh(self, value):
-        self.params["nms_threshold"] = value
+        with self._state_lock:
+            self.params["nms_threshold"] = value
 
     def set_scale(self, value):
         scale = float(value)
-        self.params["scale"] = scale if scale > 0 else 1.0
+        with self._state_lock:
+            self.params["scale"] = scale if scale > 0 else 1.0
 
     def set_num_tiles(self, value):
-        self.params["n_tiles"] = value
+        with self._state_lock:
+            self.params["n_tiles"] = value
 
     def set_dialation_radisu(self, value):
-        self.params["radius"] = value
+        with self._state_lock:
+            self.params["radius"] = value
 
     def set_use_contrasted_image(self, enabled):
-        self.params["use_contrasted_image"] = bool(enabled)
+        with self._state_lock:
+            self.params["use_contrasted_image"] = bool(enabled)
 
     def set_min_size(self, value):
         parsed = int(value)
         parsed = max(1, parsed)
-        self.params["min_size"] = parsed
-        if self.params["max_size"] < parsed:
-            self.params["max_size"] = parsed
+        with self._state_lock:
+            self.params["min_size"] = parsed
+            if self.params["max_size"] < parsed:
+                self.params["max_size"] = parsed
 
     def set_max_size(self, value):
         parsed = int(value)
         parsed = max(1, parsed)
-        self.params["max_size"] = parsed
-        if self.params["min_size"] > parsed:
-            self.params["min_size"] = parsed
+        with self._state_lock:
+            self.params["max_size"] = parsed
+            if self.params["min_size"] > parsed:
+                self.params["min_size"] = parsed
 
     def _fatal_error_message(self, msg):
         self.error_signal.emit(msg)
@@ -523,23 +589,36 @@ class StarDist(QThread):
             f"for axes {axes}."
         )
 
-    def _emit_segmentation_result(self):
+    def _emit_segmentation_result(
+        self, project_name, is_temp_project, source_uuid=None
+    ):
         result = ImageWrapper(self.stardist_labels_grayscale, name="Channel 1", cmap="gray")
         label_name = prefix_with_project_name(
             STARDIST_LABEL_BASE_NAME,
-            self.project_name,
-            is_temp_project=self.is_temp_project,
+            project_name,
+            is_temp_project=is_temp_project,
         )
+        with self._state_lock:
+            self._last_result_source_uuid = (
+                str(source_uuid) if source_uuid is not None else None
+            )
         self.stardist_done.emit(result, True, label_name)
 
-    def _run_primary_objects(self, cell_image: np.ndarray):
+    def _run_primary_objects(
+        self,
+        cell_image: np.ndarray,
+        params: dict,
+        project_name,
+        is_temp_project,
+        source_uuid=None,
+    ):
         self.progress.emit(0, "Starting CellProfiler-like segmentation")
-        min_size = int(self.params.get("min_size", 60))
-        max_size = int(self.params.get("max_size", 180))
+        min_size = int(params.get("min_size", 60))
+        max_size = int(params.get("max_size", 180))
         if max_size < min_size:
             min_size, max_size = max_size, min_size
-            self.params["min_size"] = min_size
-            self.params["max_size"] = max_size
+            params["min_size"] = min_size
+            params["max_size"] = max_size
 
         try:
             self.stardist_labels_grayscale = _identify_primary_objects_like_cellprofiler(
@@ -554,17 +633,24 @@ class StarDist(QThread):
             return
 
         self.progress.emit(100, "CellProfiler-like segmentation done")
-        self._emit_segmentation_result()
+        self._emit_segmentation_result(project_name, is_temp_project, source_uuid)
 
-    def _run_stardist(self, cell_image: np.ndarray):
+    def _run_stardist(
+        self,
+        cell_image: np.ndarray,
+        params: dict,
+        project_name,
+        is_temp_project,
+        source_uuid=None,
+    ):
         self.progress.emit(0, "Starting StarDist")
-        if self.current_model != str(self.params["model"]):
+        if self.current_model != str(params["model"]):
             try:
-                self.model = StarDist2D.from_pretrained(str(self.params["model"]))
+                self.model = StarDist2D.from_pretrained(str(params["model"]))
             except Exception as exc:
                 self._fatal_error_message(f"Model load failed: {exc}")
                 return
-            self.current_model = str(self.params["model"])
+            self.current_model = str(params["model"])
         model = self.model
 
         self.progress.emit(10, "Model loaded")
@@ -577,11 +663,11 @@ class StarDist(QThread):
 
         norm_img = normalize(
             model_input,
-            self.params["percentile_low"],
-            self.params["percentile_high"],
+            params["percentile_low"],
+            params["percentile_high"],
         )
 
-        guess_tiles = self.params["n_tiles"]
+        guess_tiles = params["n_tiles"]
         if guess_tiles == 0:
             guess_tiles = model._guess_n_tiles(model_input)
 
@@ -590,9 +676,9 @@ class StarDist(QThread):
         try:
             labels_gen = model._predict_instances_generator(
                 norm_img,
-                prob_thresh=self.params["prob_threshold"],
-                nms_thresh=self.params["nms_threshold"],
-                scale=self.params["scale"],
+                prob_thresh=params["prob_threshold"],
+                nms_thresh=params["nms_threshold"],
+                scale=params["scale"],
                 n_tiles=guess_tiles,
             )
         except Exception as exc:
@@ -618,9 +704,10 @@ class StarDist(QThread):
 
         self.progress.emit(95, "Dilating")
         try:
-            self.stardist_labels_grayscale = np.array(
-                dilate_labels(stardist_labels, radius=self.params["radius"]),
-                dtype=np.uint16,
+            # Preserve large label ids for downstream processing.
+            self.stardist_labels_grayscale = np.asarray(
+                dilate_labels(stardist_labels, radius=params["radius"]),
+                dtype=np.int32,
             )
         except Exception as exc:
             self._fatal_error_message(
@@ -633,4 +720,4 @@ class StarDist(QThread):
             return
 
         self.progress.emit(100, "StarDist Done")
-        self._emit_segmentation_result()
+        self._emit_segmentation_result(project_name, is_temp_project, source_uuid)

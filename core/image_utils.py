@@ -9,11 +9,12 @@ def scale_adjust(arr: np.ndarray) -> NDArray[np.uint8]:
         return cv2.convertScaleAbs(arr, alpha=(255.0 / 65535.0))
     elif arr.dtype == np.uint8:
         return np.clip(arr, 0, 255)
-    elif arr.dtype == np.uint32:
-        max_val = arr.max()
+    elif arr.dtype in [np.uint32, np.int32, np.int64, np.uint64]:
+        arr_clipped = np.clip(arr, 0, None)
+        max_val = arr_clipped.max()
         if max_val == 0:
             return np.zeros_like(arr, dtype=np.uint8)
-        return ((arr / max_val) * 255).astype(np.uint8)
+        return ((arr_clipped / max_val) * 255).astype(np.uint8)
     elif arr.dtype in [np.float32, np.float64]:
         arr_clipped = np.clip(arr, 0, None)  # remove negative values
         max_val = arr_clipped.max()

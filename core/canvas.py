@@ -1555,6 +1555,23 @@ class ImageGraphicsView(BaseGraphicsView):
             new_ch.data = rotated_arr
             result[channel_num] = new_ch
 
+        combined_mask = None
+        for channel_num in channels:
+            arr = result[channel_num].data
+            if combined_mask is None:
+                combined_mask = (arr > 0)
+            else:
+                combined_mask |= (arr > 0)
+
+        if combined_mask is not None:
+            coords = cv2.findNonZero(combined_mask.astype(np.uint8))
+            if coords is not None:
+                x, y, w_sub, h_sub = cv2.boundingRect(coords)
+                for channel_num in channels:
+                    result[channel_num].data = np.ascontiguousarray(
+                        result[channel_num].data[y:y + h_sub, x:x + w_sub]
+                    )
+
         return current_uuid, result
 
     def rotate_image(self, angle_text: str):

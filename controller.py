@@ -22,7 +22,7 @@ from core import (
     StarDist,
 )
 from core.project_manager import ProjectManager
-from core.project_naming import is_temp_project_name
+from core.project_naming import is_stardist_label_name, is_temp_project_name
 from ui.alignment.alignment_preview_dialog import AlignmentPreviewDialog
 
 logger = logging.getLogger(__name__)
@@ -130,9 +130,12 @@ class Controller:
             metadata = ProjectManager.load_project(project_path)
             if metadata is not None and metadata.name:
                 project_name = metadata.name
+                is_temp_project = bool(metadata.is_temporary) or is_temp_project_name(
+                    project_name
+                )
             else:
                 project_name = project_path.stem
-            is_temp_project = is_temp_project_name(project_name)
+                is_temp_project = is_temp_project_name(project_name)
         self.model_stardist.set_project_context(project_name, is_temp_project)
         self.model_cell_intensity.set_project_context(project_name, is_temp_project)
 
@@ -353,6 +356,74 @@ class SignalConnectionManager:
         self.c = controller
         self.blur_timer = None
 
+    @staticmethod
+    def _next_available_channel_key(channel_map: dict) -> str:
+        next_index = 0
+        for key in channel_map:
+            if not isinstance(key, str) or not key.startswith("Channel "):
+                continue
+            try:
+                idx = int(key.replace("Channel ", ""))
+            except ValueError:
+                continue
+            next_index = max(next_index, idx)
+        return f"Channel {next_index + 1}"
+
+    def _resolve_stardist_channel_key(self, channel_map: dict) -> str:
+        for channel_key, wrapper in channel_map.items():
+            if is_stardist_label_name(getattr(wrapper, "name", "")):
+                return channel_key
+        return self._next_available_channel_key(channel_map)
+
+    def _persist_stardist_result_to_source(
+        self, source_uuid: str, stardist_wrapper: ImageWrapper, label_name: str
+    ) -> bool:
+        item = self.c.storage.get_data(str(source_uuid))
+        if item is None:
+            return False
+        channel_map = item.get("data")
+        if not isinstance(channel_map, dict):
+            return False
+
+        target_channel = self._resolve_stardist_channel_key(channel_map)
+        wrapped = ImageWrapper(
+            stardist_wrapper.data,
+            name=label_name,
+            cmap="label_image",
+        )
+        wrapped.contrast_min = 0
+        wrapped.contrast_max = 255
+        self.c.storage.update_data(
+            str(source_uuid),
+            target_channel,
+            wrapped,
+            emitter=self.c.model_canvas.update_sidebar,
+        )
+        return True
+
+    def _handle_stardist_done(
+        self, stardist_wrapper: ImageWrapper, _success: bool, label_name: str
+    ):
+        source_uuid = self.c.model_stardist.last_result_source_uuid
+        current_uuid = self.c.model_canvas.uuid
+
+        if source_uuid is None or str(current_uuid) == str(source_uuid):
+            self.c.model_canvas.load_stardist_labels(stardist_wrapper, label_name)
+            self.c.model_cell_intensity.load_stardist_labels(stardist_wrapper)
+            self.c.view.stardist_groupbox.overlay_toggle_button.setChecked(False)
+            return
+
+        persisted = self._persist_stardist_result_to_source(
+            str(source_uuid), stardist_wrapper, label_name
+        )
+        if not persisted:
+            logger.warning(
+                "Discarded StarDist result for source UUID %s; source image no longer exists.",
+                source_uuid,
+            )
+            return
+        self.c.view.stardist_groupbox.overlay_toggle_button.setChecked(False)
+
     def setup_all_connections(self):
         """Set up all signal-slot connections with full IntelliSense support"""
         self._setup_alignment_connections()
@@ -567,16 +638,7 @@ class SignalConnectionManager:
         self.c.view.stardist_groupbox.stardist_run_button.pressed.connect(
             self.c.model_stardist.start
         )
-        self.c.model_stardist.stardist_done.connect(
-            self.c.model_canvas.load_stardist_labels
-        )
-
-        self.c.model_stardist.stardist_done.connect(
-            lambda x, y, z: self.c.model_cell_intensity.load_stardist_labels(x)
-        )
-        self.c.model_stardist.stardist_done.connect(
-            lambda *_: self.c.view.stardist_groupbox.overlay_toggle_button.setChecked(False)
-        )
+        self.c.model_stardist.stardist_done.connect(self._handle_stardist_done)
         self.c.model_stardist.error_signal.connect(self.c.handle_error)
         self.c.model_stardist.progress.connect(self.c.view.update_progress_bar)
         self.c.view.stardist_groupbox.cancel_button.clicked.connect(
@@ -695,6 +757,9 @@ class SignalConnectionManager:
         image_signal.connect(self.c.view.register_groupbox.updateChannelSelector)
         image_signal.connect(self.c.view.canvas.load_channels)
         image_signal.connect(self.c.model_stardist.update_channels)
+        image_signal.connect(
+            lambda *_: self.c.model_stardist.set_source_uuid(self.c.model_canvas.uuid)
+        )
         image_signal.connect(self.c.view.stardist_groupbox.updateChannelSelector)
         image_signal.connect(self.c.view.gaussian_blur.updateChannelSelector)
         image_signal.connect(self.c.model_register.update_moving_image)

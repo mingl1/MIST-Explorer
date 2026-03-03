@@ -41,9 +41,13 @@ def build_channel_cell_dataframe(
     return df
 
 
-def merge_channel_cell_data(existing_df, curr_cell_data, first_channel_num, channel_num):
+def merge_channel_cell_data(
+    existing_df, curr_cell_data, first_channel_num, channel_num
+):
     """Merge per-channel cell tables by CellID while preserving first-channel coords."""
-    curr_payload = curr_cell_data.drop(columns=["Global X", "Global Y"], errors="ignore")
+    curr_payload = curr_cell_data.drop(
+        columns=["Global X", "Global Y"], errors="ignore"
+    )
     return existing_df.merge(
         curr_payload,
         on=["CellID"],
@@ -68,13 +72,14 @@ class CellIntensity(QThread):
         }
 
         self.channel_to_color_code = {}
-        self.stardist_labels = np.array([], dtype=np.uint8)
+        self.stardist_labels = np.array([], dtype=np.int32)
         self.df_cell_data = None
         self.storage = ImageStorage()
         self.protein_signal_array = None
         self.source_uuid = None
         self.project_name = None
         self.is_temp_project = False
+        self._cancel_requested = False
 
     def load_protein_signal_array_from_storage(self, uuid, channel):
         if uuid is None:
@@ -91,7 +96,9 @@ class CellIntensity(QThread):
         assert data is not None, "data not found in storage item"
         wrapper = data[c]
         if is_stardist_label_name(getattr(wrapper, "name", "")):
-            raise ValueError(f"{c} is a virtual StarDist channel and cannot be used for generation.")
+            raise ValueError(
+                f"{c} is a virtual StarDist channel and cannot be used for generation."
+            )
         self.load_protein_signal_array(wrapper.data)
         logger.info("loaded protein signal array from storage")
 
@@ -112,9 +119,9 @@ class CellIntensity(QThread):
 
     def generate_cell_intensity_table(self):
         self.progress.emit(0, "Starting Cell Intensity...")
+        self._cancel_requested = False
         if self.isRunning():
-            self.critical_error(
-                "Cell Intensity Calculation is already running")
+            self.critical_error("Cell Intensity Calculation is already running")
             return
         self.start()
 
@@ -128,17 +135,35 @@ class CellIntensity(QThread):
         Compute centroids for all unique labels in the mask (excluding 0).
         Returns a dict: {label: (cx, cy)}
         """
+        if self._is_cancel_requested():
+            return None
+
         centroids = {}
-        m = np.max(self.stardist_labels)
-        for region in regionprops(self.stardist_labels):
-            progress = int((region.label / m) * 100)
-            self.progress.emit(
-                progress,
-                f"Finding centroid for cell {region.label}/{m}",
-            )
+        regions = regionprops(self.stardist_labels)
+        total_regions = len(regions)
+        if total_regions == 0:
+            return centroids
+
+        p = 0
+        for idx, region in enumerate(regions, start=1):
+            if self._is_cancel_requested():
+                return None
+            progress = int((idx / total_regions) * 100)
+            if progress > p:
+                p = progress
+                self.progress.emit(
+                    progress,
+                    f"Finding centroid for cell {idx}/{total_regions}",
+                )
             cy, cx = region.centroid
-            centroids[region.label] = (int(cx), int(cy))
+            centroids[int(region.label)] = (int(cx), int(cy))
         return centroids
+
+    def _is_cancel_requested(self):
+        if self._cancel_requested:
+            self.progress.emit(100, "Cancelled")
+            return True
+        return False
 
     def infer_params(self):
         # Infer the number of decoding colors and cycles from the bead data and color code if not explicitly set
@@ -154,7 +179,6 @@ class CellIntensity(QThread):
         )  # assuming colors are 0-indexed
 
     def run(self):
-
         # need the aligned and segmented cell image, bead_data, and color_code
         first_channel_num = None
 
@@ -167,7 +191,9 @@ class CellIntensity(QThread):
             try:
                 self.load_protein_signal_array_from_storage(None, channel)
             except Exception as exc:
-                logger.error("Failed to load generation channel %s: %s", channel_num, exc)
+                logger.error(
+                    "Failed to load generation channel %s: %s", channel_num, exc
+                )
                 self.critical_error(str(exc))
                 return
             if (
@@ -196,18 +222,15 @@ class CellIntensity(QThread):
                 # example, 16 combinations would be indexed 0 to 15.
                 self.infer_params()
                 logger.debug("Inferred params: %s", self.params)
-                possible_values = list(
-                    range(self.params["num_decoding_colors"]))
+                possible_values = list(range(self.params["num_decoding_colors"]))
                 all_perms = [
                     "".join(map(str, p))
                     for p in itertools.product(
                         possible_values, repeat=self.params["num_decoding_cycles"]
                     )
                 ]
-                color_code_to_index = {
-                    int(k): i for i, k in enumerate(all_perms)}
-                index_to_color_code = {
-                    v: k for k, v in color_code_to_index.items()}
+                color_code_to_index = {int(k): i for i, k in enumerate(all_perms)}
+                index_to_color_code = {v: k for k, v in color_code_to_index.items()}
 
                 # This is the structure created. For example, cell image with three unique labels + 5 proteins would look like this:
                 # {
@@ -216,13 +239,17 @@ class CellIntensity(QThread):
                 # 3: [[], [], [], [], []]
                 #     }
                 num_proteins = len(color_code_to_index)
-                max_cell_id = np.max(self.stardist_labels)
+                unique_cell_ids = np.unique(self.stardist_labels)
+                unique_cell_ids = unique_cell_ids[unique_cell_ids > 0]
+                if unique_cell_ids.size == 0:
+                    self.critical_error("No segmented cells found in StarDist labels.")
+                    return
                 cell_data_dict = {
                     cell_id: [[] for _ in range(num_proteins)]
-                    for cell_id in range(1, max_cell_id + 1)
+                    for cell_id in unique_cell_ids.tolist()
                 }
                 cycle_cols = self.bead_data[
-                    :, 2: 2 + self.params["num_decoding_cycles"]
+                    :, 2 : 2 + self.params["num_decoding_cycles"]
                 ]
                 data_modified = np.zeros((len(self.bead_data), 3))
                 data_modified[:, 0:2] = self.bead_data[:, 0:2].astype("uint16")
@@ -291,8 +318,7 @@ class CellIntensity(QThread):
                 valid_cell_ids = cell_ids_for_beads[valid_bead_mask]
 
                 # --- 5. Loop Over the SMALLER Filtered Dataset ---
-                self.progress.emit(
-                    50, f"Processing {len(valid_beads)} valid beads...")
+                self.progress.emit(50, f"Processing {len(valid_beads)} valid beads...")
 
                 # This loop is much faster because it runs only on the subset
                 # of relevant beads
@@ -304,18 +330,18 @@ class CellIntensity(QThread):
                             + int(
                                 (i / len(valid_beads)) * 25
                             ),  # Progress from 50% to 75%
-                            f"Adjusting bead intensity {i+1}/{len(valid_beads)}",
+                            f"Adjusting bead intensity {i + 1}/{len(valid_beads)}",
                         )
 
-                    bead_x, bead_y, color_code = int(
-                        bead[0]), int(bead[1]), bead[2]
+                    bead_x, bead_y, color_code = int(bead[0]), int(bead[1]), bead[2]
 
                     # We already know this bead is in a cell, so we get its ID
-                    cell_associated_id = valid_cell_ids[i]
+                    cell_associated_id = int(valid_cell_ids[i])
 
                     # The expensive calculation is only called for valid beads
                     adjusted_median_intensity = self.get_adjusted_median_intensity(
-                        bead_x, bead_y)
+                        bead_x, bead_y
+                    )
 
                     protein_idx = color_code_to_index.get(color_code)
                     if (
@@ -341,19 +367,19 @@ class CellIntensity(QThread):
                 # find centerpoint of every cell
 
                 cell_centroids = self.compute_all_centroids()
+                if cell_centroids is None:
+                    return
 
                 # find how many are different
                 logger.info("Finding values for cells with incomplete protein profiles")
                 for i, cell_id in enumerate(cell_data_dict.keys()):
                     cell_center = cell_centroids[cell_id]
-                    progress_update = int(
-                        ((i + 1) / len(cell_data_dict)) * 100)
+                    progress_update = int(((i + 1) / len(cell_data_dict)) * 100)
                     self.progress.emit(
                         progress_update,
-                        f"Finding values for cells with incomplete protein profiles {i+1}/{len(cell_data_dict)}",
+                        f"Finding values for cells with incomplete protein profiles {i + 1}/{len(cell_data_dict)}",
                     )
-                    for protein_idx, intensities in enumerate(
-                            cell_data_dict[cell_id]):
+                    for protein_idx, intensities in enumerate(cell_data_dict[cell_id]):
                         if (
                             not intensities
                         ):  # If no beads were found for this protein of cell_id
@@ -374,12 +400,13 @@ class CellIntensity(QThread):
                                     )
                                     if adjusted_intensity is not None:
                                         cell_data_dict[cell_id][protein_idx].append(
-                                            adjusted_intensity)
+                                            adjusted_intensity
+                                        )
                     # use the median value for intensity for each protein in
                     # each cell.
                 self.progress.emit(
                     0,
-                    f"Finishing Up",
+                    "Finishing Up",
                 )
                 median_values_for_cell_data_dict = {}
 
@@ -401,21 +428,23 @@ class CellIntensity(QThread):
                     )
                 self.progress.emit(
                     25,
-                    f"Finishing Up",
+                    "Finishing Up",
                 )
                 # drop rows with NaN that pandas includes for some reason lol
                 # assert isinstance(self.color_code, pd.DataFrame)
                 try:
-                    self.color_code = self.color_code.dropna(
-                        how="all", axis=1).dropna(how="all", axis=0)
-                except Exception as e:
+                    self.color_code = self.color_code.dropna(how="all", axis=1).dropna(
+                        how="all", axis=0
+                    )
+                except Exception:
                     self.color_code = pd.DataFrame(self.color_code)
-                    self.color_code = self.color_code.dropna(
-                        how="all", axis=1).dropna(how="all", axis=0)
+                    self.color_code = self.color_code.dropna(how="all", axis=1).dropna(
+                        how="all", axis=0
+                    )
                 color_code = self.color_code.to_numpy()
                 self.progress.emit(
                     50,
-                    f"Finishing Up",
+                    "Finishing Up",
                 )
                 # lets us go from code -> protein i.e. 112 -> Fox3 or whatever
                 color_code_translation_dict = {}
@@ -441,7 +470,7 @@ class CellIntensity(QThread):
                         protein_headers.append("N/A")
                 self.progress.emit(
                     75,
-                    f"Finishing Up",
+                    "Finishing Up",
                 )
                 curr_cell_data = build_channel_cell_dataframe(
                     median_values_for_cell_data_dict=median_values_for_cell_data_dict,
@@ -461,9 +490,9 @@ class CellIntensity(QThread):
                     )
         self.progress.emit(100, "Cell Data is Generated")
 
-    # !TODO: need to implement checking if self.isInterruptionRequested() inside run()
     def cancel(self):
-        self.requestInterruption()
+        self._cancel_requested = True
+        self.progress.emit(99, "Cancelling...")
 
     def set_color_codes(self, channel_to_code):
         assert isinstance(channel_to_code, dict)
@@ -487,14 +516,14 @@ class CellIntensity(QThread):
             is_temp_project=self.is_temp_project,
         )
         file_name, _ = QFileDialog.getSaveFileName(
-            None, "Save Cell Data File", suggested_name, "*.csv;;*.xlsx;; All Files(*)")
+            None, "Save Cell Data File", suggested_name, "*.csv;;*.xlsx;; All Files(*)"
+        )
         if self.df_cell_data is not None:
             self.df_cell_data.to_csv(file_name, index=False)
         else:
             self.critical_error("Cannot save. No cell data available")
 
-    def get_adjusted_median_intensity(
-            self, bead_x, bead_y, bead_median_threshold=5000):
+    def get_adjusted_median_intensity(self, bead_x, bead_y, bead_median_threshold=5000):
         """
         Calculate the adjusted median intensity given the bead coordinates
 
@@ -517,8 +546,8 @@ class CellIntensity(QThread):
 
         # Extract the 5x5 region around the bead
         bead_region = self.protein_signal_array[
-            bead_y - radius_fg: bead_y + radius_fg + 1,
-            bead_x - radius_fg: bead_x + radius_fg + 1,
+            bead_y - radius_fg : bead_y + radius_fg + 1,
+            bead_x - radius_fg : bead_x + radius_fg + 1,
         ]
 
         # Calculate the mean and median intensity of the 5x5 bead region
@@ -528,8 +557,8 @@ class CellIntensity(QThread):
 
         # Extract the 15x15 surrounding region
         surrounding_region = self.protein_signal_array[
-            bead_y - radius_bg: bead_y + radius_bg + 1,
-            bead_x - radius_bg: bead_x + radius_bg + 1,
+            bead_y - radius_bg : bead_y + radius_bg + 1,
+            bead_x - radius_bg : bead_x + radius_bg + 1,
         ]  # Convert to float to handle NaN values
 
         # Ensure the 15x15 region is valid
@@ -538,8 +567,8 @@ class CellIntensity(QThread):
 
         # Mask out the 5x5 region from the 15x15 region
         surrounding_region[
-            bead_y - radius_fg: bead_y + radius_fg + 1,
-            bead_x - radius_fg: bead_x + radius_fg + 1,
+            bead_y - radius_fg : bead_y + radius_fg + 1,
+            bead_x - radius_fg : bead_x + radius_fg + 1,
         ] = 0
 
         # Calculate the mean intensity of the surrounding 15x15 area, excluding
@@ -572,7 +601,7 @@ class CellIntensity(QThread):
 
     def clear_stardist_labels(self):
         """Reset loaded StarDist labels."""
-        self.stardist_labels = np.array([], dtype=np.uint8)
+        self.stardist_labels = np.array([], dtype=np.int32)
 
     def load_stardist_labels(self, stardist: ImageWrapper) -> None:
         if stardist.data.size == 0:
@@ -581,10 +610,11 @@ class CellIntensity(QThread):
             return
         logger.debug("stardist label dtype: %s", stardist.data.dtype)
         logger.debug(
-            "stardist label max and min %s %s", np.max(
-                stardist.data), np.min(
-                stardist.data))
-        self.stardist_labels = stardist.data
+            "stardist label max and min %s %s",
+            np.max(stardist.data),
+            np.min(stardist.data),
+        )
+        self.stardist_labels = np.asarray(stardist.data, dtype=np.int32)
 
     def get_filtered_bead_count(self):
         if self.bead_data is None or self.stardist_labels.size == 0:
@@ -623,13 +653,8 @@ class CellIntensity(QThread):
         """
         layer4 = self.protein_signal_array
         blurred_mask = cv.GaussianBlur(layer4, (101, 101), 0)
-        blurred_mask_adjusted = (
-            blurred_mask *
-            blur_percentage).astype(
-            np.uint16)
+        blurred_mask_adjusted = (blurred_mask * blur_percentage).astype(np.uint16)
         corrected_layer4 = cv.subtract(layer4, blurred_mask_adjusted)
-        corrected_layer4 = np.clip(
-            corrected_layer4, 0, 65535).astype(
-            np.uint16)
+        corrected_layer4 = np.clip(corrected_layer4, 0, 65535).astype(np.uint16)
         self.protein_signal_array = corrected_layer4
         return True

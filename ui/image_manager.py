@@ -76,9 +76,16 @@ class ImageManager(QWidget):
         metadata = ProjectManager.load_project(project_path)
         if metadata is not None and metadata.name:
             self.current_project_name = metadata.name
+            self.current_project_is_temp = bool(metadata.is_temporary) or is_temp_project_name(
+                self.current_project_name
+            )
         else:
             self.current_project_name = project_path.stem
-        self.current_project_is_temp = is_temp_project_name(self.current_project_name)
+            self.current_project_is_temp = is_temp_project_name(self.current_project_name)
+
+    def _should_auto_persist_project(self) -> bool:
+        """Return True when project-backed edits should be persisted automatically."""
+        return bool(self.current_project_path) and not self.current_project_is_temp
 
     def set_model_canvas(self, model):
         """Set the model canvas."""
@@ -106,7 +113,7 @@ class ImageManager(QWidget):
         self._sync_channel_children(main_item, item_uuid, item_data)
         self.root_node.appendRow(main_item)
 
-        if self.current_project_path:
+        if self._should_auto_persist_project():
             self._save_image_to_project(item_uuid, item)
 
     def _save_image_to_project(self, item_uuid, item):
@@ -244,7 +251,7 @@ class ImageManager(QWidget):
                 )
                 main_item.appendRow(channel_item)
 
-        if self.current_project_path:
+        if self._should_auto_persist_project():
             item = self.storage.get_data(item_uuid)
             self._save_image_to_project(item_uuid, item)
 
@@ -259,7 +266,7 @@ class ImageManager(QWidget):
         self.storage.remove_data(item_uuid)
 
         # Remove from project files and metadata if project is open
-        if self.current_project_path:
+        if self._should_auto_persist_project():
             ProjectManager.delete_image(self.current_project_path, str(item_uuid))
 
 
@@ -355,12 +362,6 @@ class ImageTreeWidget(QTreeView):
             channel_name = self._get_channel_from_item(item, as_int=False)
             storage_item = self.storage.get_data(item_uuid)
             image_data = storage_item.get("data", {}) if storage_item else {}
-            selected_wrapper = image_data.get(channel_name)
-            is_stardist_virtual = (
-                is_leaf
-                and selected_wrapper is not None
-                and is_stardist_label_name(getattr(selected_wrapper, "name", ""))
-            )
             set_reference = QAction("Reference")
             set_cell_image = QAction("Cell Image (Stardist)")
 
@@ -459,7 +460,7 @@ class ImageTreeWidget(QTreeView):
                         menu.addAction(save_as_tiff)
                     if "png" in export_formats:
                         menu.addAction(save_as_png)
-                if is_stardist_virtual and not is_root:
+                if not is_root and channel_name in image_data:
                     menu.addAction(delete)
             if is_root:
                 menu.addAction(delete)
@@ -476,7 +477,7 @@ class ImageTreeWidget(QTreeView):
         item = self.storage.get_data(item_uuid)
         assert item is not None, f"No data found for UUID: {item_uuid}"
         data = item["data"]
-        self.model_stardist.set_protein_image(data, name=name)
+        self.model_stardist.set_protein_image(data, name=name, source_uuid=item_uuid)
 
     def show_message(self, message):
         """Show a message box."""
@@ -497,15 +498,23 @@ class ImageTreeWidget(QTreeView):
             return
 
         channel_name = item.data(Qt.ItemDataRole.WhatsThisRole)
+        if not isinstance(channel_name, str):
+            return
         image_entry = self.storage.get_data(item_uuid)
         if image_entry is None:
             return
         data = image_entry.get("data", {})
-        wrapper = data.get(channel_name)
-        if wrapper is None or not is_stardist_label_name(getattr(wrapper, "name", "")):
+        if channel_name not in data:
             return
 
         del data[channel_name]
+        if not data:
+            self.item_deleted.emit(item_uuid)
+            model.removeRow(model.indexFromItem(parent_item).row())
+            return
+
+        channel_mapping = self._renumber_channels(data)
+        self._repair_default_channel(parent_item, data, channel_mapping, channel_name)
         manager = self.parent()
         if isinstance(manager, ImageManager):
             manager._sync_channel_children(parent_item, item_uuid, data)
@@ -515,10 +524,58 @@ class ImageTreeWidget(QTreeView):
         if self.model_canvas is not None and str(self.model_canvas.uuid) == str(
             item_uuid
         ):
-            self.model_canvas.remove_virtual_stardist_channel(channel_name)
+            target_channel = parent_item.data(Qt.ItemDataRole.WhatsThisRole)
+            if not isinstance(target_channel, str) or target_channel not in data:
+                target_channel = next(iter(data))
+            self.model_canvas.add_to_canvas(
+                item_uuid, as_new_image=False, target_channel=target_channel
+            )
 
-        if isinstance(manager, ImageManager) and manager.current_project_path:
+        if isinstance(manager, ImageManager) and manager._should_auto_persist_project():
             manager._save_image_to_project(item_uuid, image_entry)
+
+    @staticmethod
+    def _channel_sort_key(channel_key: str):
+        try:
+            return (0, int(channel_key.replace("Channel ", "")))
+        except ValueError:
+            return (1, channel_key)
+
+    def _renumber_channels(self, data: dict) -> dict[str, str]:
+        sorted_keys = sorted(data.keys(), key=self._channel_sort_key)
+        remapped = {}
+        key_mapping: dict[str, str] = {}
+
+        for idx, old_key in enumerate(sorted_keys, start=1):
+            new_key = f"Channel {idx}"
+            wrapper = data[old_key]
+            if getattr(wrapper, "name", "") == old_key:
+                wrapper.name = new_key
+            remapped[new_key] = wrapper
+            key_mapping[old_key] = new_key
+
+        data.clear()
+        data.update(remapped)
+        return key_mapping
+
+    def _repair_default_channel(
+        self,
+        parent_item,
+        data: dict,
+        key_mapping: dict[str, str],
+        deleted_channel: str,
+    ):
+        default_channel = parent_item.data(Qt.ItemDataRole.WhatsThisRole)
+        if not isinstance(default_channel, str):
+            default_channel = "Channel 1"
+        if default_channel == deleted_channel:
+            default_channel = next(iter(data))
+        else:
+            default_channel = key_mapping.get(default_channel, default_channel)
+
+        if default_channel not in data:
+            default_channel = next(iter(data))
+        parent_item.setData(default_channel, Qt.ItemDataRole.WhatsThisRole)
 
     def _name_and_uuid_from_item(self, item, tooltip=False) -> tuple[str, uuid.UUID]:
         item = self.model().itemFromIndex(item)  # type: ignore
@@ -617,11 +674,14 @@ class ImageTreeWidget(QTreeView):
             if folder_path:
                 file_path = os.path.join(folder_path, f"{name}.tif")
                 if single_channel is not None and single_channel in channel_dict:
+                    channel_array = np.asarray(channel_dict[single_channel].data)
                     tifffile.imwrite(
                         file_path,
-                        channel_dict[single_channel].data,
+                        channel_array,
                         photometric="minisblack",
-                        imagej=True,
+                        imagej=ProjectManager.imagej_compatible_dtype(
+                            channel_array.dtype
+                        ),
                     )
                 else:
                     arrays = [
@@ -630,7 +690,10 @@ class ImageTreeWidget(QTreeView):
                     ]
                     stacked = np.stack(arrays, axis=0)  # Shape: (channels, H, W)
                     tifffile.imwrite(
-                        file_path, stacked, photometric="minisblack", imagej=True
+                        file_path,
+                        stacked,
+                        photometric="minisblack",
+                        imagej=ProjectManager.imagej_compatible_dtype(stacked.dtype),
                     )
         elif file_type == "png":
             folder_path = QFileDialog.getExistingDirectory(
