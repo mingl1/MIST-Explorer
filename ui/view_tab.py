@@ -105,12 +105,14 @@ class ControlsBox:
     def __init__(self):
         self.name = ""
         self.image = np.array([[]])
+        self.base_image = np.array([[]]) # Stores the unthresholded 0-255 image
         self.q_image = None
         self.cell_image = np.array([[]])
         self.contrast_cache = {}
 
         self.current_opacity = 100.0
         self.current_contrast = [0, 255]
+        self.current_visibility_threshold = [0.0, 100.0]
         self.current_visibility = True
         self.current_tint = QColor(255, 255, 255)
 
@@ -912,6 +914,7 @@ class ImageOverlay(QWidget):
                 reduced_cell_img = np.array(self.layers[selected_index]["image"])
                 # reduced_cellImg = reduced_cell_img/255.0
                 c.image = reduced_cell_img.copy()
+                c.base_image = reduced_cell_img.copy()
                 c.cell_image = np.array(self.layers[selected_index]["cell_data"])
                 c.name = self.layers[selected_index]["name"]
 
@@ -1040,6 +1043,28 @@ class ImageOverlay(QWidget):
         contrast_label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         group_layout.addRow(contrast_label, contrast_slider)
 
+        # --- New: Visibility Threshold Slider ---
+        visibility_threshold_slider = qtrangeslider.QLabeledDoubleRangeSlider(
+            Qt.Orientation.Horizontal
+        )
+        visibility_threshold_slider.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
+        visibility_threshold_slider.setMinimumWidth(300)
+        visibility_threshold_slider.setMinimum(0.0)
+        visibility_threshold_slider.setMaximum(100.0)
+        visibility_threshold_slider.setDecimals(1)
+        visibility_threshold_slider.blockSignals(True)
+        visibility_threshold_slider.setValue((0.0, 100.0))
+        visibility_threshold_slider.blockSignals(False)
+        visibility_threshold_slider.valueChanged.connect(
+            lambda s, gb=group_box: self.update_visibility_threshold(s, gb)
+        )
+        
+        vis_thresh_label = QLabel("Visibility Threshold (%):")
+        vis_thresh_label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        group_layout.addRow(vis_thresh_label, visibility_threshold_slider)
+
         # --- New: Numeric Inputs for Min/Max ---
         min_input = QLineEdit()
         min_input.setPlaceholderText("Min")
@@ -1154,6 +1179,34 @@ class ImageOverlay(QWidget):
         new_min, new_max = auto_contrast_helper(img, lower, upper)
         self.contrast_sliders[idx].setValue((int(new_min), int(new_max)))
         self.update_contrast([new_min, new_max], idx)
+
+    def update_visibility_threshold(self, value, gb):
+        idx = self.scroll_layout.indexOf(gb)
+        if idx == -1:
+            return
+            
+        c = self.controls[idx]
+        c.current_visibility_threshold = [value[0], value[1]]
+
+        # Get foreground raw intensity values
+        raw_cell_image = c.cell_image
+        foreground = raw_cell_image[raw_cell_image > 0]
+        
+        if foreground.size > 0:
+            # Calculate actual intensity thresholds
+            lower_val, upper_val = np.percentile(foreground, [value[0], value[1]])
+            
+            # Create a mask for visible cells
+            mask = (raw_cell_image >= lower_val) & (raw_cell_image <= upper_val)
+            
+            # Update the image
+            c.image = np.where(mask, c.base_image, 0)
+        else:
+            c.image = c.base_image.copy()
+            
+        # Trigger redraw
+        self.change_pix.emit(c.image, idx)
+        self.update_layer_display(idx)
 
     def update_visibility(self, checked, gb):
         idx = self.scroll_layout.indexOf(gb)

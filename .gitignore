@@ -15,3 +15,29 @@ uv.lock
 test.sh
 
 assets/sample_data/demo/overlay.tif
+
+# Untracked tools & build directories
+.agents/
+.codex/
+build/
+dist/
+docs/_build/
+
+# Logs, scratch scripts & untracked docs
+app_debug.log
+alignment_preview_dialog.py
+test_restart.py
+docs/README.md
+
+# Uncommitted tests & test data
+tests/test_data/
+tests/test_stardist_result_routing.py
+tests/ui/test_external_file_paths.py
+tests/ui/test_stress.py
+
+# Data files & Images
+*.csv
+*.csv.csv
+*.numbers
+*.tif
+*.png
