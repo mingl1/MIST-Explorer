@@ -915,20 +915,37 @@ class RankedGenesView(QWidget):
 
                 is_categorical = color_key == self.key
 
-                sc.pl.umap(
-                    self.adata,
-                    color=color_key,
-                    ax=ax,
-                    show=False,
-                    legend_loc="on data" if is_categorical else None,
-                    frameon=False,
-                    title=color_key,
-                    cmap=c["plot_cmap"],
-                    colorbar_loc=None,
-                )
-
-                # Enforce square aspect ratio
+                x = self.adata.obsm["X_umap"][:, 0]
+                y = self.adata.obsm["X_umap"][:, 1]
+                
+                ax.set_title(color_key)
+                ax.axis("off")
                 ax.set_aspect("equal", "box")
+                
+                if is_categorical:
+                    cats = self.adata.obs[color_key]
+                    cat_colors = self.adata.uns.get(f"{color_key}_colors")
+                    if cat_colors is None:
+                        import matplotlib.pyplot as plt
+                        import matplotlib.colors as mcolors
+                        cmap = plt.get_cmap("tab20")
+                        base_colors = cmap.colors if hasattr(cmap, 'colors') else [cmap(i) for i in range(cmap.N)]
+                        cat_colors = [mcolors.to_hex(base_colors[i % len(base_colors)]) for i in range(len(cats.cat.categories))]
+                    
+                    color_map_dict = dict(zip(cats.cat.categories, cat_colors))
+                    c_values = cats.map(color_map_dict).tolist()
+                    ax.scatter(x, y, c=c_values, s=5, alpha=0.8, edgecolors="none")
+                    
+                    for cat in cats.cat.categories:
+                        cat_mask = (cats == cat)
+                        if cat_mask.any():
+                            cat_x = x[cat_mask].mean()
+                            cat_y = y[cat_mask].mean()
+                            ax.text(cat_x, cat_y, str(cat), ha="center", va="center")
+                else:
+                    c_values = sc.get.obs_df(self.adata, keys=[color_key])[color_key].values
+                    sort_idx = np.argsort(c_values)
+                    ax.scatter(x[sort_idx], y[sort_idx], c=c_values[sort_idx], cmap=c["plot_cmap"], s=5, alpha=0.8, edgecolors="none")
 
                 # --- COLOR SETTINGS ---
                 fg_color = (
@@ -1056,9 +1073,15 @@ class SegmentationView(QWidget):
 
         self.refresh_theme()
         if f"{cluster_key}_colors" not in adata.uns:
+            import matplotlib.pyplot as plt
+            import matplotlib.colors as mcolors
             c = ThemeManager.get_current()
-            sc.pl.umap(adata, color=cluster_key, palette=c.get("plot_palette", "tab20"), show=False)
-            plt.close("all")
+            palette_name = c.get("plot_palette", "tab20")
+            categories = adata.obs[cluster_key].cat.categories
+            cmap = plt.get_cmap(palette_name)
+            base_colors = cmap.colors if hasattr(cmap, 'colors') else [cmap(i) for i in range(cmap.N)]
+            colors = [mcolors.to_hex(base_colors[i % len(base_colors)]) for i in range(len(categories))]
+            adata.uns[f"{cluster_key}_colors"] = np.array(colors)
         cluster_colors = adata.uns[f"{cluster_key}_colors"]
         categories = adata.obs[cluster_key].cat.categories
         self.npy_cat_idx_to_rgb = np.array([to_rgb(c) for c in cluster_colors])

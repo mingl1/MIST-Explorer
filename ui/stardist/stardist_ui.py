@@ -66,6 +66,9 @@ class StarDistUI(QWidget):
         # dilation
         self.stardist_hlayout8 = QHBoxLayout()
         self.stardist_label8 = QLabel(self.stardist_groupbox)
+        self.enable_dilation = QCheckBox(self.stardist_groupbox)
+        self.enable_dilation.setChecked(True)
+        self.stardist_hlayout8.addWidget(self.enable_dilation)
         self.stardist_hlayout8.addWidget(self.stardist_label8)
         self.radius = QSpinBox(self.stardist_groupbox)
         self.radius.setProperty("value", 5)
@@ -164,6 +167,8 @@ class StarDistUI(QWidget):
         self.use_contrasted_checkbox.setChecked(False)
         self.basic_tab_layout.addWidget(self.use_contrasted_checkbox)
 
+        self.enable_dilation.toggled.connect(self.radius.setEnabled)
+
         # run button
         self.stardist_run_button = QPushButton(self.stardist_groupbox)
         self.stardist_components_vlayout.addWidget(self.stardist_run_button)
@@ -190,7 +195,7 @@ class StarDistUI(QWidget):
             self.stardist_hlayout6,
             self.stardist_hlayout7,
         ]
-        self._basic_stardist_rows = [self.stardist_hlayout8]
+        self._basic_stardist_rows = []
         self._basic_primary_rows = [self.min_size_layout, self.max_size_layout]
         self.segmentation_method_selector.currentTextChanged.connect(
             self._update_method_controls
@@ -279,7 +284,8 @@ class StarDistUI(QWidget):
         self.stardist_label5.setText(_translate("MainWindow", "Overlap Threshold"))
         self.stardist_label6.setText(_translate("MainWindow", "Scale"))
         self.stardist_label7.setText(_translate("MainWindow", "Number of Tiles"))
-        self.stardist_label8.setText(_translate("MainWindow", "Radius"))
+        self.enable_dilation.setText(_translate("MainWindow", "Enable Dilation"))
+        self.stardist_label8.setText(_translate("MainWindow", "Dilation Radius"))
         self.min_size_label.setText(_translate("MainWindow", "Min Size (diameter px)"))
         self.max_size_label.setText(_translate("MainWindow", "Max Size (diameter px)"))
         self.use_contrasted_checkbox.setText(

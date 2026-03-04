@@ -307,6 +307,7 @@ class StarDist(QThread):
             "scale": 1.0,
             "n_tiles": 0,
             "radius": 5,
+            "enable_dilation": True,
             "use_contrasted_image": False,
             "min_size": 60,
             "max_size": 180,
@@ -530,6 +531,10 @@ class StarDist(QThread):
         with self._state_lock:
             self.params["radius"] = value
 
+    def set_enable_dilation(self, enabled):
+        with self._state_lock:
+            self.params["enable_dilation"] = bool(enabled)
+
     def set_use_contrasted_image(self, enabled):
         with self._state_lock:
             self.params["use_contrasted_image"] = bool(enabled)
@@ -539,16 +544,12 @@ class StarDist(QThread):
         parsed = max(1, parsed)
         with self._state_lock:
             self.params["min_size"] = parsed
-            if self.params["max_size"] < parsed:
-                self.params["max_size"] = parsed
 
     def set_max_size(self, value):
         parsed = int(value)
         parsed = max(1, parsed)
         with self._state_lock:
             self.params["max_size"] = parsed
-            if self.params["min_size"] > parsed:
-                self.params["min_size"] = parsed
 
     def _fatal_error_message(self, msg):
         self.error_signal.emit(msg)
@@ -632,6 +633,24 @@ class StarDist(QThread):
             self.progress.emit(100, "Cancelled")
             return
 
+        if params.get("enable_dilation", True):
+            self.progress.emit(95, "Dilating")
+            try:
+                # Preserve large label ids for downstream processing.
+                self.stardist_labels_grayscale = np.asarray(
+                    dilate_labels(self.stardist_labels_grayscale, radius=params["radius"]),
+                    dtype=np.int32,
+                )
+            except Exception as exc:
+                self._fatal_error_message(
+                    f"Error during dilation: {exc}. You may need to install pocl-opencl-icd (WSL2 users)."
+                )
+                return
+
+            if self._cancel_requested:
+                self.progress.emit(100, "Cancelled")
+                return
+
         self.progress.emit(100, "CellProfiler-like segmentation done")
         self._emit_segmentation_result(project_name, is_temp_project, source_uuid)
 
@@ -702,22 +721,23 @@ class StarDist(QThread):
             self.progress.emit(100, "Cancelled")
             return
 
-        self.progress.emit(95, "Dilating")
-        try:
-            # Preserve large label ids for downstream processing.
-            self.stardist_labels_grayscale = np.asarray(
-                dilate_labels(stardist_labels, radius=params["radius"]),
-                dtype=np.int32,
-            )
-        except Exception as exc:
-            self._fatal_error_message(
-                f"Error during dilation: {exc}. You may need to install pocl-opencl-icd (WSL2 users)."
-            )
-            return
+        if params.get("enable_dilation", True):
+            self.progress.emit(95, "Dilating")
+            try:
+                # Preserve large label ids for downstream processing.
+                self.stardist_labels_grayscale = np.asarray(
+                    dilate_labels(stardist_labels, radius=params["radius"]),
+                    dtype=np.int32,
+                )
+            except Exception as exc:
+                self._fatal_error_message(
+                    f"Error during dilation: {exc}. You may need to install pocl-opencl-icd (WSL2 users)."
+                )
+                return
 
-        if self._cancel_requested:
-            self.progress.emit(100, "Cancelled")
-            return
+            if self._cancel_requested:
+                self.progress.emit(100, "Cancelled")
+                return
 
         self.progress.emit(100, "StarDist Done")
         self._emit_segmentation_result(project_name, is_temp_project, source_uuid)

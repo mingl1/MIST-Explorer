@@ -618,6 +618,9 @@ class SignalConnectionManager:
         self.c.view.stardist_groupbox.n_tiles.valueChanged.connect(
             self.c.model_stardist.set_num_tiles
         )
+        self.c.view.stardist_groupbox.enable_dilation.toggled.connect(
+            self.c.model_stardist.set_enable_dilation
+        )
         self.c.view.stardist_groupbox.radius.valueChanged.connect(
             self.c.model_stardist.set_dialation_radisu
         )

@@ -82,7 +82,7 @@ def test_segmentation_method_cellprofiler_disables_advanced_tab(qapp, qtbot):
     assert not stardist_ui.segmentation_tabs.isTabEnabled(1)
     assert stardist_ui.stardist_pretrained_models.isHidden()
     assert not stardist_ui.use_contrasted_checkbox.isHidden()
-    assert stardist_ui.radius.isHidden()
+    assert not stardist_ui.radius.isHidden()
     assert not stardist_ui.min_size.isHidden()
     assert not stardist_ui.max_size.isHidden()
 

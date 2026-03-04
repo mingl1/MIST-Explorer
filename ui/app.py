@@ -3,6 +3,7 @@ Main application window module.
 """
 import argparse
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -201,6 +202,11 @@ class MainWindow(QMainWindow):
         """Open the current project folder in file explorer."""
         if self.current_project_path:
             ProjectManager.open_project_folder(self.current_project_path)
+
+    def switch_project(self):
+        """Cleanly restart the application to return to the project launcher."""
+        logger.info("Switching project. Restarting application...")
+        os.execl(sys.executable, sys.executable, *sys.argv)
 
     # pylint: disable=invalid-name
     def eventFilter(self, obj, event): # type: ignore

@@ -31,6 +31,10 @@ class MenuBarUI(QMenuBar):
         self.open_project_folder.triggered.connect(parent.open_project_folder)
         self.menuFile.addAction(self.open_project_folder)
 
+        self.switch_project_action = QAction("Switch Project...", self.menuFile)
+        self.switch_project_action.triggered.connect(parent.switch_project)
+        self.menuFile.addAction(self.switch_project_action)
+
         # View menu
         menu_view = self.addMenu("&View")
         assert menu_view is not None, "Menu 'View' could not be created"

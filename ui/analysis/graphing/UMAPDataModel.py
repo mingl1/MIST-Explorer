@@ -182,7 +182,7 @@ class DataModel:
     def get_max_pcs(self):
         """Returns the maximum number of PCs available for UMAP selection"""
         assert self.adata is not None, "adata is not initialized"
-        return len(self.adata.varm["PCs"]) if "PCs" in self.adata.varm else 0
+        return len(self.adata.varm["PCs"]) - 1 if "PCs" in self.adata.varm else 0
 
     def get_pca_variance_ratio(self):
         """Returns the variance ratio array for the 'Variance Threshold' UI logic"""
