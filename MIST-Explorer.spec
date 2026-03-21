@@ -60,3 +60,13 @@ exe = EXE(
     entitlements_file=None,
     icon=['assets\\final_icon.png'],
 )
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    splash.binaries,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name='MIST-Explorer',
+)
