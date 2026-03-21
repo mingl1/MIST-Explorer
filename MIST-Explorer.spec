@@ -20,12 +20,61 @@ a = Analysis(
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
-    hooksconfig={},
+    hooksconfig={
+        "PyQt6": {
+            "excluded_plugins": [
+                "qtvirtualkeyboard",
+                "qtwebengine",
+                "qtpdf",
+                "qtsql",
+                "qtbluetooth",
+                "qtnfc",
+                "qt3dinput",
+                "qt3dlogic",
+                "qt3drender",
+                "qt3dquick",
+                "qt3dextras",
+                "qtlocation",
+                "qtpositioning",
+            ]
+        }
+    },
     runtime_hooks=[],
-    excludes=[],
+    excludes=[
+        # TensorFlow extras not needed at runtime
+        'tensorboard',
+        'tensorflow.python.debug',
+        'tensorflow_estimator',
+        'tensorflow.lite',
+        # Jupyter/IPython - not needed in bundled app
+        'IPython',
+        'ipykernel',
+        'jupyter',
+        'notebook',
+        'jupyterlab',
+        # Other unused
+        'tkinter',
+        '_tkinter',
+        'wx',
+        'gi',
+        'pygments',
+        'jedi',
+    ],
     noarchive=False,
     optimize=0,
 )
+
+# Filter out large binaries that are not needed at runtime
+EXCLUDE_BINARIES = [
+    'opencv_videoio_ffmpeg',  # video codec, not needed for image loading
+    'opengl32sw',             # Qt software OpenGL fallback (drop if machines have GPU)
+]
+a.binaries = TOC([
+    (name, path, typ)
+    for name, path, typ in a.binaries
+    if not any(excl.lower() in name.lower() for excl in EXCLUDE_BINARIES)
+])
+
 pyz = PYZ(a.pure)
 splash = Splash(
     '.\\i2.png',
@@ -40,17 +89,14 @@ splash = Splash(
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     splash,
-    splash.binaries,
     [],
     name='MIST-Explorer',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    upx_exclude=[],
+    upx_exclude=['vcruntime140.dll', 'msvcp140.dll', '_pywrap_tensorflow_internal.pyd'],
     runtime_tmpdir=None,
     console=False,
     disable_windowed_traceback=False,
@@ -67,6 +113,6 @@ coll = COLLECT(
     splash.binaries,
     strip=False,
     upx=True,
-    upx_exclude=[],
+    upx_exclude=['vcruntime140.dll', 'msvcp140.dll', '_pywrap_tensorflow_internal.pyd'],
     name='MIST-Explorer',
 )

@@ -265,6 +265,7 @@ class MainWindow(QMainWindow):
         """Setup the collapsible side panel"""
 
         self.side_panel_container = QWidget(self.centralWidget())
+        self.side_panel_container.setMinimumWidth(35)
         container_layout = QHBoxLayout(self.side_panel_container)
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(10)
@@ -328,8 +329,6 @@ class MainWindow(QMainWindow):
 
         # Processing Tabs
         self.processing_tabs = QTabWidget(self.side_panel)
-        # processing_tab_layout = QVBoxLayout(self.processing_tabs) # unused
-        # Create a splitter to allow resizing of the image manager and processing tabs
         splitter = QSplitter(Qt.Orientation.Vertical, self.side_panel)
         splitter.addWidget(self.images_tab)
         splitter.setStretchFactor(0, 1)
@@ -528,7 +527,10 @@ class MainWindow(QMainWindow):
         # Note: side_panel_container now contains both the panel and the toggle button
         self.splitter.addWidget(self.side_panel_container)
         self.splitter.addWidget(self.canvas)
-        
+
+        # Prevent dragging the splitter to fully collapse the sidebar
+        self.splitter.setCollapsible(0, False)
+
         # Set stretch factors so canvas takes available space
         self.splitter.setStretchFactor(1, 1)
 

@@ -29,7 +29,7 @@ TOOLTIP_PERSIST_MS = 120000
 pg.setConfigOption("imageAxisOrder", "row-major")
 pg.setConfigOption("useOpenGL", True)
 pg.setConfigOption("useCupy", True)
-pg.setConfigOption("useNumba", True)
+pg.setConfigOption("useNumba", False)
 
 
 # pylint: disable=too-many-instance-attributes, too-many-public-methods
