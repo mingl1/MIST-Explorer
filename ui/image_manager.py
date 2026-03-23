@@ -702,6 +702,8 @@ class ImageTreeWidget(QTreeView):
             if not folder_path:
                 return
 
+            file_path = os.path.join(folder_path, f"{name}.png")
+
             channel_key = single_channel if single_channel in channel_dict else None
             if channel_key is None:
                 if not channel_dict:
@@ -711,15 +713,21 @@ class ImageTreeWidget(QTreeView):
             wrapper = channel_dict.get(channel_key)
             if wrapper is None:
                 return
-            if hasattr(wrapper, "get_uint8_data"):
-                png_data = wrapper.get_uint8_data()
+            
+            # Preserve label IDs if array is int32/uint16/uint32 and fits in 16-bit
+            channel_array = np.asarray(wrapper.data)
+            if channel_array.dtype in [np.int32, np.uint16, np.uint32, np.int16]:
+                # Clip negative to 0, use 16-bit to preserve IDs
+                clean_arr = np.clip(channel_array, 0, 65535).astype(np.uint16)
+                Image.fromarray(clean_arr).save(file_path)
             else:
-                png_data = self._normalize_to_uint8(wrapper.data)
-            if not isinstance(png_data, np.ndarray) or png_data.dtype != np.uint8:
-                png_data = self._normalize_to_uint8(np.asarray(png_data))
-
-            file_path = os.path.join(folder_path, f"{name}.png")
-            Image.fromarray(png_data).save(file_path)
+                if hasattr(wrapper, "get_uint8_data"):
+                    png_data = wrapper.get_uint8_data()
+                else:
+                    png_data = self._normalize_to_uint8(wrapper.data)
+                if not isinstance(png_data, np.ndarray) or png_data.dtype != np.uint8:
+                    png_data = self._normalize_to_uint8(np.asarray(png_data))
+                Image.fromarray(png_data).save(file_path)
 
     def set_as_tissue_target(self, i_uuid: UUID, is_leaf: bool, channel: int):
         """Set the selected image as the tissue target image for alignment"""

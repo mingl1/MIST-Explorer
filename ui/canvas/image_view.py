@@ -871,9 +871,22 @@ class ImageGraphicsViewUI(QGraphicsView):
                         global_pos, combined_layers, self, self.rect(), TOOLTIP_PERSIST_MS
                     )
                 else:
+                    raw_intensity_str = f"R: {r}, G: {g}, B: {b}"
+                    try:
+                        from controller import Controller
+                        ctrl = Controller.get()
+                        if self == self.enc.canvas and ctrl.model_canvas.image_wrapper is not None and ctrl.model_canvas.image_wrapper.data.size > 0:
+                            val = ctrl.model_canvas.image_wrapper.data[y, x]
+                            raw_intensity_str = f"Intensity: {val}"
+                        elif hasattr(self.enc, "small_view") and self == self.enc.small_view and ctrl.model_reference_canvas.image_wrapper is not None and ctrl.model_reference_canvas.image_wrapper.data.size > 0:
+                            val = ctrl.model_reference_canvas.image_wrapper.data[y, x]
+                            raw_intensity_str = f"Intensity: {val}"
+                    except Exception:
+                        pass
+                        
                     QToolTip.showText(
                         global_pos,
-                        f"R: {r}, G: {g}, B: {b}",
+                        raw_intensity_str,
                         self,
                         self.rect(),
                         TOOLTIP_PERSIST_MS,
@@ -888,7 +901,7 @@ class ImageGraphicsViewUI(QGraphicsView):
                     )
                 else:
                     self.enc.update_mouse_position_label(
-                        f"R: {r}, G: {g}, B: {b} X: {x}, Y: {y}"
+                        f"{raw_intensity_str} X: {x}, Y: {y}"
                     )
 
                 # Highlight the pixel under cursor
