@@ -902,6 +902,7 @@ class ImageGraphicsView(BaseGraphicsView):
     update_cmap = pyqtSignal(str)
     crop_signal = pyqtSignal(bool)
     update_channel = pyqtSignal(int)
+    uuid_changed = pyqtSignal(str)
 
     def __init__(self, controller: "Controller"):
         super().__init__()
@@ -925,6 +926,7 @@ class ImageGraphicsView(BaseGraphicsView):
         # print("Setting image UUID:", uuid)
         self.uuid = uuid
         self.storage.add_data("canvas_uuid", {"value": uuid})
+        self.uuid_changed.emit(str(uuid))
 
     def clear_canvas(self):
         self.reset_pixmap = None

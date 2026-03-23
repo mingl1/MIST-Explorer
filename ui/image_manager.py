@@ -714,10 +714,20 @@ class ImageTreeWidget(QTreeView):
             if wrapper is None:
                 return
             
-            # Preserve label IDs if array is int32/uint16/uint32 and fits in 16-bit
+            # Preserve label IDs for integer label arrays.
+            # PNG is limited to 16-bit (max 65535).  If an int32 stardist label
+            # image has cell IDs above that ceiling, fall back to TIF so the
+            # exported pixel values stay in sync with the CellIDs in the CSV.
             channel_array = np.asarray(wrapper.data)
-            if channel_array.dtype in [np.int32, np.uint16, np.uint32, np.int16]:
-                # Clip negative to 0, use 16-bit to preserve IDs
+            if channel_array.dtype == np.int32 and channel_array.max() > 65535:
+                tif_path = os.path.splitext(file_path)[0] + ".tif"
+                tifffile.imwrite(
+                    tif_path,
+                    channel_array,
+                    photometric="minisblack",
+                    imagej=False,
+                )
+            elif channel_array.dtype in [np.int32, np.uint16, np.uint32, np.int16]:
                 clean_arr = np.clip(channel_array, 0, 65535).astype(np.uint16)
                 Image.fromarray(clean_arr).save(file_path)
             else:

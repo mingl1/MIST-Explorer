@@ -760,9 +760,7 @@ class SignalConnectionManager:
         image_signal.connect(self.c.view.register_groupbox.updateChannelSelector)
         image_signal.connect(self.c.view.canvas.load_channels)
         image_signal.connect(self.c.model_stardist.update_channels)
-        image_signal.connect(
-            lambda *_: self.c.model_stardist.set_source_uuid(self.c.model_canvas.uuid)
-        )
+        self.c.model_canvas.uuid_changed.connect(self.c.model_stardist.set_source_uuid)
         image_signal.connect(self.c.view.stardist_groupbox.updateChannelSelector)
         image_signal.connect(self.c.view.gaussian_blur.updateChannelSelector)
         image_signal.connect(self.c.model_register.update_moving_image)
