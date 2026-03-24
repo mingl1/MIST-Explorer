@@ -495,6 +495,10 @@ class ImageTreeWidget(QTreeView):
             row = model.indexFromItem(item).row()
             self.item_deleted.emit(item_uuid)
             model.removeRow(row)
+            if self.model_canvas is not None and str(self.model_canvas.uuid) == str(
+                item_uuid
+            ):
+                self.model_canvas.clear_canvas()
             return
 
         channel_name = item.data(Qt.ItemDataRole.WhatsThisRole)
@@ -511,6 +515,10 @@ class ImageTreeWidget(QTreeView):
         if not data:
             self.item_deleted.emit(item_uuid)
             model.removeRow(model.indexFromItem(parent_item).row())
+            if self.model_canvas is not None and str(self.model_canvas.uuid) == str(
+                item_uuid
+            ):
+                self.model_canvas.clear_canvas()
             return
 
         channel_mapping = self._renumber_channels(data)
