@@ -3,11 +3,6 @@ import threading
 
 import cv2 as cv
 import numpy as np
-import scipy.ndimage
-import skimage.filters
-import skimage.segmentation
-import centrosome.cpmorphology
-import centrosome.smooth
 from matplotlib import colormaps
 from PIL import Image
 from pyclesperanto import dilate_labels
@@ -16,6 +11,7 @@ from PyQt6.QtWidgets import QFileDialog
 from stardist.models import StarDist2D
 
 from core import ImageWrapper
+from core.cellprofiler_segmentation import identify_primary_objects
 from core.image_utils import create_lut, scale_adjust
 from core.project_naming import STARDIST_LABEL_BASE_NAME, prefix_with_project_name
 
@@ -23,19 +19,6 @@ os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 
 SEGMENTATION_METHOD_STARDIST = "StarDist"
 SEGMENTATION_METHOD_PRIMARY_OBJECTS = "CellProfiler-like"
-
-PRIMARY_OBJECT_SETTINGS = {
-    "threshold_smoothing_scale": 1.3488,
-    "threshold_correction_factor": 1.0,
-    "threshold_range": (0.0, 1.0),
-    "fill_holes_after_thresholding": True,
-    "fill_holes_after_declumping": True,
-    "automatic_smoothing": True,
-    "automatic_maxima_suppression": True,
-    "low_res_maxima": True,
-    "exclude_border_objects": True,
-}
-
 
 def normalize(x, pmin=3, pmax=99.8, axis=None, clip=False, eps=1e-20, dtype=np.float32):
     """Percentile-based image normalization."""
@@ -63,221 +46,6 @@ def normalize_mi_ma(x, mi, ma, clip=False, eps=1e-20, dtype=np.float32):
         x = np.clip(x, 0, 1)
 
     return x
-
-
-def _global_minimum_cross_entropy_threshold(image, mask, correction, tmin, tmax):
-    pixels = image[mask]
-    if pixels.size == 0:
-        threshold = 0.0
-    elif np.all(pixels == pixels.ravel()[0]):
-        threshold = float(pixels.ravel()[0])
-    else:
-        unique = np.unique(pixels)
-        if unique.size > 1:
-            tol = max(float(np.min(np.diff(unique))) / 2.0, 0.5 / 65536.0)
-        else:
-            tol = 0.5 / 65536.0
-        threshold = float(skimage.filters.threshold_li(pixels, tolerance=tol))
-
-    threshold *= float(correction)
-    return min(max(threshold, float(tmin)), float(tmax))
-
-
-def _apply_threshold(image, threshold, mask, smoothing_scale):
-    if smoothing_scale == 0:
-        return (image >= threshold) & mask, 0.0
-
-    sigma = float(smoothing_scale) / 0.6744 / 2.0
-    blurred = centrosome.smooth.smooth_with_function_and_mask(
-        image,
-        lambda x: scipy.ndimage.gaussian_filter(x, sigma, mode="constant", cval=0),
-        mask,
-    )
-    return (blurred >= threshold) & mask, sigma
-
-
-def _calc_declump_smoothing_filter_size(min_diameter):
-    return 2.35 * float(min_diameter) / 3.5
-
-
-def _smooth_for_declumping(image, mask, filter_size):
-    if filter_size == 0:
-        return image
-
-    sigma = filter_size / 2.35
-    radius = max(int(float(filter_size) / 2.0), 1)
-    filt = (
-        1.0
-        / np.sqrt(2.0 * np.pi)
-        / sigma
-        * np.exp(-0.5 * np.arange(-radius, radius + 1) ** 2 / sigma**2)
-    )
-
-    def fgaussian(arr):
-        out = scipy.ndimage.convolve1d(arr, filt, axis=0, mode="constant")
-        return scipy.ndimage.convolve1d(out, filt, axis=1, mode="constant")
-
-    edge = fgaussian(mask.astype(float))
-    masked = image.copy()
-    masked[~mask] = 0
-    smoothed = fgaussian(masked)
-    masked[mask] = smoothed[mask] / edge[mask]
-    return masked
-
-
-def _get_maxima(image, labeled_image, maxima_mask, image_resize_factor):
-    if image_resize_factor < 1.0:
-        shape = np.array(image.shape) * image_resize_factor
-        ij = np.mgrid[0 : shape[0], 0 : shape[1]].astype(float) / image_resize_factor
-        resized_image = scipy.ndimage.map_coordinates(image, ij)
-        resized_labels = scipy.ndimage.map_coordinates(labeled_image, ij, order=0).astype(
-            labeled_image.dtype
-        )
-    else:
-        resized_image = image
-        resized_labels = labeled_image
-
-    binary_maxima = centrosome.cpmorphology.is_local_maximum(
-        resized_image, resized_labels, maxima_mask
-    )
-    binary_maxima[resized_image <= 0] = 0
-
-    if image_resize_factor < 1.0:
-        inv_factor = float(image.shape[0]) / float(binary_maxima.shape[0])
-        ij = np.mgrid[0 : image.shape[0], 0 : image.shape[1]].astype(float) / inv_factor
-        binary_maxima = scipy.ndimage.map_coordinates(binary_maxima.astype(float), ij) > 0.5
-
-    return centrosome.cpmorphology.binary_shrink(binary_maxima)
-
-
-def _filter_on_border(labels):
-    if labels.max() <= 0:
-        return labels
-
-    border_labels = np.concatenate(
-        [
-            labels[0, :],
-            labels[:, 0],
-            labels[-1, :],
-            labels[:, -1],
-        ]
-    )
-    border_labels = np.unique(border_labels[border_labels > 0])
-    if border_labels.size == 0:
-        return labels
-    labels[np.isin(labels, border_labels)] = 0
-    return labels
-
-
-def _filter_on_size(labels, min_diameter, max_diameter):
-    object_count = int(labels.max())
-    if object_count <= 0:
-        return labels
-
-    areas = scipy.ndimage.sum(
-        np.ones(labels.shape),
-        labels,
-        np.arange(0, object_count + 1, dtype=np.int32),
-    )
-    areas = np.asarray(areas, dtype=float)
-
-    min_allowed_area = np.pi * (float(min_diameter) ** 2) / 4.0
-    max_allowed_area = np.pi * (float(max_diameter) ** 2) / 4.0
-
-    area_image = areas[labels]
-    labels[(area_image < min_allowed_area) | (area_image > max_allowed_area)] = 0
-    return labels
-
-
-def _identify_primary_objects_like_cellprofiler(image_2d, min_size, max_size):
-    image = np.asarray(image_2d, dtype=np.float32)
-    if image.ndim != 2:
-        raise ValueError(f"Expected 2D image, got shape {image.shape}")
-
-    if np.nanmax(image) > 1.0 or np.nanmin(image) < 0.0:
-        lo, hi = np.percentile(image, [0.5, 99.5])
-        if hi > lo:
-            image = np.clip((image - lo) / (hi - lo), 0.0, 1.0)
-        else:
-            image = np.clip(image, 0.0, 1.0)
-
-    settings = PRIMARY_OBJECT_SETTINGS
-    mask = np.ones(image.shape, dtype=bool)
-
-    final_threshold = _global_minimum_cross_entropy_threshold(
-        image=image,
-        mask=mask,
-        correction=settings["threshold_correction_factor"],
-        tmin=settings["threshold_range"][0],
-        tmax=settings["threshold_range"][1],
-    )
-
-    binary, _ = _apply_threshold(
-        image=image,
-        threshold=final_threshold,
-        mask=mask,
-        smoothing_scale=settings["threshold_smoothing_scale"],
-    )
-
-    if settings["fill_holes_after_thresholding"]:
-        size_fn = lambda size, _: size < (float(max_size) * float(max_size))
-        binary = centrosome.cpmorphology.fill_labeled_holes(binary, size_fn=size_fn)
-
-    labeled, _ = scipy.ndimage.label(binary, np.ones((3, 3), dtype=bool))
-
-    if labeled.max() > 0:
-        if settings["automatic_smoothing"]:
-            declump_filter_size = _calc_declump_smoothing_filter_size(min_size)
-        else:
-            declump_filter_size = 10.0
-
-        blurred = _smooth_for_declumping(image, mask, declump_filter_size)
-
-        if min_size > 10 and settings["low_res_maxima"]:
-            image_resize_factor = 10.0 / float(min_size)
-            maxima_suppression_size = (
-                7.0 if settings["automatic_maxima_suppression"] else 7.5
-            )
-        else:
-            image_resize_factor = 1.0
-            maxima_suppression_size = (
-                float(min_size) / 1.5 if settings["automatic_maxima_suppression"] else 7.0
-            )
-
-        maxima_mask = centrosome.cpmorphology.strel_disk(
-            max(1, maxima_suppression_size - 0.5)
-        )
-        maxima = _get_maxima(blurred, labeled, maxima_mask, image_resize_factor)
-        labeled_maxima, object_count = scipy.ndimage.label(
-            maxima, np.ones((3, 3), dtype=bool)
-        )
-
-        if object_count > 0:
-            watershed_image = 1.0 - image
-            markers_dtype = (
-                np.int16 if object_count < np.iinfo(np.int16).max else np.int32
-            )
-            markers = np.zeros(watershed_image.shape, markers_dtype)
-            markers[labeled_maxima > 0] = -labeled_maxima[labeled_maxima > 0]
-            watershed_boundaries = skimage.segmentation.watershed(
-                connectivity=np.ones((3, 3), dtype=bool),
-                image=watershed_image,
-                markers=markers,
-                mask=labeled != 0,
-            )
-            labeled = -watershed_boundaries
-
-    if settings["exclude_border_objects"] and labeled.max() > 0:
-        labeled = _filter_on_border(labeled)
-    if labeled.max() > 0:
-        labeled = _filter_on_size(labeled, min_size, max_size)
-
-    if settings["fill_holes_after_declumping"] and labeled.max() > 0:
-        labeled = centrosome.cpmorphology.fill_labeled_holes(labeled)
-
-    labeled, _ = centrosome.cpmorphology.relabel(labeled)
-    # Keep labels in int32 to avoid the uint16 instance-id ceiling (65,535).
-    return np.asarray(labeled, dtype=np.int32)
 
 
 class StarDist(QThread):
@@ -311,6 +79,31 @@ class StarDist(QThread):
             "use_contrasted_image": False,
             "min_size": 60,
             "max_size": 180,
+            # CellProfiler-like advanced settings
+            "threshold_method": "MCT",
+            "threshold_scope": "Global",
+            "threshold_smoothing_scale": 1.3488,
+            "threshold_correction_factor": 1.0,
+            "threshold_lower_bound": 0.0,
+            "threshold_upper_bound": 1.0,
+            "manual_threshold": 0.5,
+            "two_class_otsu": True,
+            "assign_middle_to_foreground": True,
+            "object_fraction": 0.2,
+            "lower_outlier_fraction": 0.05,
+            "upper_outlier_fraction": 0.05,
+            "averaging_method": "Mean",
+            "variance_method": "Standard deviation",
+            "number_of_deviations": 2.0,
+            "adaptive_window_size": 50,
+            "fill_holes_after_thresholding": True,
+            "fill_holes_after_declumping": True,
+            "automatic_smoothing": True,
+            "smoothing_filter_size": 10.0,
+            "automatic_maxima_suppression": True,
+            "maxima_suppression_size": 7.0,
+            "low_res_maxima": True,
+            "exclude_border_objects": True,
         }
         self.aligned = False
         self.current_model = ""
@@ -551,6 +344,104 @@ class StarDist(QThread):
         with self._state_lock:
             self.params["max_size"] = parsed
 
+    # CellProfiler-like advanced setters
+
+    def set_threshold_method(self, value):
+        with self._state_lock:
+            self.params["threshold_method"] = str(value)
+
+    def set_threshold_scope(self, value):
+        with self._state_lock:
+            self.params["threshold_scope"] = str(value)
+
+    def set_threshold_smoothing_scale(self, value):
+        with self._state_lock:
+            self.params["threshold_smoothing_scale"] = float(value)
+
+    def set_threshold_correction_factor(self, value):
+        with self._state_lock:
+            self.params["threshold_correction_factor"] = float(value)
+
+    def set_threshold_lower_bound(self, value):
+        with self._state_lock:
+            self.params["threshold_lower_bound"] = float(value)
+
+    def set_threshold_upper_bound(self, value):
+        with self._state_lock:
+            self.params["threshold_upper_bound"] = float(value)
+
+    def set_manual_threshold(self, value):
+        with self._state_lock:
+            self.params["manual_threshold"] = float(value)
+
+    def set_two_class_otsu(self, value):
+        with self._state_lock:
+            self.params["two_class_otsu"] = str(value) == "Two classes"
+
+    def set_assign_middle_to_foreground(self, value):
+        with self._state_lock:
+            self.params["assign_middle_to_foreground"] = str(value) == "Foreground"
+
+    def set_object_fraction(self, value):
+        with self._state_lock:
+            self.params["object_fraction"] = float(value)
+
+    def set_lower_outlier_fraction(self, value):
+        with self._state_lock:
+            self.params["lower_outlier_fraction"] = float(value)
+
+    def set_upper_outlier_fraction(self, value):
+        with self._state_lock:
+            self.params["upper_outlier_fraction"] = float(value)
+
+    def set_averaging_method(self, value):
+        with self._state_lock:
+            self.params["averaging_method"] = str(value)
+
+    def set_variance_method(self, value):
+        with self._state_lock:
+            self.params["variance_method"] = str(value)
+
+    def set_number_of_deviations(self, value):
+        with self._state_lock:
+            self.params["number_of_deviations"] = float(value)
+
+    def set_adaptive_window_size(self, value):
+        with self._state_lock:
+            self.params["adaptive_window_size"] = int(value)
+
+    def set_fill_holes_after_thresholding(self, enabled):
+        with self._state_lock:
+            self.params["fill_holes_after_thresholding"] = bool(enabled)
+
+    def set_fill_holes_after_declumping(self, enabled):
+        with self._state_lock:
+            self.params["fill_holes_after_declumping"] = bool(enabled)
+
+    def set_automatic_smoothing(self, enabled):
+        with self._state_lock:
+            self.params["automatic_smoothing"] = bool(enabled)
+
+    def set_smoothing_filter_size(self, value):
+        with self._state_lock:
+            self.params["smoothing_filter_size"] = float(value)
+
+    def set_automatic_maxima_suppression(self, enabled):
+        with self._state_lock:
+            self.params["automatic_maxima_suppression"] = bool(enabled)
+
+    def set_maxima_suppression_size(self, value):
+        with self._state_lock:
+            self.params["maxima_suppression_size"] = float(value)
+
+    def set_low_res_maxima(self, enabled):
+        with self._state_lock:
+            self.params["low_res_maxima"] = bool(enabled)
+
+    def set_exclude_border_objects(self, enabled):
+        with self._state_lock:
+            self.params["exclude_border_objects"] = bool(enabled)
+
     def _fatal_error_message(self, msg):
         self.error_signal.emit(msg)
         self.progress.emit(100, "")
@@ -621,9 +512,38 @@ class StarDist(QThread):
             params["min_size"] = min_size
             params["max_size"] = max_size
 
+        cp_settings = {
+            "threshold_method": params.get("threshold_method", "MCT"),
+            "threshold_scope": params.get("threshold_scope", "Global"),
+            "threshold_smoothing_scale": float(params.get("threshold_smoothing_scale", 1.3488)),
+            "threshold_correction_factor": float(params.get("threshold_correction_factor", 1.0)),
+            "threshold_range": (
+                float(params.get("threshold_lower_bound", 0.0)),
+                float(params.get("threshold_upper_bound", 1.0)),
+            ),
+            "manual_threshold": float(params.get("manual_threshold", 0.5)),
+            "two_class_otsu": bool(params.get("two_class_otsu", True)),
+            "assign_middle_to_foreground": bool(params.get("assign_middle_to_foreground", True)),
+            "object_fraction": float(params.get("object_fraction", 0.2)),
+            "lower_outlier_fraction": float(params.get("lower_outlier_fraction", 0.05)),
+            "upper_outlier_fraction": float(params.get("upper_outlier_fraction", 0.05)),
+            "averaging_method": params.get("averaging_method", "Mean"),
+            "variance_method": params.get("variance_method", "Standard deviation"),
+            "number_of_deviations": float(params.get("number_of_deviations", 2.0)),
+            "adaptive_window_size": int(params.get("adaptive_window_size", 50)),
+            "fill_holes_after_thresholding": bool(params.get("fill_holes_after_thresholding", True)),
+            "fill_holes_after_declumping": bool(params.get("fill_holes_after_declumping", True)),
+            "automatic_smoothing": bool(params.get("automatic_smoothing", True)),
+            "smoothing_filter_size": float(params.get("smoothing_filter_size", 10.0)),
+            "automatic_maxima_suppression": bool(params.get("automatic_maxima_suppression", True)),
+            "maxima_suppression_size": float(params.get("maxima_suppression_size", 7.0)),
+            "low_res_maxima": bool(params.get("low_res_maxima", True)),
+            "exclude_border_objects": bool(params.get("exclude_border_objects", True)),
+        }
+
         try:
-            self.stardist_labels_grayscale = _identify_primary_objects_like_cellprofiler(
-                cell_image, min_size=min_size, max_size=max_size
+            self.stardist_labels_grayscale = identify_primary_objects(
+                cell_image, min_size=min_size, max_size=max_size, settings=cp_settings
             )
         except Exception as exc:
             self._fatal_error_message(f"CellProfiler-like segmentation failed: {exc}")
