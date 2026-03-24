@@ -1,6 +1,7 @@
 """Class to handle signal connections"""
 
 import copy
+import json
 import logging
 import os
 import typing
@@ -24,6 +25,7 @@ from core import (
 from core.project_manager import ProjectManager
 from core.project_naming import is_stardist_label_name, is_temp_project_name
 from ui.alignment.alignment_preview_dialog import AlignmentPreviewDialog
+from ui.stardist.crop_experiment_dialog import CropExperimentDialog
 
 logger = logging.getLogger(__name__)
 
@@ -711,6 +713,12 @@ class SignalConnectionManager:
         cp.exclude_border_objects.toggled.connect(
             self.c.model_stardist.set_exclude_border_objects
         )
+        cp.crop_experiment_button.clicked.connect(self._open_crop_experiment)
+        cp.save_preset_button.clicked.connect(self._save_cp_preset)
+        cp.load_preset_button_adv.clicked.connect(self._load_cp_preset)
+        self.c.view.stardist_groupbox.load_preset_button.clicked.connect(
+            self._load_cp_preset
+        )
 
         # Execution and results
         self.c.view.stardist_groupbox.stardist_run_button.pressed.connect(
@@ -722,6 +730,169 @@ class SignalConnectionManager:
         self.c.view.stardist_groupbox.cancel_button.clicked.connect(
             self.c.model_stardist.cancel
         )
+
+    def _open_crop_experiment(self):
+        """Open the Crop & Experiment dialog for CellProfiler-like segmentation."""
+        stardist = self.c.model_stardist
+        with stardist._state_lock:
+            params = dict(stardist.params)
+            channels = stardist.protein_channels
+
+        wrapper = channels.get(params["channel"]) if channels else None
+        if wrapper is None:
+            self.c.handle_error("No cell channel loaded")
+            return
+
+        cell_image = wrapper.data
+        contrast_min = getattr(wrapper, "contrast_min", 0)
+        contrast_max = getattr(wrapper, "contrast_max", 255)
+
+        current_settings = {
+            "threshold_method": params.get("threshold_method", "MCT"),
+            "threshold_scope": params.get("threshold_scope", "Global"),
+            "threshold_smoothing_scale": float(params.get("threshold_smoothing_scale", 1.3488)),
+            "threshold_correction_factor": float(params.get("threshold_correction_factor", 1.0)),
+            "threshold_range": (
+                float(params.get("threshold_lower_bound", 0.0)),
+                float(params.get("threshold_upper_bound", 1.0)),
+            ),
+            "manual_threshold": float(params.get("manual_threshold", 0.5)),
+            "two_class_otsu": bool(params.get("two_class_otsu", True)),
+            "assign_middle_to_foreground": bool(params.get("assign_middle_to_foreground", True)),
+            "object_fraction": float(params.get("object_fraction", 0.2)),
+            "lower_outlier_fraction": float(params.get("lower_outlier_fraction", 0.05)),
+            "upper_outlier_fraction": float(params.get("upper_outlier_fraction", 0.05)),
+            "averaging_method": params.get("averaging_method", "Mean"),
+            "variance_method": params.get("variance_method", "Standard deviation"),
+            "number_of_deviations": float(params.get("number_of_deviations", 2.0)),
+            "adaptive_window_size": int(params.get("adaptive_window_size", 50)),
+            "fill_holes_after_thresholding": bool(params.get("fill_holes_after_thresholding", True)),
+            "fill_holes_after_declumping": bool(params.get("fill_holes_after_declumping", True)),
+            "automatic_smoothing": bool(params.get("automatic_smoothing", True)),
+            "smoothing_filter_size": float(params.get("smoothing_filter_size", 10.0)),
+            "automatic_maxima_suppression": bool(params.get("automatic_maxima_suppression", True)),
+            "maxima_suppression_size": float(params.get("maxima_suppression_size", 7.0)),
+            "low_res_maxima": bool(params.get("low_res_maxima", True)),
+            "exclude_border_objects": bool(params.get("exclude_border_objects", True)),
+        }
+
+        dialog = CropExperimentDialog(
+            cell_image,
+            contrast_min,
+            contrast_max,
+            current_settings,
+            min_size=int(params.get("min_size", 60)),
+            max_size=int(params.get("max_size", 180)),
+            enable_dilation=bool(params.get("enable_dilation", True)),
+            dilation_radius=int(params.get("radius", 5)),
+            use_contrasted_image=bool(params.get("use_contrasted_image", False)),
+        )
+        dialog.settings_accepted.connect(self._apply_experiment_settings)
+        dialog.exec()
+
+    def _apply_experiment_settings(self, settings: dict):
+        """Apply settings from the Crop & Experiment dialog back to the UI widgets."""
+        cp = self.c.view.stardist_groupbox.cp_advanced
+        sg = self.c.view.stardist_groupbox
+
+        cp.threshold_method.setCurrentText(settings.get("threshold_method", "MCT"))
+        cp.threshold_scope.setCurrentText(settings.get("threshold_scope", "Global"))
+        cp.threshold_correction_factor.setValue(float(settings.get("threshold_correction_factor", 1.0)))
+        cp.threshold_smoothing_scale.setValue(float(settings.get("threshold_smoothing_scale", 1.3488)))
+        cp.threshold_lower_bound.setValue(float(settings.get("threshold_lower_bound", 0.0)))
+        cp.threshold_upper_bound.setValue(float(settings.get("threshold_upper_bound", 1.0)))
+        cp.manual_threshold.setValue(float(settings.get("manual_threshold", 0.5)))
+
+        two_class = settings.get("two_class_otsu", True)
+        cp.otsu_class.setCurrentText("Two classes" if two_class else "Three classes")
+        fg = settings.get("assign_middle_to_foreground", True)
+        cp.otsu_middle.setCurrentText("Foreground" if fg else "Background")
+
+        cp.object_fraction.setValue(float(settings.get("object_fraction", 0.2)))
+        cp.lower_outlier_fraction.setValue(float(settings.get("lower_outlier_fraction", 0.05)))
+        cp.upper_outlier_fraction.setValue(float(settings.get("upper_outlier_fraction", 0.05)))
+        cp.averaging_method.setCurrentText(settings.get("averaging_method", "Mean"))
+        cp.variance_method.setCurrentText(settings.get("variance_method", "Standard deviation"))
+        cp.number_of_deviations.setValue(float(settings.get("number_of_deviations", 2.0)))
+        cp.adaptive_window_size.setValue(int(settings.get("adaptive_window_size", 50)))
+        cp.fill_holes_thresholding.setChecked(bool(settings.get("fill_holes_after_thresholding", True)))
+        cp.fill_holes_declumping.setChecked(bool(settings.get("fill_holes_after_declumping", True)))
+        cp.automatic_smoothing.setChecked(bool(settings.get("automatic_smoothing", True)))
+        cp.smoothing_filter_size.setValue(float(settings.get("smoothing_filter_size", 10.0)))
+        cp.automatic_maxima_suppression.setChecked(bool(settings.get("automatic_maxima_suppression", True)))
+        cp.maxima_suppression_size.setValue(float(settings.get("maxima_suppression_size", 7.0)))
+        cp.low_res_maxima.setChecked(bool(settings.get("low_res_maxima", True)))
+        cp.exclude_border_objects.setChecked(bool(settings.get("exclude_border_objects", True)))
+
+        sg.min_size.setValue(int(settings.get("min_size", 60)))
+        sg.max_size.setValue(int(settings.get("max_size", 180)))
+        sg.enable_dilation.setChecked(bool(settings.get("enable_dilation", True)))
+        sg.radius.setValue(int(settings.get("dilation_radius", 5)))
+        sg.use_contrasted_checkbox.setChecked(bool(settings.get("use_contrasted_image", False)))
+
+    def _gather_cp_settings(self) -> dict:
+        """Collect all CellProfiler-like settings from UI widgets into a dict."""
+        cp = self.c.view.stardist_groupbox.cp_advanced
+        sg = self.c.view.stardist_groupbox
+        return {
+            "threshold_method": cp.threshold_method.currentText(),
+            "threshold_scope": cp.threshold_scope.currentText(),
+            "threshold_correction_factor": cp.threshold_correction_factor.value(),
+            "threshold_smoothing_scale": cp.threshold_smoothing_scale.value(),
+            "threshold_lower_bound": cp.threshold_lower_bound.value(),
+            "threshold_upper_bound": cp.threshold_upper_bound.value(),
+            "manual_threshold": cp.manual_threshold.value(),
+            "two_class_otsu": cp.otsu_class.currentText() == "Two classes",
+            "assign_middle_to_foreground": cp.otsu_middle.currentText() == "Foreground",
+            "object_fraction": cp.object_fraction.value(),
+            "lower_outlier_fraction": cp.lower_outlier_fraction.value(),
+            "upper_outlier_fraction": cp.upper_outlier_fraction.value(),
+            "averaging_method": cp.averaging_method.currentText(),
+            "variance_method": cp.variance_method.currentText(),
+            "number_of_deviations": cp.number_of_deviations.value(),
+            "adaptive_window_size": cp.adaptive_window_size.value(),
+            "fill_holes_after_thresholding": cp.fill_holes_thresholding.isChecked(),
+            "fill_holes_after_declumping": cp.fill_holes_declumping.isChecked(),
+            "automatic_smoothing": cp.automatic_smoothing.isChecked(),
+            "smoothing_filter_size": cp.smoothing_filter_size.value(),
+            "automatic_maxima_suppression": cp.automatic_maxima_suppression.isChecked(),
+            "maxima_suppression_size": cp.maxima_suppression_size.value(),
+            "low_res_maxima": cp.low_res_maxima.isChecked(),
+            "exclude_border_objects": cp.exclude_border_objects.isChecked(),
+            "min_size": sg.min_size.value(),
+            "max_size": sg.max_size.value(),
+            "enable_dilation": sg.enable_dilation.isChecked(),
+            "dilation_radius": sg.radius.value(),
+            "use_contrasted_image": sg.use_contrasted_checkbox.isChecked(),
+        }
+
+    def _save_cp_preset(self):
+        """Save current CellProfiler-like settings to a JSON file."""
+        settings = self._gather_cp_settings()
+        path, _ = QFileDialog.getSaveFileName(
+            self.c.view, "Save Preset", "", "JSON Files (*.json)"
+        )
+        if not path:
+            return
+        if not path.endswith(".json"):
+            path += ".json"
+        with open(path, "w") as f:
+            json.dump(settings, f, indent=2)
+
+    def _load_cp_preset(self):
+        """Load CellProfiler-like settings from a JSON file."""
+        path, _ = QFileDialog.getOpenFileName(
+            self.c.view, "Load Preset", "", "JSON Files (*.json)"
+        )
+        if not path:
+            return
+        try:
+            with open(path) as f:
+                settings = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            self.c.handle_error(f"Failed to load preset: {e}")
+            return
+        self._apply_experiment_settings(settings)
 
     def _setup_registration_connections(self):
         """Registration-related connections"""

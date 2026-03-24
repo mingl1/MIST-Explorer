@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import (
     QDoubleSpinBox,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -251,6 +252,16 @@ class CellProfilerAdvancedSettings(QWidget):
         self.exclude_border_objects.setChecked(True)
         layout.addWidget(self.exclude_border_objects)
 
+        # Crop & Experiment button
+        self.crop_experiment_button = QPushButton()
+        layout.addWidget(self.crop_experiment_button)
+
+        # Preset buttons
+        self.save_preset_button = QPushButton()
+        layout.addWidget(self.save_preset_button)
+        self.load_preset_button_adv = QPushButton()
+        layout.addWidget(self.load_preset_button_adv)
+
         # Row groups for conditional visibility
         self._manual_rows = [self.manual_layout]
         self._otsu_rows = [self.otsu_class_layout]
@@ -375,3 +386,6 @@ class CellProfilerAdvancedSettings(QWidget):
         self.mss_label.setText(_t("MainWindow", "Maxima Suppression Size"))
         self.low_res_maxima.setText(_t("MainWindow", "Low-Res Image for Maxima"))
         self.exclude_border_objects.setText(_t("MainWindow", "Exclude Border Objects"))
+        self.crop_experiment_button.setText(_t("MainWindow", "Crop && Experiment"))
+        self.save_preset_button.setText(_t("MainWindow", "Save Preset"))
+        self.load_preset_button_adv.setText(_t("MainWindow", "Load Preset"))
