@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.project_naming import is_stardist_label_name
+from ui.stardist.cellprofiler_ui import CellProfilerAdvancedSettings
 
 
 class StarDistUI(QWidget):
@@ -163,6 +164,10 @@ class StarDistUI(QWidget):
         self.stardist_hlayout7.addWidget(self.n_tiles)
         self.advanced_tab_layout.addLayout(self.stardist_hlayout7)
 
+        # CellProfiler-like advanced settings widget
+        self.cp_advanced = CellProfilerAdvancedSettings()
+        self.advanced_tab_layout.addWidget(self.cp_advanced)
+
         self.use_contrasted_checkbox = QCheckBox(self.basic_tab)
         self.use_contrasted_checkbox.setChecked(False)
         self.basic_tab_layout.addWidget(self.use_contrasted_checkbox)
@@ -232,15 +237,9 @@ class StarDistUI(QWidget):
         self._set_row_visibility(self._stardist_specific_rows, use_stardist)
         self._set_row_visibility(self._basic_stardist_rows, use_stardist)
         self._set_row_visibility(self._basic_primary_rows, not use_stardist)
-        self.segmentation_tabs.setTabEnabled(1, use_stardist)
-        if use_stardist:
-            self.segmentation_tabs.setTabToolTip(1, "")
-            return
-        if self.segmentation_tabs.currentIndex() == 1:
-            self.segmentation_tabs.setCurrentIndex(0)
-        self.segmentation_tabs.setTabToolTip(
-            1, "No advanced options available for this method."
-        )
+        self.cp_advanced.setVisible(not use_stardist)
+        self.segmentation_tabs.setTabEnabled(1, True)
+        self.segmentation_tabs.setTabToolTip(1, "")
 
     def _set_row_visibility(self, rows, visible):
         for row in rows:

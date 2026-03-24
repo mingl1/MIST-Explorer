@@ -637,6 +637,81 @@ class SignalConnectionManager:
             self.c.model_canvas.set_stardist_overlay_enabled
         )
 
+        # CellProfiler-like advanced settings
+        cp = self.c.view.stardist_groupbox.cp_advanced
+        cp.threshold_method.currentTextChanged.connect(
+            self.c.model_stardist.set_threshold_method
+        )
+        cp.threshold_scope.currentTextChanged.connect(
+            self.c.model_stardist.set_threshold_scope
+        )
+        cp.threshold_correction_factor.valueChanged.connect(
+            self.c.model_stardist.set_threshold_correction_factor
+        )
+        cp.threshold_smoothing_scale.valueChanged.connect(
+            self.c.model_stardist.set_threshold_smoothing_scale
+        )
+        cp.threshold_lower_bound.valueChanged.connect(
+            self.c.model_stardist.set_threshold_lower_bound
+        )
+        cp.threshold_upper_bound.valueChanged.connect(
+            self.c.model_stardist.set_threshold_upper_bound
+        )
+        cp.manual_threshold.valueChanged.connect(
+            self.c.model_stardist.set_manual_threshold
+        )
+        cp.otsu_class.currentTextChanged.connect(
+            self.c.model_stardist.set_two_class_otsu
+        )
+        cp.otsu_middle.currentTextChanged.connect(
+            self.c.model_stardist.set_assign_middle_to_foreground
+        )
+        cp.object_fraction.valueChanged.connect(
+            self.c.model_stardist.set_object_fraction
+        )
+        cp.lower_outlier_fraction.valueChanged.connect(
+            self.c.model_stardist.set_lower_outlier_fraction
+        )
+        cp.upper_outlier_fraction.valueChanged.connect(
+            self.c.model_stardist.set_upper_outlier_fraction
+        )
+        cp.averaging_method.currentTextChanged.connect(
+            self.c.model_stardist.set_averaging_method
+        )
+        cp.variance_method.currentTextChanged.connect(
+            self.c.model_stardist.set_variance_method
+        )
+        cp.number_of_deviations.valueChanged.connect(
+            self.c.model_stardist.set_number_of_deviations
+        )
+        cp.adaptive_window_size.valueChanged.connect(
+            self.c.model_stardist.set_adaptive_window_size
+        )
+        cp.fill_holes_thresholding.toggled.connect(
+            self.c.model_stardist.set_fill_holes_after_thresholding
+        )
+        cp.fill_holes_declumping.toggled.connect(
+            self.c.model_stardist.set_fill_holes_after_declumping
+        )
+        cp.automatic_smoothing.toggled.connect(
+            self.c.model_stardist.set_automatic_smoothing
+        )
+        cp.smoothing_filter_size.valueChanged.connect(
+            self.c.model_stardist.set_smoothing_filter_size
+        )
+        cp.automatic_maxima_suppression.toggled.connect(
+            self.c.model_stardist.set_automatic_maxima_suppression
+        )
+        cp.maxima_suppression_size.valueChanged.connect(
+            self.c.model_stardist.set_maxima_suppression_size
+        )
+        cp.low_res_maxima.toggled.connect(
+            self.c.model_stardist.set_low_res_maxima
+        )
+        cp.exclude_border_objects.toggled.connect(
+            self.c.model_stardist.set_exclude_border_objects
+        )
+
         # Execution and results
         self.c.view.stardist_groupbox.stardist_run_button.pressed.connect(
             self.c.model_stardist.start
