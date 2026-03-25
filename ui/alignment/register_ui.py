@@ -1,11 +1,8 @@
-import os
-
 import numpy as np
 import pandas as pd
 from PyQt6.QtCore import QCoreApplication, QMetaObject, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QComboBox,
-    QFileDialog,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -152,5 +149,5 @@ class RegisterUI(QWidget):
         self.num_tiles_label.setText(_translate("MainWindow", "Number of Tiles"))
         self.overlap_label.setText(_translate("MainWindow", "Overlap"))
         self.ncc_threshold_label.setText(_translate("MainWindow", "NCC Threshold"))
-        self.run_button.setText(_translate("MainWindow", "Run"))
+        self.run_button.setText(_translate("MainWindow", "Run Full Image"))
         self.cancel_button.setText(_translate("MainWindow", "Cancel"))

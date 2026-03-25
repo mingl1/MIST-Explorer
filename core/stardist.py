@@ -14,11 +14,13 @@ from core import ImageWrapper
 from core.cellprofiler_segmentation import identify_primary_objects
 from core.image_utils import create_lut, scale_adjust
 from core.project_naming import STARDIST_LABEL_BASE_NAME, prefix_with_project_name
+from utils import resource_path
 
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 
 SEGMENTATION_METHOD_STARDIST = "StarDist"
 SEGMENTATION_METHOD_PRIMARY_OBJECTS = "CellProfiler-like"
+
 
 def normalize(x, pmin=3, pmax=99.8, axis=None, clip=False, eps=1e-20, dtype=np.float32):
     """Percentile-based image normalization."""
@@ -139,7 +141,9 @@ class StarDist(QThread):
         # Keep segmentation input high-bit depth while preserving display-window semantics.
         return contrasted_uint8.astype(np.uint16) * 257
 
-    def _resolve_segmentation_input(self, params=None, protein_channels=None, np_image=None):
+    def _resolve_segmentation_input(
+        self, params=None, protein_channels=None, np_image=None
+    ):
         if params is None:
             params = self.params
         if protein_channels is None:
@@ -242,7 +246,9 @@ class StarDist(QThread):
             self.np_image = None
             self.protein_channels = protein_channels
 
-    def set_protein_image(self, protein_channels, channel="Channel 1", name=None, source_uuid=None):
+    def set_protein_image(
+        self, protein_channels, channel="Channel 1", name=None, source_uuid=None
+    ):
         with self._state_lock:
             self.protein_channels = protein_channels
             self.params["channel"] = channel
@@ -484,7 +490,9 @@ class StarDist(QThread):
     def _emit_segmentation_result(
         self, project_name, is_temp_project, source_uuid=None
     ):
-        result = ImageWrapper(self.stardist_labels_grayscale, name="Channel 1", cmap="gray")
+        result = ImageWrapper(
+            self.stardist_labels_grayscale, name="Channel 1", cmap="gray"
+        )
         label_name = prefix_with_project_name(
             STARDIST_LABEL_BASE_NAME,
             project_name,
@@ -515,15 +523,21 @@ class StarDist(QThread):
         cp_settings = {
             "threshold_method": params.get("threshold_method", "MCT"),
             "threshold_scope": params.get("threshold_scope", "Global"),
-            "threshold_smoothing_scale": float(params.get("threshold_smoothing_scale", 1.3488)),
-            "threshold_correction_factor": float(params.get("threshold_correction_factor", 1.0)),
+            "threshold_smoothing_scale": float(
+                params.get("threshold_smoothing_scale", 1.3488)
+            ),
+            "threshold_correction_factor": float(
+                params.get("threshold_correction_factor", 1.0)
+            ),
             "threshold_range": (
                 float(params.get("threshold_lower_bound", 0.0)),
                 float(params.get("threshold_upper_bound", 1.0)),
             ),
             "manual_threshold": float(params.get("manual_threshold", 0.5)),
             "two_class_otsu": bool(params.get("two_class_otsu", True)),
-            "assign_middle_to_foreground": bool(params.get("assign_middle_to_foreground", True)),
+            "assign_middle_to_foreground": bool(
+                params.get("assign_middle_to_foreground", True)
+            ),
             "object_fraction": float(params.get("object_fraction", 0.2)),
             "lower_outlier_fraction": float(params.get("lower_outlier_fraction", 0.05)),
             "upper_outlier_fraction": float(params.get("upper_outlier_fraction", 0.05)),
@@ -531,12 +545,20 @@ class StarDist(QThread):
             "variance_method": params.get("variance_method", "Standard deviation"),
             "number_of_deviations": float(params.get("number_of_deviations", 2.0)),
             "adaptive_window_size": int(params.get("adaptive_window_size", 50)),
-            "fill_holes_after_thresholding": bool(params.get("fill_holes_after_thresholding", True)),
-            "fill_holes_after_declumping": bool(params.get("fill_holes_after_declumping", True)),
+            "fill_holes_after_thresholding": bool(
+                params.get("fill_holes_after_thresholding", True)
+            ),
+            "fill_holes_after_declumping": bool(
+                params.get("fill_holes_after_declumping", True)
+            ),
             "automatic_smoothing": bool(params.get("automatic_smoothing", True)),
             "smoothing_filter_size": float(params.get("smoothing_filter_size", 10.0)),
-            "automatic_maxima_suppression": bool(params.get("automatic_maxima_suppression", True)),
-            "maxima_suppression_size": float(params.get("maxima_suppression_size", 7.0)),
+            "automatic_maxima_suppression": bool(
+                params.get("automatic_maxima_suppression", True)
+            ),
+            "maxima_suppression_size": float(
+                params.get("maxima_suppression_size", 7.0)
+            ),
             "low_res_maxima": bool(params.get("low_res_maxima", True)),
             "exclude_border_objects": bool(params.get("exclude_border_objects", True)),
         }
@@ -558,7 +580,9 @@ class StarDist(QThread):
             try:
                 # Preserve large label ids for downstream processing.
                 self.stardist_labels_grayscale = np.asarray(
-                    dilate_labels(self.stardist_labels_grayscale, radius=params["radius"]),
+                    dilate_labels(
+                        self.stardist_labels_grayscale, radius=params["radius"]
+                    ),
                     dtype=np.int32,
                 )
             except Exception as exc:
@@ -585,7 +609,12 @@ class StarDist(QThread):
         self.progress.emit(0, "Starting StarDist")
         if self.current_model != str(params["model"]):
             try:
-                self.model = StarDist2D.from_pretrained(str(params["model"]))
+                if params["model"] != "2D_versatile_fluo":
+                    self._fatal_error_message(f"Unsupported model: {params['model']}")
+                    return
+                self.model = StarDist2D.from_openvino(
+                    model_dir=resource_path(f"assets/{params['model']}")
+                )
             except Exception as exc:
                 self._fatal_error_message(f"Model load failed: {exc}")
                 return
@@ -640,6 +669,8 @@ class StarDist(QThread):
         if self._cancel_requested:
             self.progress.emit(100, "Cancelled")
             return
+
+        self.stardist_labels_grayscale = np.asarray(stardist_labels, dtype=np.int32)
 
         if params.get("enable_dilation", True):
             self.progress.emit(95, "Dilating")

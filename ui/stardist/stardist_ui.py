@@ -206,7 +206,11 @@ class StarDistUI(QWidget):
             self.stardist_hlayout7,
         ]
         self._basic_stardist_rows = []
-        self._basic_primary_rows = [self.min_size_layout, self.max_size_layout, self.load_preset_button]
+        self._basic_primary_rows = [
+            self.min_size_layout,
+            self.max_size_layout,
+            self.load_preset_button,
+        ]
         self.segmentation_method_selector.currentTextChanged.connect(
             self._update_method_controls
         )
@@ -267,18 +271,14 @@ class StarDistUI(QWidget):
     def __retranslate_UI(self):
         _translate = QCoreApplication.translate
         self.stardist_groupbox.setTitle(
-            _translate(
-                "MainWindow", "Cell Segmentation - Current Canvas Image"
-            )
+            _translate("MainWindow", "Cell Segmentation - Current Canvas Image")
         )
         self.segmentation_tabs.setTabText(0, _translate("MainWindow", "Basic"))
         self.segmentation_tabs.setTabText(1, _translate("MainWindow", "Advanced"))
         self.stardist_channel_selector_label.setText(
             _translate("MainWindow", "Cell Channel")
         )
-        self.segmentation_method_label.setText(
-            _translate("MainWindow", "Method")
-        )
+        self.segmentation_method_label.setText(_translate("MainWindow", "Method"))
         self.stardist_label1.setText(_translate("MainWindow", "Pre-trained 2D Model"))
         self.stardist_label2.setText(_translate("MainWindow", "Percentile Low"))
         self.stardist_label3.setText(_translate("MainWindow", "Percentile High"))
@@ -295,6 +295,6 @@ class StarDistUI(QWidget):
         self.use_contrasted_checkbox.setText(
             _translate("MainWindow", "Use contrasted image (toolbar sliders)")
         )
-        self.stardist_run_button.setText(_translate("MainWindow", "Run"))
+        self.stardist_run_button.setText(_translate("MainWindow", "Run Full Image"))
         self.overlay_toggle_button.setText(_translate("MainWindow", "Show Overlay"))
         self.cancel_button.setText(_translate("MainWindow", "Cancel"))

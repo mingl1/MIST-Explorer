@@ -31,10 +31,18 @@ class CellProfilerAdvancedSettings(QWidget):
         self.threshold_method_layout = QHBoxLayout()
         self.threshold_method_label = QLabel()
         self.threshold_method = QComboBox()
-        self.threshold_method.addItems([
-            "MCT", "Otsu", "MoG", "Background",
-            "RobustBackground", "RidlerCalvard", "Kapur", "Manual",
-        ])
+        self.threshold_method.addItems(
+            [
+                "MCT",
+                "Otsu",
+                "MoG",
+                "Background",
+                "RobustBackground",
+                "RidlerCalvard",
+                "Kapur",
+                "Manual",
+            ]
+        )
         self.threshold_method_layout.addWidget(self.threshold_method_label)
         self.threshold_method_layout.addWidget(self.threshold_method)
         layout.addLayout(self.threshold_method_layout)
@@ -252,7 +260,6 @@ class CellProfilerAdvancedSettings(QWidget):
         self.exclude_border_objects.setChecked(True)
         layout.addWidget(self.exclude_border_objects)
 
-        # Crop & Experiment button
         self.crop_experiment_button = QPushButton()
         layout.addWidget(self.crop_experiment_button)
 
@@ -276,18 +283,19 @@ class CellProfilerAdvancedSettings(QWidget):
         ]
         self._adaptive_rows = [self.adaptive_layout]
         self._scope_rows = [self.threshold_scope_layout]
-        self._correction_rows = [self.tcf_layout, self.tss_layout, self.tlb_layout, self.tub_layout]
+        self._correction_rows = [
+            self.tcf_layout,
+            self.tss_layout,
+            self.tlb_layout,
+            self.tub_layout,
+        ]
 
     def _setup_connections(self):
         self.threshold_method.currentTextChanged.connect(
             self._update_threshold_method_controls
         )
-        self.threshold_scope.currentTextChanged.connect(
-            self._update_scope_controls
-        )
-        self.otsu_class.currentTextChanged.connect(
-            self._update_otsu_controls
-        )
+        self.threshold_scope.currentTextChanged.connect(self._update_scope_controls)
+        self.otsu_class.currentTextChanged.connect(self._update_otsu_controls)
         self.automatic_smoothing.toggled.connect(
             lambda checked: self._set_layout_visible(self.sfs_layout, not checked)
         )
@@ -378,14 +386,22 @@ class CellProfilerAdvancedSettings(QWidget):
         self.rb_var_label.setText(_t("MainWindow", "Variance Method"))
         self.rb_dev_label.setText(_t("MainWindow", "Number of Deviations"))
         self.adaptive_label.setText(_t("MainWindow", "Adaptive Window Size"))
-        self.fill_holes_thresholding.setText(_t("MainWindow", "Fill Holes After Thresholding"))
-        self.fill_holes_declumping.setText(_t("MainWindow", "Fill Holes After Declumping"))
-        self.automatic_smoothing.setText(_t("MainWindow", "Auto Smoothing for Declumping"))
+        self.fill_holes_thresholding.setText(
+            _t("MainWindow", "Fill Holes After Thresholding")
+        )
+        self.fill_holes_declumping.setText(
+            _t("MainWindow", "Fill Holes After Declumping")
+        )
+        self.automatic_smoothing.setText(
+            _t("MainWindow", "Auto Smoothing for Declumping")
+        )
         self.sfs_label.setText(_t("MainWindow", "Smoothing Filter Size"))
-        self.automatic_maxima_suppression.setText(_t("MainWindow", "Auto Maxima Suppression"))
+        self.automatic_maxima_suppression.setText(
+            _t("MainWindow", "Auto Maxima Suppression")
+        )
         self.mss_label.setText(_t("MainWindow", "Maxima Suppression Size"))
         self.low_res_maxima.setText(_t("MainWindow", "Low-Res Image for Maxima"))
         self.exclude_border_objects.setText(_t("MainWindow", "Exclude Border Objects"))
-        self.crop_experiment_button.setText(_t("MainWindow", "Crop && Experiment"))
+        self.crop_experiment_button.setText(_t("MainWindow", "Sample && Test"))
         self.save_preset_button.setText(_t("MainWindow", "Save Preset"))
         self.load_preset_button_adv.setText(_t("MainWindow", "Load Preset"))

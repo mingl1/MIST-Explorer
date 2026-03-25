@@ -25,7 +25,6 @@ from core.cellprofiler_segmentation import identify_primary_objects
 from core.image_utils import create_lut, numpy_to_qimage, scale_adjust
 from ui.stardist.cellprofiler_ui import CellProfilerAdvancedSettings
 
-
 # ---------------------------------------------------------------------------
 # Crop-capable QGraphicsView
 # ---------------------------------------------------------------------------
@@ -68,7 +67,9 @@ class CropImageView(QGraphicsView):
                 self._scene.removeItem(self._rect_item)
             pen = QPen(Qt.GlobalColor.cyan, 0)
             pen.setStyle(Qt.PenStyle.DashLine)
-            self._rect_item = self._scene.addRect(QRectF(self._origin, self._origin), pen)
+            self._rect_item = self._scene.addRect(
+                QRectF(self._origin, self._origin), pen
+            )
             self._drawing = True
             event.accept()
             return
@@ -169,7 +170,7 @@ class CropExperimentDialog(QDialog):
         use_contrasted_image: bool,
     ):
         super().__init__(None)
-        self.setWindowTitle("Crop & Experiment")
+        self.setWindowTitle("Sample & Test")
         self.resize(1200, 800)
 
         self._cell_image = cell_image
@@ -206,7 +207,9 @@ class CropExperimentDialog(QDialog):
         crop_page = QWidget()
         crop_layout = QVBoxLayout(crop_page)
 
-        crop_layout.addWidget(QLabel("Draw a rectangle on the image to select a crop region."))
+        crop_layout.addWidget(
+            QLabel("Draw a rectangle on the image to select a crop region.")
+        )
 
         self._crop_view = CropImageView()
         self._crop_view.setMinimumSize(600, 400)
@@ -547,8 +550,12 @@ class CropExperimentDialog(QDialog):
 
         cp.threshold_method.setCurrentText(s.get("threshold_method", "MCT"))
         cp.threshold_scope.setCurrentText(s.get("threshold_scope", "Global"))
-        cp.threshold_correction_factor.setValue(float(s.get("threshold_correction_factor", 1.0)))
-        cp.threshold_smoothing_scale.setValue(float(s.get("threshold_smoothing_scale", 1.3488)))
+        cp.threshold_correction_factor.setValue(
+            float(s.get("threshold_correction_factor", 1.0))
+        )
+        cp.threshold_smoothing_scale.setValue(
+            float(s.get("threshold_smoothing_scale", 1.3488))
+        )
 
         # Handle both threshold_range tuple and separate lower/upper keys
         if "threshold_range" in s:
@@ -570,17 +577,29 @@ class CropExperimentDialog(QDialog):
         cp.lower_outlier_fraction.setValue(float(s.get("lower_outlier_fraction", 0.05)))
         cp.upper_outlier_fraction.setValue(float(s.get("upper_outlier_fraction", 0.05)))
         cp.averaging_method.setCurrentText(s.get("averaging_method", "Mean"))
-        cp.variance_method.setCurrentText(s.get("variance_method", "Standard deviation"))
+        cp.variance_method.setCurrentText(
+            s.get("variance_method", "Standard deviation")
+        )
         cp.number_of_deviations.setValue(float(s.get("number_of_deviations", 2.0)))
         cp.adaptive_window_size.setValue(int(s.get("adaptive_window_size", 50)))
-        cp.fill_holes_thresholding.setChecked(bool(s.get("fill_holes_after_thresholding", True)))
-        cp.fill_holes_declumping.setChecked(bool(s.get("fill_holes_after_declumping", True)))
+        cp.fill_holes_thresholding.setChecked(
+            bool(s.get("fill_holes_after_thresholding", True))
+        )
+        cp.fill_holes_declumping.setChecked(
+            bool(s.get("fill_holes_after_declumping", True))
+        )
         cp.automatic_smoothing.setChecked(bool(s.get("automatic_smoothing", True)))
         cp.smoothing_filter_size.setValue(float(s.get("smoothing_filter_size", 10.0)))
-        cp.automatic_maxima_suppression.setChecked(bool(s.get("automatic_maxima_suppression", True)))
-        cp.maxima_suppression_size.setValue(float(s.get("maxima_suppression_size", 7.0)))
+        cp.automatic_maxima_suppression.setChecked(
+            bool(s.get("automatic_maxima_suppression", True))
+        )
+        cp.maxima_suppression_size.setValue(
+            float(s.get("maxima_suppression_size", 7.0))
+        )
         cp.low_res_maxima.setChecked(bool(s.get("low_res_maxima", True)))
-        cp.exclude_border_objects.setChecked(bool(s.get("exclude_border_objects", True)))
+        cp.exclude_border_objects.setChecked(
+            bool(s.get("exclude_border_objects", True))
+        )
 
     def _on_save(self):
         settings = self._collect_settings()
