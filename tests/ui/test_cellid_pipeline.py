@@ -112,7 +112,7 @@ def test_duplicate_collapse_prevents_lut_assignment_mismatch():
 
 def test_compute_all_centroids_supports_cancel():
     worker = CellIntensity()
-    worker.stardist_labels = np.array([[0, 1], [1, 1]], dtype=np.uint16)
+    worker.segmentation_labels = np.array([[0, 1], [1, 1]], dtype=np.uint16)
 
     worker.cancel()
     centroids = worker.compute_all_centroids()

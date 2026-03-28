@@ -120,9 +120,9 @@ class DataModel:
             sc.pp.scale(self.adata, max_value=10)
         elif self.normalization_method == "lognorm":
             logger.info("Applying log Normalization")
-            sc.pp.normalize_total(self.adata, target_sum=1_000)
+            sc.pp.normalize_total(self.adata, target_sum=1e4)
             sc.pp.log1p(self.adata)
-            sc.pp.scale(self.adata, max_value=3)
+            sc.pp.scale(self.adata, max_value=10)
             # adata = self.adata
             # adata.layers["counts"] = adata.X.copy()
             # sc.pp.normalize_total(adata, exclude_highly_expressed=False)

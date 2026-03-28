@@ -67,7 +67,7 @@ def test_allowed_exports_for_stardist_child_is_tif_and_png(qapp):
     channels = _multi_channels()
     channels["Channel 3"] = ImageWrapper(
         np.array([[0, 1], [1, 2]], dtype=np.uint16),
-        name="StarDist Labels",
+        name="Segmentation",
         cmap="label_image",
     )
     _add_image(manager, "multi_with_stardist", channels)
@@ -122,7 +122,7 @@ def test_single_layer_adds_channel_one_child_when_new_channel_added(qapp, image_
     assert storage_item is not None
     storage_item["data"]["Channel 2"] = ImageWrapper(
         np.array([[0, 1], [1, 2]], dtype=np.uint16),
-        name="StarDist Labels",
+        name="Segmentation",
         cmap="label_image",
     )
 
@@ -192,7 +192,7 @@ def test_save_as_tif_uses_non_imagej_for_int32_channel(qapp, monkeypatch, tmp_pa
         {
             "Channel 1": ImageWrapper(
                 np.array([[0, 70000], [1, 2]], dtype=np.int32),
-                name="StarDist Labels",
+                name="Segmentation",
                 cmap="label_image",
             )
         },

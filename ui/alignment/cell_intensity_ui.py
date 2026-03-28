@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from core.project_naming import is_stardist_label_name
+from core.project_naming import is_segmentation_name
 
 
 # pylint: disable=too-many-instance-attributes
@@ -69,7 +69,7 @@ class CellIntensityUI(QWidget):
         """Update available channels in dropdowns."""
         valid_channels = {}
         for channel_name, wrapper in channels.items():
-            if is_stardist_label_name(getattr(wrapper, "name", "")):
+            if is_segmentation_name(getattr(wrapper, "name", "")):
                 continue
             valid_channels[channel_name] = wrapper
 

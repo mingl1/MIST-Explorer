@@ -29,8 +29,8 @@ from core import ImageGraphicsView, ImageStorage, StarDist
 from core.canvas import ReferenceGraphicsView
 from core.project_manager import ProjectManager
 from core.project_naming import (
-    STARDIST_LABEL_BASE_NAME,
-    is_stardist_label_name,
+    SEGMENTATION_BASE_NAME,
+    is_segmentation_name,
     is_temp_project_name,
 )
 from models.image_list_model import ImageTreeItem, ImageTreeModel
@@ -151,13 +151,13 @@ class ImageManager(QWidget):
 
     def _channel_display_text(self, channel: str, wrapper):
         display_name = getattr(wrapper, "name", "") or channel
-        if is_stardist_label_name(display_name):
+        if is_segmentation_name(display_name):
             if (
-                display_name == STARDIST_LABEL_BASE_NAME
+                display_name == SEGMENTATION_BASE_NAME
                 and self.current_project_name
                 and not self.current_project_is_temp
             ):
-                display_name = f"{self.current_project_name}_{STARDIST_LABEL_BASE_NAME}"
+                display_name = f"{self.current_project_name}_{SEGMENTATION_BASE_NAME}"
             return f"{display_name}"
         if display_name != channel:
             return display_name
@@ -278,7 +278,7 @@ class ImageTreeWidget(QTreeView):
     tissue_target_selected = pyqtSignal(UUID, bool, int)
     tissue_unaligned_selected = pyqtSignal(UUID, bool, int)
     protein_data = pyqtSignal(UUID, int)
-    stardist_label = pyqtSignal(UUID, int)
+    segmentation_label = pyqtSignal(UUID, int)
     generation_source_selected = pyqtSignal(object, object)
     item_deleted = pyqtSignal(UUID)
 
@@ -363,18 +363,16 @@ class ImageTreeWidget(QTreeView):
             storage_item = self.storage.get_data(item_uuid)
             image_data = storage_item.get("data", {}) if storage_item else {}
             set_reference = QAction("Reference")
-            set_cell_image = QAction("Cell Image (Stardist)")
 
             set_tissue_target_image = QAction("Tissue Target Image")
             set_tissue_unaligned_image = QAction("Tissue Unaligned Image")
-            set_stardist_label = QAction("StarDist Label")
+            set_stardist_label = QAction("Set as Segmentation Label")
 
             save_as_tiff = QAction("Save as TIF")
 
             set_reference.triggered.connect(
                 lambda: self.show_on_reference_canvas(item_uuid, channel)
             )
-            set_cell_image.triggered.connect(lambda: self.set_for_stardist(item))
             set_tissue_target_image.triggered.connect(
                 lambda: self.set_as_tissue_target(item_uuid, is_leaf, channel)
             )
@@ -382,7 +380,7 @@ class ImageTreeWidget(QTreeView):
                 lambda: self.set_as_tissue_unaligned(item_uuid, is_leaf, channel)
             )
             set_stardist_label.triggered.connect(
-                lambda: self.set_as_stardist_label(item_uuid, channel)
+                lambda: self.set_as_segmentation_label(item_uuid, channel)
             )
 
             export_single_channel = channel_name if is_leaf else None
@@ -407,8 +405,7 @@ class ImageTreeWidget(QTreeView):
                 menu.addMenu(set_menu)
                 set_menu.addAction(set_reference)
 
-                stardist_menu = set_menu.addMenu("Stardist")
-                stardist_menu.addAction(set_cell_image)
+                set_menu.addAction(set_stardist_label)
 
                 tissue_menu = set_menu.addMenu("Tissue")
                 tissue_menu.addAction(set_tissue_target_image)
@@ -442,15 +439,10 @@ class ImageTreeWidget(QTreeView):
                 menu.addMenu(set_default_channel)
             else:
                 set_reference.setText("Set as Reference")
-                set_cell_image.setText("Set as Cell Image")
                 set_tissue_target_image.setText("Set as Tissue Target Image")
                 set_tissue_unaligned_image.setText("Set as Tissue Unaligned Image")
-                set_stardist_label.setText("Set as StarDist Label")
                 menu.addAction(set_reference)
-
-                stardist_menu = menu.addMenu("Stardist")
-                stardist_menu.addAction(set_cell_image)
-                stardist_menu.addAction(set_stardist_label)
+                menu.addAction(set_stardist_label)
 
                 tissue_menu = menu.addMenu("Tissue")
                 tissue_menu.addAction(set_tissue_target_image)
@@ -756,9 +748,9 @@ class ImageTreeWidget(QTreeView):
         """Set the selected image as the tissue unaligned image for alignment"""
         self.tissue_unaligned_selected.emit(i_uuid, is_leaf, channel)
 
-    def set_as_stardist_label(self, i_uuid: UUID, channel: int):
+    def set_as_segmentation_label(self, i_uuid: UUID, channel: int):
         """Set the selected image as the StarDist label image for alignment"""
-        self.stardist_label.emit(i_uuid, channel)
+        self.segmentation_label.emit(i_uuid, channel)
 
     def _emit_generation_source_selection(self, item_index):
         model = self.model()
@@ -785,7 +777,7 @@ class ImageTreeWidget(QTreeView):
             wrapper = image_data.get(channel_key)
             if wrapper is None:
                 continue
-            if is_stardist_label_name(getattr(wrapper, "name", "")):
+            if is_segmentation_name(getattr(wrapper, "name", "")):
                 return self._get_channel_idx(channel_key)
         return None
 

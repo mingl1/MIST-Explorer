@@ -26,7 +26,7 @@ def test_stardist_channel_selector_keeps_previous_selection_on_rebuild(qapp, qtb
     channels_with_virtual_label = {
         "Channel 1": SimpleNamespace(name="Channel 1"),
         "Channel 2": SimpleNamespace(name="Channel 2"),
-        "Channel 3": SimpleNamespace(name="StarDist Labels"),
+        "Channel 3": SimpleNamespace(name="Segmentation"),
     }
     stardist_ui.updateChannelSelector(channels_with_virtual_label)
 

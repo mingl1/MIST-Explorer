@@ -26,7 +26,7 @@ def _make_channels_with_stardist():
         "Channel 2": ImageWrapper(
             np.array([[10, 20], [30, 40]], dtype=np.uint16), "Channel 2"
         ),
-        "Channel 3": ImageWrapper(labels, name="StarDist Labels", cmap="label_image"),
+        "Channel 3": ImageWrapper(labels, name="Segmentation", cmap="label_image"),
     }
 
 
@@ -184,7 +184,7 @@ def test_uuid_reload_restores_stardist_overlay_state(qapp):
 
     _load_uuid_on_channel(view, image_uuid, "Channel 1")
 
-    assert view.stardist_labels is not None
+    assert view.segmentation_labels is not None
     assert view.stardist_virtual_channel == "Channel 3"
     assert view.stardist_source_channel == "Channel 1"
 

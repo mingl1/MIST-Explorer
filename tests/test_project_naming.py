@@ -1,7 +1,7 @@
 from core.project_naming import (
-    STARDIST_LABEL_BASE_NAME,
+    SEGMENTATION_BASE_NAME,
     default_project_prefixed_filename,
-    is_stardist_label_name,
+    is_segmentation_name,
     is_temp_project_name,
     prefix_with_project_name,
 )
@@ -16,23 +16,23 @@ def test_is_temp_project_name():
 def test_prefix_with_project_name_skips_temp_projects():
     assert (
         prefix_with_project_name(
-            STARDIST_LABEL_BASE_NAME,
+            SEGMENTATION_BASE_NAME,
             "Temp Project 2026-01-01 00-00-00 abc123",
         )
-        == STARDIST_LABEL_BASE_NAME
+        == SEGMENTATION_BASE_NAME
     )
 
 
 def test_prefix_with_project_name_adds_prefix_once():
-    prefixed = prefix_with_project_name(STARDIST_LABEL_BASE_NAME, "KidneyPanel")
-    assert prefixed == "KidneyPanel_StarDist Labels"
+    prefixed = prefix_with_project_name(SEGMENTATION_BASE_NAME, "KidneyPanel")
+    assert prefixed == "KidneyPanel_Segmentation"
     assert prefix_with_project_name(prefixed, "KidneyPanel") == prefixed
 
 
-def test_is_stardist_label_name_accepts_prefixed_names():
-    assert is_stardist_label_name(STARDIST_LABEL_BASE_NAME)
-    assert is_stardist_label_name("KidneyPanel_StarDist Labels")
-    assert not is_stardist_label_name("KidneyPanel_Label")
+def test_is_segmentation_name_accepts_prefixed_names():
+    assert is_segmentation_name(SEGMENTATION_BASE_NAME)
+    assert is_segmentation_name("KidneyPanel_Segmentation")
+    assert not is_segmentation_name("KidneyPanel_Label")
 
 
 def test_default_project_prefixed_filename():

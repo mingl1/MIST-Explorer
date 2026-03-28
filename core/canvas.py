@@ -50,7 +50,7 @@ from core.image_utils import (
 
 # Local/project imports
 from core.metadata_utils import parse_metadata
-from core.project_naming import STARDIST_LABEL_BASE_NAME, is_stardist_label_name
+from core.project_naming import SEGMENTATION_BASE_NAME, is_segmentation_name
 from core.Worker import Worker
 
 logger = logging.getLogger("core.canvas")
@@ -911,7 +911,7 @@ class ImageGraphicsView(BaseGraphicsView):
         self.crop_cursor = QCursor(Qt.CursorShape.CrossCursor)
         self.memory_cache = MemoryEfficientImageCache(max_cache_size_mb=3000)
         self.blur_worker = None
-        self.stardist_labels = None
+        self.segmentation_labels = None
         self.stardist_overlay_enabled = False
         self.stardist_overlay_alpha = 0.45
         self._stardist_overlay_rgb = None
@@ -964,7 +964,7 @@ class ImageGraphicsView(BaseGraphicsView):
             return "gray" if fallback_cmap == "label_image" else fallback_cmap
 
         if (
-            is_stardist_label_name(getattr(wrapper, "name", ""))
+            is_segmentation_name(getattr(wrapper, "name", ""))
             and wrapper.cmap == "label_image"
         ):
             resolved_cmap = self._resolve_stardist_virtual_cmap(fallback_cmap)
@@ -992,7 +992,7 @@ class ImageGraphicsView(BaseGraphicsView):
         self.clear_stardist_overlay()
 
     def clear_stardist_overlay(self):
-        self.stardist_labels = None
+        self.segmentation_labels = None
         self.stardist_overlay_enabled = False
         self._stardist_overlay_rgb = None
         self.stardist_source_channel = None
@@ -1001,12 +1001,12 @@ class ImageGraphicsView(BaseGraphicsView):
     def _restore_stardist_state_from_channels(self):
         self.clear_stardist_overlay()
         for channel_key, wrapper in self.working_channels.items():
-            if is_stardist_label_name(getattr(wrapper, "name", "")):
+            if is_segmentation_name(getattr(wrapper, "name", "")):
                 self.stardist_virtual_channel = channel_key
-                self.stardist_labels = wrapper.data.copy()
+                self.segmentation_labels = wrapper.data.copy()
                 break
 
-        if self.stardist_labels is None:
+        if self.segmentation_labels is None:
             return
 
         current_channel_key = f"Channel {self.current_channel + 1}"
@@ -1019,14 +1019,14 @@ class ImageGraphicsView(BaseGraphicsView):
                 continue
             if (
                 wrapper.data.ndim == 2
-                and wrapper.data.shape == self.stardist_labels.shape
+                and wrapper.data.shape == self.segmentation_labels.shape
             ):
                 self.stardist_source_channel = channel_key
                 return
 
     def set_stardist_overlay_enabled(self, enabled: bool):
         self.stardist_overlay_enabled = (
-            bool(enabled) and self.stardist_labels is not None
+            bool(enabled) and self.segmentation_labels is not None
         )
         if not self.stardist_overlay_enabled:
             self._stardist_overlay_rgb = None
@@ -1034,7 +1034,7 @@ class ImageGraphicsView(BaseGraphicsView):
 
     def remove_virtual_stardist_channel(self, channel_key: str) -> bool:
         wrapper = self.working_channels.get(channel_key)
-        if wrapper is None or not is_stardist_label_name(getattr(wrapper, "name", "")):
+        if wrapper is None or not is_segmentation_name(getattr(wrapper, "name", "")):
             return False
 
         self.working_channels.pop(channel_key, None)
@@ -1087,11 +1087,11 @@ class ImageGraphicsView(BaseGraphicsView):
         return f"Channel {next_index + 1}"
 
     def _upsert_stardist_virtual_channel(
-        self, labels: np.ndarray, label_name: str = STARDIST_LABEL_BASE_NAME
+        self, labels: np.ndarray, label_name: str = SEGMENTATION_BASE_NAME
     ):
         if self.stardist_virtual_channel is None:
             for channel_key, wrapper in self.working_channels.items():
-                if is_stardist_label_name(getattr(wrapper, "name", "")):
+                if is_segmentation_name(getattr(wrapper, "name", "")):
                     self.stardist_virtual_channel = channel_key
                     break
             if self.stardist_virtual_channel is None:
@@ -1124,10 +1124,10 @@ class ImageGraphicsView(BaseGraphicsView):
         current_channel_key = f"Channel {self.current_channel + 1}"
         if (
             not self.stardist_overlay_enabled
-            or self.stardist_labels is None
+            or self.segmentation_labels is None
             or image_to_display.size == 0
             or self.image_wrapper.data.ndim != 2
-            or self.stardist_labels.shape != self.image_wrapper.data.shape
+            or self.segmentation_labels.shape != self.image_wrapper.data.shape
             or self.stardist_source_channel is None
             or current_channel_key != self.stardist_source_channel
             or current_channel_key == self.stardist_virtual_channel
@@ -1146,10 +1146,10 @@ class ImageGraphicsView(BaseGraphicsView):
 
         if self._stardist_overlay_rgb is None:
             self._stardist_overlay_rgb = self._build_stardist_overlay(
-                self.stardist_labels
+                self.segmentation_labels
             )
 
-        mask = self.stardist_labels > 0
+        mask = self.segmentation_labels > 0
         if not np.any(mask):
             return base_rgb
 
@@ -1333,17 +1333,17 @@ class ImageGraphicsView(BaseGraphicsView):
             channel_num, cache_key, contrast_min, contrast_max
         )
 
-    def load_stardist_labels(self, stardist: ImageWrapper, *metadata):
-        label_name = STARDIST_LABEL_BASE_NAME
+    def load_segmentation_labels(self, stardist: ImageWrapper, *metadata):
+        label_name = SEGMENTATION_BASE_NAME
         if metadata:
             candidate_name = metadata[-1]
             if isinstance(candidate_name, str) and candidate_name.strip():
                 label_name = candidate_name
-        self.stardist_labels = stardist.data.copy()
+        self.segmentation_labels = stardist.data.copy()
         self.stardist_overlay_enabled = False
         self._stardist_overlay_rgb = None
         self._upsert_stardist_virtual_channel(
-            self.stardist_labels, label_name=label_name
+            self.segmentation_labels, label_name=label_name
         )
         self._set_stardist_source_channel()
         if self.image_wrapper.cmap == "label_image":

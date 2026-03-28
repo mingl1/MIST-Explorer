@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (QFileDialog, QGroupBox, QHBoxLayout, QLabel,
 
 from core import MetaData
 from core.project_manager import ProjectManager
-from core.project_naming import is_stardist_label_name
+from core.project_naming import is_segmentation_name
 from ui.toolbar.menubar_ui import MenuBarUI
 from ui.toolbar.toolbar_ui import ToolBarUI
 from utils import resource_path
@@ -175,7 +175,7 @@ class MainWindow(QMainWindow):
                         channel_name, channel_name
                     )
                     channel_cmap = (
-                        "label_image" if is_stardist_label_name(display_name) else "gray"
+                        "label_image" if is_segmentation_name(display_name) else "gray"
                     )
                     wrapper = ImageWrapper(
                         channel_array,

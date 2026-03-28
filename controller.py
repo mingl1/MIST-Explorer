@@ -23,7 +23,7 @@ from core import (
     StarDist,
 )
 from core.project_manager import ProjectManager
-from core.project_naming import is_stardist_label_name, is_temp_project_name
+from core.project_naming import is_segmentation_name, is_temp_project_name
 from ui.alignment.alignment_preview_dialog import AlignmentPreviewDialog
 from ui.stardist.crop_experiment_dialog import CropExperimentDialog
 
@@ -373,7 +373,7 @@ class SignalConnectionManager:
 
     def _resolve_stardist_channel_key(self, channel_map: dict) -> str:
         for channel_key, wrapper in channel_map.items():
-            if is_stardist_label_name(getattr(wrapper, "name", "")):
+            if is_segmentation_name(getattr(wrapper, "name", "")):
                 return channel_key
         return self._next_available_channel_key(channel_map)
 
@@ -410,8 +410,8 @@ class SignalConnectionManager:
         current_uuid = self.c.model_canvas.uuid
 
         if source_uuid is None or str(current_uuid) == str(source_uuid):
-            self.c.model_canvas.load_stardist_labels(stardist_wrapper, label_name)
-            self.c.model_cell_intensity.load_stardist_labels(stardist_wrapper)
+            self.c.model_canvas.load_segmentation_labels(stardist_wrapper, label_name)
+            self.c.model_cell_intensity.load_segmentation_labels(stardist_wrapper)
             self.c.view.stardist_groupbox.overlay_toggle_button.setChecked(False)
             return
 
@@ -942,8 +942,8 @@ class SignalConnectionManager:
         self.c.view.images_tab.image_tree_view.protein_data.connect(
             self.c.model_cell_intensity.load_protein_signal_array_from_storage
         )
-        self.c.view.images_tab.image_tree_view.stardist_label.connect(
-            self.c.model_cell_intensity.load_stardist_labels_from_storage
+        self.c.view.images_tab.image_tree_view.segmentation_label.connect(
+            self.c.model_cell_intensity.load_segmentation_labels_from_storage
         )
         self.c.view.images_tab.image_tree_view.generation_source_selected.connect(
             self._handle_generation_source_selected
@@ -986,14 +986,14 @@ class SignalConnectionManager:
         self.c.model_cell_intensity.set_source_uuid(item_uuid if has_source else None)
         self.c.view.cell_intensity_groupbox.set_generation_enabled(has_source)
         if not has_source:
-            self.c.model_cell_intensity.clear_stardist_labels()
+            self.c.model_cell_intensity.clear_segmentation_labels()
             return
 
         if stardist_channel is None:
-            self.c.model_cell_intensity.clear_stardist_labels()
+            self.c.model_cell_intensity.clear_segmentation_labels()
             return
 
-        self.c.model_cell_intensity.load_stardist_labels_from_storage(
+        self.c.model_cell_intensity.load_segmentation_labels_from_storage(
             item_uuid, int(stardist_channel)
         )
 

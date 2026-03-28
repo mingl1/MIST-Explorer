@@ -388,10 +388,10 @@ class UMAPControls(QWidget):
         # === 1. PCA ===
         pca_group = QGroupBox(Locale.get("GRP_PCA"))
         pca_layout = QVBoxLayout()
-        self.lbl_pca = QLabel(Locale.get("LBL_COMPONENTS", 10))
+        self.lbl_pca = QLabel(Locale.get("LBL_COMPONENTS", 5))
         self.slider_pca = QSlider(Qt.Orientation.Horizontal)
         self.slider_pca.setRange(2, max_pca_components)
-        self.slider_pca.setValue(10)
+        self.slider_pca.setValue(5)
         self.slider_pca.valueChanged.connect(
             lambda v: self.lbl_pca.setText(Locale.get("LBL_COMPONENTS", v))
         )

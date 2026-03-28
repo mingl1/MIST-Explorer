@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from core.project_naming import is_stardist_label_name
+from core.project_naming import is_segmentation_name
 from ui.stardist.cellprofiler_ui import CellProfilerAdvancedSettings
 
 
@@ -228,7 +228,7 @@ class StarDistUI(QWidget):
             [
                 key
                 for key, wrapper in channels.items()
-                if not is_stardist_label_name(getattr(wrapper, "name", ""))
+                if not is_segmentation_name(getattr(wrapper, "name", ""))
             ],
             key=lambda x: int(x.replace("Channel ", "")),
         )

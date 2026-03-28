@@ -13,7 +13,7 @@ from stardist.models import StarDist2D
 from core import ImageWrapper
 from core.cellprofiler_segmentation import identify_primary_objects
 from core.image_utils import create_lut, scale_adjust
-from core.project_naming import STARDIST_LABEL_BASE_NAME, prefix_with_project_name
+from core.project_naming import SEGMENTATION_BASE_NAME, prefix_with_project_name
 from utils import resource_path
 
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
@@ -494,7 +494,7 @@ class StarDist(QThread):
             self.stardist_labels_grayscale, name="Channel 1", cmap="gray"
         )
         label_name = prefix_with_project_name(
-            STARDIST_LABEL_BASE_NAME,
+            SEGMENTATION_BASE_NAME,
             project_name,
             is_temp_project=is_temp_project,
         )

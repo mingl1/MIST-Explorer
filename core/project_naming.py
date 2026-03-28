@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-STARDIST_LABEL_BASE_NAME = "StarDist Labels"
+SEGMENTATION_BASE_NAME = "Segmentation"
 TEMP_PROJECT_PREFIX = "Temp Project "
 
 
@@ -36,12 +36,12 @@ def prefix_with_project_name(
     return f"{prefix}{base_name}"
 
 
-def is_stardist_label_name(label_name: str | None) -> bool:
-    """Match StarDist virtual-label names with or without a project prefix."""
+def is_segmentation_name(label_name: str | None) -> bool:
+    """Match segmentation label names with or without a project prefix."""
     if not label_name:
         return False
-    return label_name == STARDIST_LABEL_BASE_NAME or label_name.endswith(
-        f"_{STARDIST_LABEL_BASE_NAME}"
+    return label_name == SEGMENTATION_BASE_NAME or label_name.endswith(
+        f"_{SEGMENTATION_BASE_NAME}"
     )
 
 

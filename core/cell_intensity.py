@@ -13,7 +13,7 @@ from core import ImageWrapper
 from core.canvas import ImageStorage
 from core.project_naming import (
     default_project_prefixed_filename,
-    is_stardist_label_name,
+    is_segmentation_name,
 )
 
 logger = logging.getLogger(__name__)
@@ -72,7 +72,7 @@ class CellIntensity(QThread):
         }
 
         self.channel_to_color_code = {}
-        self.stardist_labels = np.array([], dtype=np.int32)
+        self.segmentation_labels = np.array([], dtype=np.int32)
         self.df_cell_data = None
         self.storage = ImageStorage()
         self.protein_signal_array = None
@@ -95,21 +95,21 @@ class CellIntensity(QThread):
         data = item.get("data", None)
         assert data is not None, "data not found in storage item"
         wrapper = data[c]
-        if is_stardist_label_name(getattr(wrapper, "name", "")):
+        if is_segmentation_name(getattr(wrapper, "name", "")):
             raise ValueError(
                 f"{c} is a virtual StarDist channel and cannot be used for generation."
             )
         self.load_protein_signal_array(wrapper.data)
         logger.info("loaded protein signal array from storage")
 
-    def load_stardist_labels_from_storage(self, uuid, channel):
+    def load_segmentation_labels_from_storage(self, uuid, channel):
         item = self.storage.get_data(uuid)
         assert item is not None, "item not found in storage"
         data = item.get("data", None)
         assert data is not None, "data not found in storage item"
         c = "Channel " + str(channel + 1)
-        stardist_labels = data[c]
-        self.load_stardist_labels(stardist_labels)
+        segmentation_labels = data[c]
+        self.load_segmentation_labels(segmentation_labels)
         logger.info("loaded stardist labels from storage")
 
     def load_protein_signal_array(self, arr):
@@ -139,7 +139,7 @@ class CellIntensity(QThread):
             return None
 
         centroids = {}
-        regions = regionprops(self.stardist_labels)
+        regions = regionprops(self.segmentation_labels)
         total_regions = len(regions)
         if total_regions == 0:
             return centroids
@@ -197,14 +197,14 @@ class CellIntensity(QThread):
                 self.critical_error(str(exc))
                 return
             if (
-                self.stardist_labels is None
-                or self.stardist_labels.size == 0
+                self.segmentation_labels is None
+                or self.segmentation_labels.size == 0
                 or self.bead_data is None
                 or self.channel_to_color_code is None
                 or self.protein_signal_array is None
             ):
                 err_msg = "Missing: "
-                if self.stardist_labels is None or self.stardist_labels.size == 0:
+                if self.segmentation_labels is None or self.segmentation_labels.size == 0:
                     err_msg += "stardist labels, "
                 if self.bead_data is None:
                     err_msg += "bead data, "
@@ -239,7 +239,7 @@ class CellIntensity(QThread):
                 # 3: [[], [], [], [], []]
                 #     }
                 num_proteins = len(color_code_to_index)
-                unique_cell_ids = np.unique(self.stardist_labels)
+                unique_cell_ids = np.unique(self.segmentation_labels)
                 unique_cell_ids = unique_cell_ids[unique_cell_ids > 0]
                 if unique_cell_ids.size == 0:
                     self.critical_error("No segmented cells found in StarDist labels.")
@@ -260,10 +260,10 @@ class CellIntensity(QThread):
                 radius_bg = self.params["radius_bg"]
                 max_size = self.params["max_size"]
                 # filter out beads that are not within bounds of
-                # stardist_labels
+                # segmentation_labels
                 x_limit, y_limit = (
-                    self.stardist_labels.shape[1],
-                    self.stardist_labels.shape[0],
+                    self.segmentation_labels.shape[1],
+                    self.segmentation_labels.shape[0],
                 )
                 logger.debug("before filtering %s", data_modified.shape)
                 data_modified = [
@@ -286,7 +286,7 @@ class CellIntensity(QThread):
 
                 # Get the cell ID for every bead in a single, fast operation
                 # This is the core of the vectorization!
-                cell_ids_for_beads = self.stardist_labels[bead_ys, bead_xs]
+                cell_ids_for_beads = self.segmentation_labels[bead_ys, bead_xs]
 
                 # --- 2. Create Boolean Masks for All Conditions ---
 
@@ -306,9 +306,9 @@ class CellIntensity(QThread):
                 # The final mask identifies beads that satisfy ALL conditions
                 valid_bead_mask = in_cell_mask & in_bounds_mask
 
-                # remove in_cell_mask and edit self.stardist_labels to include psuedo-cells,
-                # note the labels should start with max(self.stardist_labels)+1;
-                # after editing self.stardist_labels, rest of code shouldn't
+                # remove in_cell_mask and edit self.segmentation_labels to include psuedo-cells,
+                # note the labels should start with max(self.segmentation_labels)+1;
+                # after editing self.segmentation_labels, rest of code shouldn't
                 # need to be changed
 
                 # --- 4. Filter the Data ---
@@ -599,14 +599,14 @@ class CellIntensity(QThread):
         """Define the linear function for the correction equation"""
         return 0.8266 * x + 3970.1
 
-    def clear_stardist_labels(self):
+    def clear_segmentation_labels(self):
         """Reset loaded StarDist labels."""
-        self.stardist_labels = np.array([], dtype=np.int32)
+        self.segmentation_labels = np.array([], dtype=np.int32)
 
-    def load_stardist_labels(self, stardist: ImageWrapper) -> None:
+    def load_segmentation_labels(self, stardist: ImageWrapper) -> None:
         if stardist.data.size == 0:
             logger.warning("Received empty stardist label image")
-            self.clear_stardist_labels()
+            self.clear_segmentation_labels()
             return
         logger.debug("stardist label dtype: %s", stardist.data.dtype)
         logger.debug(
@@ -614,18 +614,18 @@ class CellIntensity(QThread):
             np.max(stardist.data),
             np.min(stardist.data),
         )
-        self.stardist_labels = np.asarray(stardist.data, dtype=np.int32)
+        self.segmentation_labels = np.asarray(stardist.data, dtype=np.int32)
 
     def get_filtered_bead_count(self):
-        if self.bead_data is None or self.stardist_labels.size == 0:
+        if self.bead_data is None or self.segmentation_labels.size == 0:
             self.error_signal.emit("Bead data or stardist labels not loaded.")
             return
         coords = self.bead_data[:, 0:2].astype(int)
-        x_limit, y_limit = self.stardist_labels.shape[1], self.stardist_labels.shape[0]
+        x_limit, y_limit = self.segmentation_labels.shape[1], self.segmentation_labels.shape[0]
         in_bounds = (coords[:, 0] < x_limit) & (coords[:, 1] < y_limit)
         coords = coords[in_bounds]
         bead_data_filtered = self.bead_data[in_bounds]
-        cell_ids = self.stardist_labels[coords[:, 1], coords[:, 0]]
+        cell_ids = self.segmentation_labels[coords[:, 1], coords[:, 0]]
         in_cell = cell_ids > 0
         total_in_cell = int(np.sum(in_cell))
         if total_in_cell == 0:
