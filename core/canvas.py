@@ -863,6 +863,7 @@ class ReferenceGraphicsView(BaseGraphicsView):
         self.reference_worker = None
         if isinstance(i, UUID_Type):
             self.set_uuid(i)
+            self.storage.add_data("reference_channel", {"value": target_channel})
             item = self.storage.get_data(str(i))
             assert item is not None, "UUID not found in storage"
             image_data = item.get("data", None)

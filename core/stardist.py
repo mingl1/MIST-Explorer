@@ -10,7 +10,7 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtWidgets import QFileDialog
 from stardist.models import StarDist2D
 
-from core import ImageWrapper
+from core import ImageStorage, ImageWrapper
 from core.cellprofiler_segmentation import identify_primary_objects
 from core.image_utils import create_lut, scale_adjust
 from core.project_naming import SEGMENTATION_BASE_NAME, prefix_with_project_name
@@ -254,6 +254,9 @@ class StarDist(QThread):
             self.params["channel"] = channel
             if source_uuid is not None:
                 self.source_uuid = str(source_uuid)
+                ImageStorage().add_data(
+                    "seg_source_uuid", {"value": str(source_uuid), "channel": channel}
+                )
         self.cell_image_set.emit(name, channel)
         with self._state_lock:
             self.np_image = None

@@ -101,6 +101,7 @@ class Controller:
         self.view.images_tab.set_model_canvas(self.model_canvas)
         self.view.images_tab.set_model_stardist(self.model_stardist)
         self.view.images_tab.set_model_reference_canvas(self.model_reference_canvas)
+        self.view.images_tab.finalize_badge_connections()
         self.signal_manager = SignalConnectionManager(self)
         self.signal_manager.setup_all_connections()
         self.storage = self.view.images_tab.storage

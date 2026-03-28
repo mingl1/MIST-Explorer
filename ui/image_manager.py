@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
 
 from core import ImageGraphicsView, ImageStorage, StarDist
 from core.canvas import ReferenceGraphicsView
+from ui.status_badge_delegate import StatusBadgeDelegate
 from core.project_manager import ProjectManager
 from core.project_naming import (
     SEGMENTATION_BASE_NAME,
@@ -55,6 +56,7 @@ class ImageManager(QWidget):
         self.root_node = self.image_tree_model.invisibleRootItem()
         # max icon size
         self.image_tree_view.setIconSize(QSize(50, 50))
+        self.image_tree_view.setItemDelegate(StatusBadgeDelegate(self.image_tree_view))
         self.image_tree_view.setHeaderHidden(True)
         self.storage = ImageStorage()
         self.__layout.addWidget(self.image_tree_view)
@@ -101,6 +103,10 @@ class ImageManager(QWidget):
         """Set the reference canvas model."""
         self.model_reference_canvas = model
         self.image_tree_view.model_reference_canvas = model
+
+    def finalize_badge_connections(self):
+        """Call once after all three models have been set to wire badge repaints."""
+        self.image_tree_view.connect_badge_refresh_signals()
 
     def add_item(self, item_uuid):
         """Add an item to the tree."""
@@ -741,16 +747,72 @@ class ImageTreeWidget(QTreeView):
 
     def set_as_tissue_target(self, i_uuid: UUID, is_leaf: bool, channel: int):
         """Set the selected image as the tissue target image for alignment"""
-
+        self.storage.add_data("tissue_target_uuid", {"value": i_uuid, "channel": channel})
         self.tissue_target_selected.emit(i_uuid, is_leaf, channel)
 
     def set_as_tissue_unaligned(self, i_uuid: UUID, is_leaf: bool, channel: int):
         """Set the selected image as the tissue unaligned image for alignment"""
+        self.storage.add_data("tissue_unaligned_uuid", {"value": i_uuid, "channel": channel})
         self.tissue_unaligned_selected.emit(i_uuid, is_leaf, channel)
 
     def set_as_segmentation_label(self, i_uuid: UUID, channel: int):
         """Set the selected image as the StarDist label image for alignment"""
+        self.storage.add_data("seg_label_uuid", {"value": i_uuid, "channel": channel})
         self.segmentation_label.emit(i_uuid, channel)
+
+    # ------------------------------------------------------------------
+    # Badge repaint helpers
+    # ------------------------------------------------------------------
+
+    def _refresh_badges(self, *_):
+        """Repaint immediately — used by all role-state signals except stardist_done."""
+        if self._model_canvas is not None:
+            ch = self._model_canvas.current_channel
+            self.storage.add_data("canvas_channel", {"value": f"Channel {ch + 1}"})
+        self.viewport().update()
+
+    def _refresh_badges_deferred(self, *_):
+        """Repaint on next event loop tick.
+
+        stardist_done fires before the controller writes the label channel to
+        ImageStorage, so we defer one tick to pick up the new data.
+        """
+        from PyQt6.QtCore import QTimer
+
+        QTimer.singleShot(0, self.viewport().update)
+
+    def connect_badge_refresh_signals(self):
+        """Connect every role-state signal to a viewport repaint.
+
+        Must be called once after set_model_canvas / set_model_stardist /
+        set_model_reference_canvas have all been called.
+
+        Connections are grouped as:
+          - immediate : repaint on the same tick the state changes
+          - deferred  : repaint after the event loop flushes (stardist label write)
+          - self      : own signals already carry the UUID, just need repaint
+        """
+        immediate_signals = [
+            self._model_canvas.uuid_changed,
+            self._model_canvas.update_channel,
+            self._model_reference_canvas.update_reference,
+            self._model_stardist.cell_image_set,
+        ]
+        deferred_signals = [
+            self._model_stardist.stardist_done,
+        ]
+        self_signals = [
+            self.tissue_target_selected,
+            self.tissue_unaligned_selected,
+            self.segmentation_label,
+        ]
+
+        for sig in immediate_signals:
+            sig.connect(self._refresh_badges)
+        for sig in deferred_signals:
+            sig.connect(self._refresh_badges_deferred)
+        for sig in self_signals:
+            sig.connect(self._refresh_badges)
 
     def _emit_generation_source_selection(self, item_index):
         model = self.model()
