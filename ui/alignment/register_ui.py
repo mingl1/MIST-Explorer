@@ -39,22 +39,6 @@ class RegisterUI(QWidget):
         self.alignment_layer_layout.addWidget(self.alignment_layer)
         self.register_components_vlayout.addLayout(self.alignment_layer_layout)
 
-        # cell layer
-        self.protein_cell_layer_layout = QHBoxLayout()
-        self.protein_cell_layer = QComboBox(self.register_groupbox)
-        self.protein_cell_layer_label = QLabel()
-        self.protein_cell_layer_layout.addWidget(self.protein_cell_layer_label)
-        self.protein_cell_layer_layout.addWidget(self.protein_cell_layer)
-        self.register_components_vlayout.addLayout(self.protein_cell_layer_layout)
-
-        # intensity layer
-        self.intensity_layer_layout = QHBoxLayout()
-        self.intensity_layer = QComboBox(self.register_groupbox)
-        self.intensity_layer_label = QLabel()
-        self.intensity_layer_layout.addWidget(self.intensity_layer_label)
-        self.intensity_layer_layout.addWidget(self.intensity_layer)
-        self.register_components_vlayout.addLayout(self.intensity_layer_layout)
-
         # max size
         self.max_size_layout = QHBoxLayout()
         self.max_size_label = QLabel(self.register_groupbox)
@@ -123,28 +107,18 @@ class RegisterUI(QWidget):
     def updateChannelSelector(self, channels: dict):
         """Update the channel selectors with available channels."""
         self.alignment_layer.clear()
-        self.protein_cell_layer.clear()
-        self.intensity_layer.clear()
         channel_keys = sorted(
             channels.keys(), key=lambda x: int(x.replace("Channel ", ""))
         )
 
         self.alignment_layer.addItems(channel_keys)
-        self.protein_cell_layer.addItems(channel_keys)
-        self.intensity_layer.addItems(channel_keys)
-        if len(channels) >= 3:
+        if len(channels) >= 1:
             self.alignment_layer.setCurrentIndex(0)
-            self.protein_cell_layer.setCurrentIndex(1)
-            self.intensity_layer.setCurrentIndex(2)
 
     def __retranslate_UI(self):
         _translate = QCoreApplication.translate
         self.register_groupbox.setTitle(_translate("MainWindow", "Align Arrays"))
         self.alignment_layer_label.setText(_translate("MainWindow", "Reference Layer"))
-        self.protein_cell_layer_label.setText(_translate("MainWindow", "Cell Layer"))
-        self.intensity_layer_label.setText(
-            _translate("MainWindow", "Protein Detection Layer")
-        )
         self.max_size_label.setText(_translate("MainWindow", "Max Size"))
         self.num_tiles_label.setText(_translate("MainWindow", "Number of Tiles"))
         self.overlap_label.setText(_translate("MainWindow", "Overlap"))

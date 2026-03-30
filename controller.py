@@ -334,7 +334,7 @@ class Controller:
 
         # Update ROI button visibility based on tab
         # Show on View (1) and Analyze (2) tabs, hide on Extract (0)
-        if hasattr(self.view, 'canvas'):
+        if hasattr(self.view, "canvas"):
             should_show_buttons = index in (1, 2)
             self.view.canvas.set_buttons_visible(should_show_buttons)
 
@@ -708,9 +708,7 @@ class SignalConnectionManager:
         cp.maxima_suppression_size.valueChanged.connect(
             self.c.model_stardist.set_maxima_suppression_size
         )
-        cp.low_res_maxima.toggled.connect(
-            self.c.model_stardist.set_low_res_maxima
-        )
+        cp.low_res_maxima.toggled.connect(self.c.model_stardist.set_low_res_maxima)
         cp.exclude_border_objects.toggled.connect(
             self.c.model_stardist.set_exclude_border_objects
         )
@@ -751,15 +749,21 @@ class SignalConnectionManager:
         current_settings = {
             "threshold_method": params.get("threshold_method", "MCT"),
             "threshold_scope": params.get("threshold_scope", "Global"),
-            "threshold_smoothing_scale": float(params.get("threshold_smoothing_scale", 1.3488)),
-            "threshold_correction_factor": float(params.get("threshold_correction_factor", 1.0)),
+            "threshold_smoothing_scale": float(
+                params.get("threshold_smoothing_scale", 1.3488)
+            ),
+            "threshold_correction_factor": float(
+                params.get("threshold_correction_factor", 1.0)
+            ),
             "threshold_range": (
                 float(params.get("threshold_lower_bound", 0.0)),
                 float(params.get("threshold_upper_bound", 1.0)),
             ),
             "manual_threshold": float(params.get("manual_threshold", 0.5)),
             "two_class_otsu": bool(params.get("two_class_otsu", True)),
-            "assign_middle_to_foreground": bool(params.get("assign_middle_to_foreground", True)),
+            "assign_middle_to_foreground": bool(
+                params.get("assign_middle_to_foreground", True)
+            ),
             "object_fraction": float(params.get("object_fraction", 0.2)),
             "lower_outlier_fraction": float(params.get("lower_outlier_fraction", 0.05)),
             "upper_outlier_fraction": float(params.get("upper_outlier_fraction", 0.05)),
@@ -767,12 +771,20 @@ class SignalConnectionManager:
             "variance_method": params.get("variance_method", "Standard deviation"),
             "number_of_deviations": float(params.get("number_of_deviations", 2.0)),
             "adaptive_window_size": int(params.get("adaptive_window_size", 50)),
-            "fill_holes_after_thresholding": bool(params.get("fill_holes_after_thresholding", True)),
-            "fill_holes_after_declumping": bool(params.get("fill_holes_after_declumping", True)),
+            "fill_holes_after_thresholding": bool(
+                params.get("fill_holes_after_thresholding", True)
+            ),
+            "fill_holes_after_declumping": bool(
+                params.get("fill_holes_after_declumping", True)
+            ),
             "automatic_smoothing": bool(params.get("automatic_smoothing", True)),
             "smoothing_filter_size": float(params.get("smoothing_filter_size", 10.0)),
-            "automatic_maxima_suppression": bool(params.get("automatic_maxima_suppression", True)),
-            "maxima_suppression_size": float(params.get("maxima_suppression_size", 7.0)),
+            "automatic_maxima_suppression": bool(
+                params.get("automatic_maxima_suppression", True)
+            ),
+            "maxima_suppression_size": float(
+                params.get("maxima_suppression_size", 7.0)
+            ),
             "low_res_maxima": bool(params.get("low_res_maxima", True)),
             "exclude_border_objects": bool(params.get("exclude_border_objects", True)),
         }
@@ -798,10 +810,18 @@ class SignalConnectionManager:
 
         cp.threshold_method.setCurrentText(settings.get("threshold_method", "MCT"))
         cp.threshold_scope.setCurrentText(settings.get("threshold_scope", "Global"))
-        cp.threshold_correction_factor.setValue(float(settings.get("threshold_correction_factor", 1.0)))
-        cp.threshold_smoothing_scale.setValue(float(settings.get("threshold_smoothing_scale", 1.3488)))
-        cp.threshold_lower_bound.setValue(float(settings.get("threshold_lower_bound", 0.0)))
-        cp.threshold_upper_bound.setValue(float(settings.get("threshold_upper_bound", 1.0)))
+        cp.threshold_correction_factor.setValue(
+            float(settings.get("threshold_correction_factor", 1.0))
+        )
+        cp.threshold_smoothing_scale.setValue(
+            float(settings.get("threshold_smoothing_scale", 1.3488))
+        )
+        cp.threshold_lower_bound.setValue(
+            float(settings.get("threshold_lower_bound", 0.0))
+        )
+        cp.threshold_upper_bound.setValue(
+            float(settings.get("threshold_upper_bound", 1.0))
+        )
         cp.manual_threshold.setValue(float(settings.get("manual_threshold", 0.5)))
 
         two_class = settings.get("two_class_otsu", True)
@@ -810,26 +830,50 @@ class SignalConnectionManager:
         cp.otsu_middle.setCurrentText("Foreground" if fg else "Background")
 
         cp.object_fraction.setValue(float(settings.get("object_fraction", 0.2)))
-        cp.lower_outlier_fraction.setValue(float(settings.get("lower_outlier_fraction", 0.05)))
-        cp.upper_outlier_fraction.setValue(float(settings.get("upper_outlier_fraction", 0.05)))
+        cp.lower_outlier_fraction.setValue(
+            float(settings.get("lower_outlier_fraction", 0.05))
+        )
+        cp.upper_outlier_fraction.setValue(
+            float(settings.get("upper_outlier_fraction", 0.05))
+        )
         cp.averaging_method.setCurrentText(settings.get("averaging_method", "Mean"))
-        cp.variance_method.setCurrentText(settings.get("variance_method", "Standard deviation"))
-        cp.number_of_deviations.setValue(float(settings.get("number_of_deviations", 2.0)))
+        cp.variance_method.setCurrentText(
+            settings.get("variance_method", "Standard deviation")
+        )
+        cp.number_of_deviations.setValue(
+            float(settings.get("number_of_deviations", 2.0))
+        )
         cp.adaptive_window_size.setValue(int(settings.get("adaptive_window_size", 50)))
-        cp.fill_holes_thresholding.setChecked(bool(settings.get("fill_holes_after_thresholding", True)))
-        cp.fill_holes_declumping.setChecked(bool(settings.get("fill_holes_after_declumping", True)))
-        cp.automatic_smoothing.setChecked(bool(settings.get("automatic_smoothing", True)))
-        cp.smoothing_filter_size.setValue(float(settings.get("smoothing_filter_size", 10.0)))
-        cp.automatic_maxima_suppression.setChecked(bool(settings.get("automatic_maxima_suppression", True)))
-        cp.maxima_suppression_size.setValue(float(settings.get("maxima_suppression_size", 7.0)))
+        cp.fill_holes_thresholding.setChecked(
+            bool(settings.get("fill_holes_after_thresholding", True))
+        )
+        cp.fill_holes_declumping.setChecked(
+            bool(settings.get("fill_holes_after_declumping", True))
+        )
+        cp.automatic_smoothing.setChecked(
+            bool(settings.get("automatic_smoothing", True))
+        )
+        cp.smoothing_filter_size.setValue(
+            float(settings.get("smoothing_filter_size", 10.0))
+        )
+        cp.automatic_maxima_suppression.setChecked(
+            bool(settings.get("automatic_maxima_suppression", True))
+        )
+        cp.maxima_suppression_size.setValue(
+            float(settings.get("maxima_suppression_size", 7.0))
+        )
         cp.low_res_maxima.setChecked(bool(settings.get("low_res_maxima", True)))
-        cp.exclude_border_objects.setChecked(bool(settings.get("exclude_border_objects", True)))
+        cp.exclude_border_objects.setChecked(
+            bool(settings.get("exclude_border_objects", True))
+        )
 
         sg.min_size.setValue(int(settings.get("min_size", 60)))
         sg.max_size.setValue(int(settings.get("max_size", 180)))
         sg.enable_dilation.setChecked(bool(settings.get("enable_dilation", True)))
         sg.radius.setValue(int(settings.get("dilation_radius", 5)))
-        sg.use_contrasted_checkbox.setChecked(bool(settings.get("use_contrasted_image", False)))
+        sg.use_contrasted_checkbox.setChecked(
+            bool(settings.get("use_contrasted_image", False))
+        )
 
     def _gather_cp_settings(self) -> dict:
         """Collect all CellProfiler-like settings from UI widgets into a dict."""
@@ -900,12 +944,6 @@ class SignalConnectionManager:
         # Parameters
         self.c.view.register_groupbox.alignment_layer.currentTextChanged.connect(
             self.c.model_register.set_alignment_layer
-        )
-        self.c.view.register_groupbox.protein_cell_layer.currentTextChanged.connect(
-            self.c.model_register.set_cell_layer
-        )
-        self.c.view.register_groupbox.intensity_layer.currentTextChanged.connect(
-            self.c.model_register.set_protein_detection_layer
         )
         self.c.view.register_groupbox.overlap.valueChanged.connect(
             self.c.model_register.set_overlap

@@ -8,17 +8,19 @@ import numpy as np
 import pandas as pd
 import qtrangeslider
 import tifffile as tiff
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QImage
+from PyQt6.QtCore import QByteArray, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QColor, QIcon, QImage, QPainter, QPalette, QPixmap
+from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
+    QApplication,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
-    QFormLayout,
-    QGroupBox,
+    QFrame,
+    QGridLayout,
     QHBoxLayout,
-    QLabel,
     QLineEdit,
+    QLabel,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
@@ -33,6 +35,7 @@ from PyQt6.QtWidgets import (
 
 from controller import Controller
 from core.image_utils import auto_contrast_helper, create_lut, scale_adjust
+from utils import resource_path
 
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 import os
@@ -46,7 +49,6 @@ from ui.analysis.graphing.UMAPPlot import UMAPVisualizer
 Image.MAX_IMAGE_PIXELS = None
 
 color_dict = {
-    "None": [255, 255, 255],
     "red": [255, 0, 0],
     "blue": [0, 0, 255],
     "green": [0, 255, 0],
@@ -105,7 +107,7 @@ class ControlsBox:
     def __init__(self):
         self.name = ""
         self.image = np.array([[]])
-        self.base_image = np.array([[]]) # Stores the unthresholded 0-255 image
+        self.base_image = np.array([[]])  # Stores the unthresholded 0-255 image
         self.q_image = None
         self.cell_image = np.array([[]])
         self.contrast_cache = {}
@@ -119,6 +121,9 @@ class ControlsBox:
         # actual components that we just want to keep track of
         self.tint_label = None
         self.opacity_slider = None
+        self.title_label = (
+            None  # QLabel in the compact title bar, updated on layer reorder
+        )
 
         # entire component layout
         self.layout = None
@@ -261,7 +266,9 @@ def collapse_duplicate_cell_ids(df):
         if col not in protected_cols and pd.api.types.is_numeric_dtype(df[col])
     ]
     other_cols = [
-        col for col in df.columns if col not in protected_cols and col not in numeric_cols
+        col
+        for col in df.columns
+        if col not in protected_cols and col not in numeric_cols
     ]
 
     agg_map = {col: "first" for col in coordinate_cols}
@@ -926,9 +933,12 @@ class ImageOverlay(QWidget):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             selected_color_name = dialog.get_selected_color_name()
             if selected_color_name:
-                selected_color = color_dict[selected_color_name]
-                selected_color = QColor(*selected_color)
-                self.controls[idx].tint_label.setText(selected_color_name)
+                rgb = color_dict[selected_color_name]
+                selected_color = QColor(*rgb)
+                self.controls[idx].tint_label.setStyleSheet(
+                    f"QPushButton {{ background: rgb({rgb[0]},{rgb[1]},{rgb[2]}); border: 1px solid #888; border-radius: 2px; }}"
+                    "QPushButton:hover { border-color: #555; }"
+                )
                 self.update_layer_cmap_sig.emit(
                     idx, np.array(self.get_lut(selected_color))
                 )
@@ -973,7 +983,7 @@ class ImageOverlay(QWidget):
         layer = None
 
         for i, control in enumerate(self.controls):
-            control.layout.setTitle(f"Layer {i + 1}: {control.name}")
+            control.title_label.setText(f"Layer {i + 1}: {control.name}")
         self.process_images()
         self.change_pix.emit(np.ndarray(0), index)
 
@@ -982,162 +992,334 @@ class ImageOverlay(QWidget):
             return  # Don't restart while still moving
         self.contrast_timer.start()
 
+    @staticmethod
+    def _layer_theme() -> dict:
+        is_dark = (
+            QApplication.palette().color(QPalette.ColorRole.Window).lightness() < 128
+        )
+        if is_dark:
+            return {
+                "label": "#aaa",
+                "muted": "#888",
+                "accent": "#64b5f6",
+                "subtle": "#777",
+                "subtle_open": "#ddd",
+                "tint_none": "#999",
+            }
+        return {
+            "label": "#555",
+            "muted": "#888",
+            "accent": "#1976d2",
+            "subtle": "#999",
+            "subtle_open": "#333",
+            "tint_none": "#666",
+        }
+
+    @staticmethod
+    def make_svg_icon(svg_path: str, size: int = 22) -> QIcon:
+        palette = QApplication.palette()
+        is_dark = palette.color(QPalette.ColorRole.Window).lightness() < 128
+        color = "#ffffff" if is_dark else "#000000"
+        with open(svg_path, "r") as f:
+            svg_text = f.read()
+        svg_text = svg_text.replace("currentColor", color)
+        renderer = QSvgRenderer(QByteArray(svg_text.encode()))
+        pixmap = QPixmap(size, size)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        renderer.render(painter)
+        painter.end()
+        return QIcon(pixmap)
+
     def add_layer_controls(self, c):
         idx = len(self.controls) - 1
+        theme = self._layer_theme()
 
-        group_box = QGroupBox(f"Layer {idx + 1}: {c.name}")
-        group_box.setSizePolicy(
+        # --- Icons (loaded once per call; small overhead) ---
+        icon_eye_open = self.make_svg_icon(resource_path("assets/icons/eye_open.svg"))
+        icon_eye_closed = self.make_svg_icon(
+            resource_path("assets/icons/eye_closed.svg")
+        )
+
+        # ── Outer card (replaces QGroupBox; this is the "gb" passed to all handlers) ──
+        layer_card = QFrame()
+        layer_card.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
         )
-        group_box.setAlignment(Qt.AlignmentFlag.AlignBaseline)
+        layer_card.setFrameShape(QFrame.Shape.StyledPanel)
+        card_layout = QVBoxLayout(layer_card)
+        card_layout.setContentsMargins(0, 0, 0, 0)
+        card_layout.setSpacing(0)
 
-        group_layout = QFormLayout()
-        group_layout.setSpacing(8)  # Add spacing between form rows
-        auto_contrast_button = QPushButton("Auto Contrast")
+        # ── Title bar ──
+        title_bar = QWidget()
+        title_bar.setObjectName("layerTitleBar")
+        title_bar_layout = QHBoxLayout(title_bar)
+        title_bar_layout.setContentsMargins(8, 3, 4, 3)
+        title_bar_layout.setSpacing(4)
 
-        auto_contrast_button.clicked.connect(
-            lambda _, gb=group_box: self.auto_contrast(gb)
+        name_label = QLabel(f"Layer {idx + 1}: {c.name}")
+        name_label.setStyleSheet("font-weight: bold; font-size: 11px;")
+        title_bar_layout.addWidget(name_label, stretch=1)
+
+        tint_square = QPushButton()
+        tint_square.setFixedSize(15, 15)
+        tint_square.setToolTip("Set layer tint")
+        tint_square.setFlat(True)
+        tint_square.setStyleSheet(
+            "QPushButton { background: white; border: 1px solid #888; border-radius: 2px; } "
+            "QPushButton:hover { border-color: #555; }"
         )
+        title_bar_layout.addWidget(tint_square)
 
+        eye_btn = QPushButton()
+        eye_btn.setIcon(icon_eye_open)
+        eye_btn.setFixedSize(22, 22)
+        eye_btn.setCheckable(True)
+        eye_btn.setChecked(True)
+        eye_btn.setToolTip("Hide layer")
+        eye_btn.setFlat(True)
+        eye_btn.setStyleSheet(
+            "QPushButton { background: transparent; border: none; margin-left: 4px; } QPushButton:hover { background: #f5c518; border-radius: 3px; }"
+        )
+        title_bar_layout.addWidget(eye_btn)
+
+        delete_btn = QPushButton("✕")
+        delete_btn.setFixedSize(22, 22)
+        delete_btn.setToolTip("Delete layer")
+        delete_btn.setFlat(True)
+        delete_btn.setStyleSheet(
+            "QPushButton:hover { background: #e57373; color: white; border-radius: 3px; } QPushButton { font-size:18px; }"
+        )
+        title_bar_layout.addWidget(delete_btn)
+
+        card_layout.addWidget(title_bar)
+
+        # ── Collapsible body ──
+        body_widget = QWidget()
+        body_layout = QVBoxLayout(body_widget)
+        body_layout.setContentsMargins(7, 5, 7, 6)
+        body_layout.setSpacing(3)
+
+        # Opacity + Contrast rows share a grid so their sliders align
+        slider_grid = QGridLayout()
+        slider_grid.setSpacing(4)
+        slider_grid.setColumnStretch(2, 1)  # slider column expands
+
+        lbl_style = f"font-size: 10px; color: {theme['label']}; font-weight: 600;"
+        muted_style = f"font-size: 10px; color: {theme['muted']};"
+
+        # Opacity row (grid row 0)
+        opa_lbl = QLabel("Opacity")
+        opa_lbl.setStyleSheet(lbl_style)
         opacity_slider = QSlider(Qt.Orientation.Horizontal)
-        opacity_slider.setMinimumWidth(300)
         opacity_slider.setMaximum(100)
         opacity_slider.setValue(100)
-        # opacity_slider.sliderReleased.connect(
-        #     lambda: self.update_opacity(opacity_slider.value(), idx)
-        # )
-        opacity_slider.valueChanged.connect(
-            lambda s, gb=group_box: self.update_opacity(s, gb)
+        opa_val_edit = QLineEdit("100")
+        opa_val_edit.setFixedWidth(32)
+        opa_val_edit.setAlignment(Qt.AlignmentFlag.AlignRight)
+        opa_val_edit.setStyleSheet(
+            f"font-size: 10px; color: {theme['accent']}; font-weight: 600;"
+            " border: none; background: transparent;"
         )
-        # self.opacity_timer.timeout.connect(
-        #     lambda: self.update_opacity(opacity_slider.value(), idx)
-        # )
-        group_layout.addRow("Opacity:", opacity_slider)
+        slider_grid.addWidget(opa_lbl, 0, 0)
+        slider_grid.addWidget(opacity_slider, 0, 2)
+        slider_grid.addWidget(opa_val_edit, 0, 3)
 
-        # --- Existing Contrast Slider ---
-        contrast_slider = qtrangeslider.QLabeledDoubleRangeSlider(
-            Qt.Orientation.Horizontal
-        )
+        # Contrast row (grid row 1)
+        con_lbl = QLabel("Contrast")
+        con_lbl.setStyleSheet(lbl_style)
+        initial_contrast = self._default_contrast_for_image(c.image)
+        con_lo_edit = QLineEdit(str(int(initial_contrast[0])))
+        con_lo_edit.setFixedWidth(32)
+        con_lo_edit.setAlignment(Qt.AlignmentFlag.AlignRight)
+        con_lo_edit.setStyleSheet(lbl_style + " border: none; background: transparent;")
+        contrast_slider = qtrangeslider.QDoubleRangeSlider(Qt.Orientation.Horizontal)
         contrast_slider.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
         )
-        contrast_slider.setMinimumWidth(300)
-        # contrast_slider.valueChanged.connect(lambda _: self.restart_contrast_timer())
-
-        # self.contrast_timer.timeout.connect(lambda: self.set_contrast_from_slider(idx))
-        contrast_slider.valueChanged.connect(
-            lambda s, gb=group_box: self.set_contrast_from_slider(s, gb)
-        )
-
         contrast_slider.setMaximum(255)
-        initial_contrast = self._default_contrast_for_image(c.image)
         contrast_slider.blockSignals(True)
         contrast_slider.setValue(initial_contrast)
         contrast_slider.blockSignals(False)
-        contrast_slider.setDecimals(0)
+        con_hi_edit = QLineEdit(str(int(initial_contrast[1])))
+        con_hi_edit.setFixedWidth(32)
+        con_hi_edit.setStyleSheet(lbl_style + " border: none; background: transparent;")
+        slider_grid.addWidget(con_lbl, 1, 0)
+        slider_grid.addWidget(con_lo_edit, 1, 1)
+        slider_grid.addWidget(contrast_slider, 1, 2)
+        slider_grid.addWidget(con_hi_edit, 1, 3)
+
+        body_layout.addLayout(slider_grid)
+
         self.contrast_sliders.append(contrast_slider)
         self.controls[idx].current_contrast = [initial_contrast[0], initial_contrast[1]]
-        # contrast_slider.installEventFilter(self)
 
-        contrast_label = QLabel("Contrast:")
-        contrast_label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-        group_layout.addRow(contrast_label, contrast_slider)
-
-        # --- New: Visibility Threshold Slider ---
-        visibility_threshold_slider = qtrangeslider.QLabeledDoubleRangeSlider(
-            Qt.Orientation.Horizontal
+        # Visibility threshold — collapsible section
+        vis_toggle_btn = QPushButton("▸ Visibility Threshold")
+        vis_toggle_btn.setFlat(True)
+        vis_toggle_btn.setStyleSheet(
+            f"font-size: 10px; color: {theme['subtle']}; text-align: left; padding: 1px 0;"
         )
-        visibility_threshold_slider.setSizePolicy(
+        body_layout.addWidget(vis_toggle_btn)
+
+        vis_body = QWidget()
+        vis_body.setVisible(False)
+        vis_body_layout = QVBoxLayout(vis_body)
+        vis_body_layout.setContentsMargins(0, 0, 0, 0)
+        vis_body_layout.setSpacing(3)
+        vis_row = QHBoxLayout()
+        vis_row.setContentsMargins(0, 0, 0, 0)
+        vis_row.setSpacing(4)
+        vis_lbl = QLabel("Vis")
+        vis_lbl.setFixedWidth(24)
+        vis_lbl.setStyleSheet(
+            f"font-size: 10px; color: {theme['muted']}; font-weight: 600;"
+        )
+        vis_lo_edit = QLineEdit("0.0")
+        vis_lo_edit.setFixedWidth(32)
+        vis_lo_edit.setAlignment(Qt.AlignmentFlag.AlignRight)
+        vis_lo_edit.setStyleSheet(
+            f"font-size: 10px; color: {theme['muted']}; border: none; background: transparent;"
+        )
+        vis_slider = qtrangeslider.QDoubleRangeSlider(Qt.Orientation.Horizontal)
+        vis_slider.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
         )
-        visibility_threshold_slider.setMinimumWidth(300)
-        visibility_threshold_slider.setMinimum(0.0)
-        visibility_threshold_slider.setMaximum(100.0)
-        visibility_threshold_slider.setDecimals(1)
-        visibility_threshold_slider.blockSignals(True)
-        visibility_threshold_slider.setValue((0.0, 100.0))
-        visibility_threshold_slider.blockSignals(False)
-        visibility_threshold_slider.valueChanged.connect(
-            lambda s, gb=group_box: self.update_visibility_threshold(s, gb)
+        vis_slider.setMinimum(0.0)
+        vis_slider.setMaximum(100.0)
+        vis_slider.blockSignals(True)
+        vis_slider.setValue((0.0, 100.0))
+        vis_slider.blockSignals(False)
+        vis_hi_edit = QLineEdit("100.0")
+        vis_hi_edit.setFixedWidth(32)
+        vis_hi_edit.setStyleSheet(
+            f"font-size: 10px; color: {theme['muted']}; border: none; background: transparent;"
         )
-        
-        vis_thresh_label = QLabel("Visibility Threshold (%):")
-        vis_thresh_label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-        group_layout.addRow(vis_thresh_label, visibility_threshold_slider)
+        vis_row.addWidget(vis_lbl)
+        vis_row.addWidget(vis_lo_edit)
+        vis_row.addWidget(vis_slider)
+        vis_row.addWidget(vis_hi_edit)
+        vis_body_layout.addLayout(vis_row)
+        auto_contrast_button = QPushButton("Auto Contrast")
+        vis_body_layout.addWidget(auto_contrast_button)
+        body_layout.addWidget(vis_body)
 
-        # --- New: Numeric Inputs for Min/Max ---
-        min_input = QLineEdit()
-        min_input.setPlaceholderText("Min")
-        min_input.setFixedWidth(50)
+        card_layout.addWidget(body_widget)
 
-        max_input = QLineEdit()
-        max_input.setPlaceholderText("Max")
-        max_input.setFixedWidth(50)
+        # ── Signal connections ──
+        opacity_slider.valueChanged.connect(
+            lambda s, gb=layer_card: self.update_opacity(s, gb)
+        )
 
-        apply_contrast_button = QPushButton("Set Contrast")
+        def on_opacity_slider_changed(s):
+            opa_val_edit.blockSignals(True)
+            opa_val_edit.setText(str(s))
+            opa_val_edit.blockSignals(False)
 
-        # Layout for inputs
-        contrast_input_layout = QHBoxLayout()
-        contrast_input_layout.addWidget(QLabel("Min:"))
-        contrast_input_layout.addWidget(min_input)
-        contrast_input_layout.addWidget(QLabel("Max:"))
-        contrast_input_layout.addWidget(max_input)
-        contrast_input_layout.addWidget(apply_contrast_button)
-        group_layout.addRow("", contrast_input_layout)
+        opacity_slider.valueChanged.connect(on_opacity_slider_changed)
 
-        # --- Button Logic ---
-        def apply_contrast_values():
-            idx = self.scroll_layout.indexOf(group_box)
+        def on_opacity_edited():
             try:
-                min_val = int(min_input.text())
-                max_val = int(max_input.text())
-                if 0 <= min_val < max_val <= 255:
-                    contrast_slider.setValue((min_val, max_val))
-                    self.update_contrast((min_val, max_val), idx)
-                else:
-                    logger.warning("Invalid contrast range!")
+                v = max(0, min(int(opa_val_edit.text()), 100))
             except ValueError:
-                logger.warning("Enter valid integers for contrast.")
+                v = opacity_slider.value()
+            opa_val_edit.setText(str(v))
+            opacity_slider.setValue(v)
 
-        apply_contrast_button.clicked.connect(apply_contrast_values)
+        opa_val_edit.editingFinished.connect(on_opacity_edited)
 
-        group_layout.addRow(auto_contrast_button)
-        visibility_button = QPushButton("Toggle Visibility")
-        visibility_button.setCheckable(True)
-        visibility_button.setChecked(True)
-        # visibility_button.toggled.connect(
-        #     lambda checked: self.update_visibility(checked, idx)
-        # )
-        visibility_button.toggled.connect(
-            lambda checked, gb=group_box: self.update_visibility(checked, gb)
+        def on_contrast_changed(val, gb=layer_card):
+            con_lo_edit.blockSignals(True)
+            con_hi_edit.blockSignals(True)
+            con_lo_edit.setText(str(int(val[0])))
+            con_hi_edit.setText(str(int(val[1])))
+            con_lo_edit.blockSignals(False)
+            con_hi_edit.blockSignals(False)
+            self.set_contrast_from_slider(val, gb)
+
+        contrast_slider.valueChanged.connect(on_contrast_changed)
+
+        def on_lo_edited():
+            try:
+                v = max(0, min(int(con_lo_edit.text()), int(contrast_slider.value()[1])))
+            except ValueError:
+                v = int(contrast_slider.value()[0])
+            con_lo_edit.setText(str(v))
+            contrast_slider.setValue((v, contrast_slider.value()[1]))
+
+        def on_hi_edited():
+            try:
+                v = max(int(contrast_slider.value()[0]), min(int(con_hi_edit.text()), 255))
+            except ValueError:
+                v = int(contrast_slider.value()[1])
+            con_hi_edit.setText(str(v))
+            contrast_slider.setValue((contrast_slider.value()[0], v))
+
+        con_lo_edit.editingFinished.connect(on_lo_edited)
+        con_hi_edit.editingFinished.connect(on_hi_edited)
+
+        def on_vis_slider_changed(val, gb=layer_card):
+            vis_lo_edit.blockSignals(True)
+            vis_hi_edit.blockSignals(True)
+            vis_lo_edit.setText(f"{val[0]:.1f}")
+            vis_hi_edit.setText(f"{val[1]:.1f}")
+            vis_lo_edit.blockSignals(False)
+            vis_hi_edit.blockSignals(False)
+            self.update_visibility_threshold(val, gb)
+
+        vis_slider.valueChanged.connect(on_vis_slider_changed)
+
+        def on_vis_lo_edited():
+            try:
+                v = max(0.0, min(float(vis_lo_edit.text()), vis_slider.value()[1]))
+            except ValueError:
+                v = vis_slider.value()[0]
+            vis_lo_edit.setText(f"{v:.1f}")
+            vis_slider.setValue((v, vis_slider.value()[1]))
+
+        def on_vis_hi_edited():
+            try:
+                v = max(vis_slider.value()[0], min(float(vis_hi_edit.text()), 100.0))
+            except ValueError:
+                v = vis_slider.value()[1]
+            vis_hi_edit.setText(f"{v:.1f}")
+            vis_slider.setValue((vis_slider.value()[0], v))
+
+        vis_lo_edit.editingFinished.connect(on_vis_lo_edited)
+        vis_hi_edit.editingFinished.connect(on_vis_hi_edited)
+
+        def on_vis_toggle():
+            open_ = not vis_body.isVisible()
+            vis_body.setVisible(open_)
+            vis_toggle_btn.setText(("▾ " if open_ else "▸ ") + "Visibility Threshold")
+            color = theme["subtle_open"] if open_ else theme["subtle"]
+            vis_toggle_btn.setStyleSheet(
+                f"font-size: 10px; color: {color}; text-align: left; padding: 1px 0;"
+            )
+
+        vis_toggle_btn.clicked.connect(on_vis_toggle)
+
+        def on_eye_toggled(checked, gb=layer_card):
+            self.update_visibility(checked, gb)
+            body_widget.setVisible(checked)
+            eye_btn.setIcon(icon_eye_open if checked else icon_eye_closed)
+            eye_btn.setToolTip("Hide layer" if checked else "Show layer")
+
+        eye_btn.toggled.connect(on_eye_toggled)
+
+        auto_contrast_button.clicked.connect(
+            lambda _, gb=layer_card: self.auto_contrast(gb)
         )
-        # self.visibility_buttons.append(visibility_button)
-        group_layout.addRow("Visibility:", visibility_button)
+        tint_square.clicked.connect(lambda _, gb=layer_card: self.show_color_dialog(gb))
+        delete_btn.clicked.connect(lambda _, gb=layer_card: self.delete_layer(gb))
 
-        color_button = QPushButton("Select Tint Color")
-        color_button.clicked.connect(lambda _, gb=group_box: self.show_color_dialog(gb))
-        # color_button.clicked.connect(lambda: self.show_color_dialog(idx))
-        # self.color_tints.append(color_button)
-        color_label = QLabel("None")
-
-        color_layout = QHBoxLayout()
-        color_layout.addWidget(color_button)
-        color_layout.addWidget(color_label)
-        group_layout.addRow("Tint Color:", color_layout)
-
-        delete_button = QPushButton("Delete Layer")
-        # delete_button.clicked.connect(lambda: self.delete_layer(idx))
-        delete_button.clicked.connect(lambda _, gb=group_box: self.delete_layer(gb))
-        # self.visibility_buttons.append(delete_button)
-        group_layout.addRow("", delete_button)
-
-        # self.opacity_sliders.append(opacity_slider)
+        # ── Store refs ──
         self.controls[idx].opacity_slider = opacity_slider
-        self.controls[idx].tint_label = color_label
-
-        group_box.setLayout(group_layout)
-        self.controls[idx].layout = group_box
-        self.scroll_layout.addWidget(group_box)
+        self.controls[idx].tint_label = tint_square
+        self.controls[idx].title_label = name_label
+        self.controls[idx].layout = layer_card
+        self.scroll_layout.addWidget(layer_card)
 
     def set_contrast_from_slider(self, value, gb):
         min_val, max_val = value
@@ -1184,26 +1366,26 @@ class ImageOverlay(QWidget):
         idx = self.scroll_layout.indexOf(gb)
         if idx == -1:
             return
-            
+
         c = self.controls[idx]
         c.current_visibility_threshold = [value[0], value[1]]
 
         # Get foreground raw intensity values
         raw_cell_image = c.cell_image
         foreground = raw_cell_image[raw_cell_image > 0]
-        
+
         if foreground.size > 0:
             # Calculate actual intensity thresholds
             lower_val, upper_val = np.percentile(foreground, [value[0], value[1]])
-            
+
             # Create a mask for visible cells
             mask = (raw_cell_image >= lower_val) & (raw_cell_image <= upper_val)
-            
+
             # Update the image
             c.image = np.where(mask, c.base_image, 0)
         else:
             c.image = c.base_image.copy()
-            
+
         # Trigger redraw
         self.change_pix.emit(c.image, idx)
         self.update_layer_display(idx)

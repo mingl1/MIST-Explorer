@@ -14,6 +14,7 @@ uv.lock
 *.ipynb
 test.sh
 
+
 assets/sample_data/demo/overlay.tif
 
 # Untracked tools & build directories
@@ -22,6 +23,8 @@ assets/sample_data/demo/overlay.tif
 build/
 dist/
 docs/_build/
+tools/
+.claude/
 
 # Logs, scratch scripts & untracked docs
 app_debug.log
