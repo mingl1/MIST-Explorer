@@ -166,6 +166,22 @@ class ProjectManager:
                 logger.error("Failed to save channel '%s' to '%s': %s", channel_name, channel_path, e, exc_info=True)
                 raise
 
+        # Remove channel files that are no longer part of the current channel set
+        current_channel_nums = set()
+        for channel_name in channel_data.keys():
+            try:
+                current_channel_nums.add(int(channel_name.replace("Channel ", "")))
+            except ValueError:
+                pass
+        for existing_path in image_folder.glob("channel_*.tif"):
+            suffix = existing_path.stem[len("channel_"):]
+            try:
+                num = int(suffix)
+            except ValueError:
+                continue
+            if num not in current_channel_nums:
+                existing_path.unlink()
+
         if contrast_settings is None:
             contrast_settings = {}
         if channel_display_names is None:

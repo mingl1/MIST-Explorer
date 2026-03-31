@@ -693,7 +693,10 @@ class ImageTreeWidget(QTreeView):
                     arrays = [
                         channel_obj.data
                         for _, channel_obj in sorted(channel_dict.items())
+                        if not is_segmentation_name(getattr(channel_obj, "name", ""))
                     ]
+                    if not arrays:
+                        return
                     stacked = np.stack(arrays, axis=0)  # Shape: (channels, H, W)
                     tifffile.imwrite(
                         file_path,

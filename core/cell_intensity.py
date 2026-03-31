@@ -60,6 +60,7 @@ class CellIntensity(QThread):
     error_signal = pyqtSignal(str)
     progress = pyqtSignal(int, str)
     filtered_stats_ready = pyqtSignal(float)
+    protein_distribution_ready = pyqtSignal(object)
 
     def __init__(self):
         super().__init__()
@@ -69,6 +70,7 @@ class CellIntensity(QThread):
             "num_decoding_colors": 3,
             "radius_fg": 2,
             "radius_bg": 6,
+            "bead_per_protein_threshold": 0.0,
         }
 
         self.channel_to_color_code = {}
@@ -616,25 +618,54 @@ class CellIntensity(QThread):
         )
         self.segmentation_labels = np.asarray(stardist.data, dtype=np.int32)
 
-    def get_filtered_bead_count(self):
+    def get_filtered_bead_count(self, num_proteins: int):
         if self.bead_data is None or self.segmentation_labels.size == 0:
             self.error_signal.emit("Bead data or stardist labels not loaded.")
             return
         coords = self.bead_data[:, 0:2].astype(int)
         x_limit, y_limit = self.segmentation_labels.shape[1], self.segmentation_labels.shape[0]
-        in_bounds = (coords[:, 0] < x_limit) & (coords[:, 1] < y_limit)
+        in_bounds = (
+            (coords[:, 0] >= 0) & (coords[:, 0] < x_limit)
+            & (coords[:, 1] >= 0) & (coords[:, 1] < y_limit)
+        )
         coords = coords[in_bounds]
-        bead_data_filtered = self.bead_data[in_bounds]
         cell_ids = self.segmentation_labels[coords[:, 1], coords[:, 0]]
-        in_cell = cell_ids > 0
-        total_in_cell = int(np.sum(in_cell))
-        if total_in_cell == 0:
-            self.filtered_stats_ready.emit(0.0)
+
+        # Count beads per cell
+        in_cell_mask = cell_ids > 0
+        cell_ids_in_cells = cell_ids[in_cell_mask]
+        unique_cells_with_beads, bead_counts = np.unique(cell_ids_in_cells, return_counts=True)
+
+        # Total cells in segmentation (all non-zero unique cell IDs)
+        total_cells = len(np.unique(self.segmentation_labels[self.segmentation_labels > 0]))
+        if total_cells == 0:
+            self.protein_distribution_ready.emit(
+                {"distribution": [], "per_cell_counts": [], "num_proteins": num_proteins, "total_cells": 0}
+            )
             return
-        cy0_values = bead_data_filtered[:, 2]
-        filtered_count = int(np.sum(in_cell & (cy0_values >= 254)))
-        percentage = (filtered_count / total_in_cell) * 100
-        self.filtered_stats_ready.emit(percentage)
+
+        # Per-cell bead counts: cells with beads + zeros for cells with no beads
+        cells_with_0 = total_cells - len(unique_cells_with_beads)
+        per_cell_counts = np.concatenate(
+            [bead_counts, np.zeros(cells_with_0, dtype=np.int64)]
+        )
+
+        # Build distribution table rows 0 … (num_proteins - 1), then a final "X+" row
+        distribution = []
+        distribution.append((0, cells_with_0 / total_cells * 100))
+        for n in range(1, num_proteins):
+            count = int(np.sum(bead_counts == n))
+            distribution.append((n, count / total_cells * 100))
+        # Last row: num_proteins or more
+        count_last = int(np.sum(bead_counts >= num_proteins))
+        distribution.append((f"{num_proteins}+", count_last / total_cells * 100))
+
+        self.protein_distribution_ready.emit({
+            "distribution": distribution,
+            "per_cell_counts": per_cell_counts.tolist(),
+            "num_proteins": num_proteins,
+            "total_cells": total_cells,
+        })
 
     def set_bead_data(self, bead_data):
         if isinstance(bead_data, np.ndarray):

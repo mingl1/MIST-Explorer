@@ -1011,11 +1011,11 @@ class SignalConnectionManager:
         self.c.view.cell_intensity_groupbox.cancel_button.clicked.connect(
             self.c.model_cell_intensity.cancel
         )
-        self.c.view.cell_intensity_groupbox.requestFilteredStats.connect(
+        self.c.view.cell_intensity_groupbox.requestFilteredStats[int].connect(
             self.c.model_cell_intensity.get_filtered_bead_count
         )
-        self.c.model_cell_intensity.filtered_stats_ready[float].connect(
-            self.c.view.cell_intensity_groupbox.show_filtered_stats
+        self.c.model_cell_intensity.protein_distribution_ready.connect(
+            self.c.view.cell_intensity_groupbox.show_protein_distribution
         )
         self.c.view.cell_intensity_groupbox.set_generation_enabled(False)
 

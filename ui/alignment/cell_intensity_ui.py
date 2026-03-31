@@ -7,21 +7,105 @@ import typing
 import numpy as np
 import pandas as pd
 # pylint: disable=no-name-in-module
-from PyQt6.QtCore import QCoreApplication, pyqtSignal
+from PyQt6.QtCore import QCoreApplication, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QMessageBox,
     QPushButton,
+    QSlider,
     QSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
 from core.project_naming import is_segmentation_name
+
+
+_SLIDER_STEPS = [0.55, 0.70, 0.85, 1.00, 1.15, 1.30]
+_SLIDER_DEFAULT_INDEX = 3  # 1.00
+
+
+class ProteinDistributionDialog(QDialog):
+    """Modal table showing distribution of bead counts across cells,
+    with a threshold slider that filters cells by beads/proteins ratio."""
+
+    def __init__(self, payload: dict, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Protein Distribution")
+        self.resize(360, 480)
+
+        self._per_cell_counts = np.asarray(payload["per_cell_counts"])
+        self._num_proteins = payload["num_proteins"]
+        self._total_cells = payload["total_cells"]
+        distribution = payload["distribution"]
+
+        layout = QVBoxLayout(self)
+
+        # --- distribution table ---
+        table = QTableWidget(len(distribution), 2, self)
+        table.setHorizontalHeaderLabels(["# Proteins", "% of Cells"])
+        table.horizontalHeader().setStretchLastSection(True)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+
+        for row, (label, percentage) in enumerate(distribution):
+            table.setItem(row, 0, QTableWidgetItem(str(label)))
+            table.setItem(row, 1, QTableWidgetItem(f"{percentage:.2f}%"))
+
+        layout.addWidget(table)
+
+        # --- threshold slider ---
+        threshold_label = QLabel(
+            f"Filter threshold (beads / proteins): {_SLIDER_STEPS[_SLIDER_DEFAULT_INDEX]:.2f}"
+        )
+        layout.addWidget(threshold_label)
+
+        slider_row = QHBoxLayout()
+        slider_row.addWidget(QLabel(str(_SLIDER_STEPS[0])))
+        slider = QSlider(Qt.Orientation.Horizontal, self)
+        slider.setMinimum(0)
+        slider.setMaximum(len(_SLIDER_STEPS) - 1)
+        slider.setValue(_SLIDER_DEFAULT_INDEX)
+        slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        slider.setTickInterval(1)
+        slider_row.addWidget(slider)
+        slider_row.addWidget(QLabel(str(_SLIDER_STEPS[-1])))
+        layout.addLayout(slider_row)
+
+        self._remaining_label = QLabel()
+        layout.addWidget(self._remaining_label)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, self)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+        # wire up slider
+        slider.valueChanged.connect(
+            lambda idx, lbl=threshold_label: self._on_slider_changed(idx, lbl)
+        )
+        self._on_slider_changed(_SLIDER_DEFAULT_INDEX, threshold_label)
+
+    def _on_slider_changed(self, idx: int, threshold_label: QLabel):
+        threshold = _SLIDER_STEPS[idx]
+        threshold_label.setText(f"Filter threshold (beads / proteins): {threshold:.2f}")
+
+        if self._total_cells == 0 or self._num_proteins == 0:
+            self._remaining_label.setText("Cells remaining after filter: —")
+            return
+
+        passing = int(np.sum(self._per_cell_counts / self._num_proteins >= threshold))
+        pct = passing / self._total_cells * 100
+        self._remaining_label.setText(
+            f"Cells remaining after filter: {pct:.2f}%  ({passing} / {self._total_cells})"
+        )
 
 
 # pylint: disable=too-many-instance-attributes
@@ -33,7 +117,7 @@ class CellIntensityUI(QWidget):
     emitBeadData = pyqtSignal(np.ndarray)
     emitColorCodes = pyqtSignal(dict)
     generate_cell_data = pyqtSignal()
-    requestFilteredStats = pyqtSignal()
+    requestFilteredStats = pyqtSignal(int)
 
     def __init__(self, parent=None, containing_layout: typing.Optional[QVBoxLayout] = None):
         super().__init__(parent)
@@ -250,22 +334,23 @@ class CellIntensityUI(QWidget):
                 self.errorSignal.emit("Please select a valid file type")
 
     def _show_filtered_bead_stats(self):
-        if self.bead_data_file is not None:
-            self.emitBeadData.emit(self.bead_data_file)
-            self.requestFilteredStats.emit()
-        else:
+        if self.bead_data_file is None:
             self.errorSignal.emit("Please load bead data first.")
+            return
+        if not self.channel_to_color_code:
+            self.errorSignal.emit("Please load at least one color code file first.")
+            return
+        num_proteins = max(len(df) for df in self.channel_to_color_code.values())
+        self.emitBeadData.emit(self.bead_data_file)
+        self.requestFilteredStats.emit(num_proteins)
 
     def set_generation_enabled(self, enabled: bool):
         """Enable generation only when a source image is selected in the image manager."""
         self.run_button.setEnabled(bool(enabled))
 
-    def show_filtered_stats(self, percentage: float):
-        QMessageBox.information(
-            self,
-            "Filtered Bead Stats",
-            f"Filtered beads (cy0 >= 254) inside cell boundaries: {percentage:.2f}%",
-        )
+    def show_protein_distribution(self, payload: object):
+        dialog = ProteinDistributionDialog(payload, self)
+        dialog.exec()
 
     def _retranslate_ui(self):
         _translate = QCoreApplication.translate

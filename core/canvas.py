@@ -309,7 +309,10 @@ class ImageWrapper:
 
     def copy(self):
         arr = copy.copy(self.data)
-        return ImageWrapper(data=arr, name=self.name, cmap=self.cmap)
+        new_obj = ImageWrapper(data=arr, name=self.name, cmap=self.cmap)
+        new_obj.contrast_min = self.contrast_min
+        new_obj.contrast_max = self.contrast_max
+        return new_obj
 
     def __copy__(self):
         return self.copy()
@@ -1756,8 +1759,10 @@ class ImageGraphicsView(BaseGraphicsView):
                 arr = wrapper.data
                 cropped_array = arr[top : bottom + 1, left : right + 1].copy()
                 wrapper_copy = ImageWrapper(
-                    cropped_array, name=channel_name, cmap=wrapper.cmap
+                    cropped_array, name=wrapper.name, cmap=wrapper.cmap
                 )
+                wrapper_copy.contrast_min = wrapper.contrast_min
+                wrapper_copy.contrast_max = wrapper.contrast_max
                 channels[channel_name] = wrapper_copy
 
             target_channel = f"Channel {self.current_channel + 1}"
