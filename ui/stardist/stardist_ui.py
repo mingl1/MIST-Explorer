@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSizePolicy,
     QSpinBox,
     QTabWidget,
     QVBoxLayout,
@@ -31,6 +32,10 @@ class StarDistUI(QWidget):
         self.stardist_components_vlayout.setContentsMargins(0, 0, 0, 0)
 
         self.segmentation_tabs = QTabWidget(self.stardist_groupbox)
+        self.segmentation_tabs.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
         self.basic_tab = QWidget(self.segmentation_tabs)
         self.advanced_tab = QWidget(self.segmentation_tabs)
         self.segmentation_tabs.addTab(self.basic_tab, "")
@@ -215,7 +220,20 @@ class StarDistUI(QWidget):
             self._update_method_controls
         )
         self._update_method_controls()
+        self.segmentation_tabs.currentChanged.connect(self._sync_tab_size_policies)
+        self._sync_tab_size_policies(0)
         QMetaObject.connectSlotsByName(self)
+
+    def _sync_tab_size_policies(self, current_index: int):
+        """Make non-current pages Ignored so QTabWidget sizeHint only reflects the active tab."""
+        for i in range(self.segmentation_tabs.count()):
+            page = self.segmentation_tabs.widget(i)
+            sp = page.sizePolicy()
+            sp.setVerticalPolicy(
+                QSizePolicy.Policy.Preferred if i == current_index else QSizePolicy.Policy.Ignored
+            )
+            page.setSizePolicy(sp)
+        self.segmentation_tabs.updateGeometry()
 
     def set_groupbox_title(self, name, channel):
         self.stardist_groupbox.setTitle(f"Cell Segmentation - {name}")

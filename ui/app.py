@@ -1,6 +1,7 @@
 """
 Main application window module.
 """
+
 import argparse
 import logging
 import os
@@ -9,14 +10,24 @@ from pathlib import Path
 from typing import Optional
 
 # pylint: disable=no-name-in-module
-from PyQt6.QtCore import (QCoreApplication, QEvent, QMetaObject, QPoint, Qt,
-                          QTimer)
+from PyQt6.QtCore import QCoreApplication, QEvent, QMetaObject, QPoint, Qt
 from PyQt6.QtGui import QIcon, QImageReader, QKeySequence, QShortcut
-from PyQt6.QtWidgets import (QFileDialog, QGroupBox, QHBoxLayout, QLabel,
-                             QMainWindow, QMenu, QProgressBar, QPushButton,
-                             QScrollArea, QSizePolicy, QSplitter,
-                             QStackedWidget, QStatusBar, QTabWidget,
-                             QVBoxLayout, QWidget)
+from PyQt6.QtWidgets import (
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QProgressBar,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QSplitter,
+    QStackedWidget,
+    QStatusBar,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 from core import MetaData
 from core.project_manager import ProjectManager
@@ -141,7 +152,6 @@ class MainWindow(QMainWindow):
     def _load_project(self, project_path: Path):
         """Load an existing project."""
         from core.canvas import ImageWrapper
-        from models.workspace import ImageMetadata
 
         self.current_project_path = project_path
 
@@ -194,7 +204,7 @@ class MainWindow(QMainWindow):
                         "name": image_meta.name,
                         "data": image_data,
                         "original_filename": image_meta.original_filename,
-                    }
+                    },
                 )
                 self.images_tab.add_item(image_uuid)
 
@@ -209,7 +219,7 @@ class MainWindow(QMainWindow):
         os.execl(sys.executable, sys.executable, *sys.argv)
 
     # pylint: disable=invalid-name
-    def eventFilter(self, obj, event): # type: ignore
+    def eventFilter(self, obj, event):  # type: ignore
         """Event filter for handling window dragging"""
         if sys.platform == "win32":
             if obj == self.menu_bar:
@@ -223,7 +233,9 @@ class MainWindow(QMainWindow):
                         and self.drag_pos is not None
                     ):
                         self.move(
-                            self.pos() + event.globalPosition().toPoint() - self.drag_pos
+                            self.pos()
+                            + event.globalPosition().toPoint()
+                            - self.drag_pos
                         )
                         self.drag_pos = event.globalPosition().toPoint()
                         return True  # Consume the event if dragging
@@ -274,7 +286,7 @@ class MainWindow(QMainWindow):
         self.side_panel_layout = QVBoxLayout(self.side_panel)
         # self.sidePanelLayout.setSpacing(10)
         self.side_panel.setMinimumWidth(400)
-        
+
         self.side_panel.setSizePolicy(
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding
         )
@@ -327,12 +339,20 @@ class MainWindow(QMainWindow):
         if self.current_project_path:
             self.images_tab.set_project_path(self.current_project_path)
 
-        # Processing Tabs
+        # "Extract" page setup
         self.processing_tabs = QTabWidget(self.side_panel)
         splitter = QSplitter(Qt.Orientation.Vertical, self.side_panel)
         splitter.addWidget(self.images_tab)
-        splitter.setStretchFactor(0, 1)
         splitter.addWidget(self.processing_tabs)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 0)
+        splitter.setCollapsible(0, False)
+
+        self.processing_tabs.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,  # height = sizeHint, won't grab extra space
+        )
+        self.processing_tabs.setMinimumHeight(200)
 
         # Add splitter to layout
         images_tab_layout.addWidget(splitter)
@@ -355,6 +375,7 @@ class MainWindow(QMainWindow):
         transform_tab = QWidget()
         transform_layout = QVBoxLayout(transform_tab)
         transform_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        transform_layout.setContentsMargins(4, 4, 4, 4)
 
         # Crop and Rotate
         self.crop_groupbox = CropUI(transform_tab)
@@ -389,7 +410,11 @@ class MainWindow(QMainWindow):
         )
         self.cell_layer_alignment.aligner.progress.connect(self.update_progress_bar)
 
-        self.processing_tabs.addTab(transform_tab, "Transform")
+        transform_scroll = QScrollArea()
+        transform_scroll.setWidget(transform_tab)
+        transform_scroll.setWidgetResizable(True)
+        transform_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.processing_tabs.addTab(transform_scroll, "Transform")
 
     def _setup_alignment_tab(self):
         """Sets up the 'Alignment' tab with Register tools."""
@@ -398,11 +423,16 @@ class MainWindow(QMainWindow):
         alignment_tab = QWidget()
         alignment_layout = QVBoxLayout(alignment_tab)
         alignment_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        alignment_layout.setContentsMargins(4, 4, 4, 4)
 
         # Register UI
         self.register_groupbox = RegisterUI(alignment_tab, alignment_layout)
 
-        self.processing_tabs.addTab(alignment_tab, "Alignment")
+        alignment_scroll = QScrollArea()
+        alignment_scroll.setWidget(alignment_tab)
+        alignment_scroll.setWidgetResizable(True)
+        alignment_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.processing_tabs.addTab(alignment_scroll, "Alignment")
 
     def _setup_segmentation_tab(self):
         """Sets up the 'Segmentation' tab with Gaussian Blur and StarDist."""
@@ -412,6 +442,7 @@ class MainWindow(QMainWindow):
         segmentation_tab = QWidget()
         segmentation_layout = QVBoxLayout(segmentation_tab)
         segmentation_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        segmentation_layout.setContentsMargins(4, 4, 4, 4)
 
         # Gaussian Blur
         self.gaussian_blur = GaussianBlur(segmentation_tab, segmentation_layout)
@@ -419,7 +450,11 @@ class MainWindow(QMainWindow):
         # StarDist
         self.stardist_groupbox = StarDistUI(segmentation_tab, segmentation_layout)
 
-        self.processing_tabs.addTab(segmentation_tab, "Segmentation")
+        segmentation_scroll = QScrollArea()
+        segmentation_scroll.setWidget(segmentation_tab)
+        segmentation_scroll.setWidgetResizable(True)
+        segmentation_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.processing_tabs.addTab(segmentation_scroll, "Segmentation")
 
     def _setup_quantification_tab(self):
         """Sets up the 'Quantification' tab with Cell Intensity."""
@@ -428,12 +463,17 @@ class MainWindow(QMainWindow):
         quantification_tab = QWidget()
         quantification_layout = QVBoxLayout(quantification_tab)
         quantification_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        quantification_layout.setContentsMargins(4, 4, 4, 4)
 
         self.cell_intensity_groupbox = CellIntensityUI(
             quantification_tab, quantification_layout
         )
 
-        self.processing_tabs.addTab(quantification_tab, "Generation")
+        quantification_scroll = QScrollArea()
+        quantification_scroll.setWidget(quantification_tab)
+        quantification_scroll.setWidgetResizable(True)
+        quantification_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.processing_tabs.addTab(quantification_scroll, "Generation")
 
     def _setup_view_tab(self):
         """Setup the view tab"""
@@ -522,7 +562,7 @@ class MainWindow(QMainWindow):
         """Setup the final layout structure"""
         # Create a horizontal splitter
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
-        
+
         # Add sidebar container and canvas to splitter
         # Note: side_panel_container now contains both the panel and the toggle button
         self.splitter.addWidget(self.side_panel_container)
@@ -551,7 +591,6 @@ class MainWindow(QMainWindow):
         # Connect toolbar tab change signal
         # Start with Images tab
         self.stacked_widget.setCurrentIndex(0)
-
 
     def _retranslate_ui(self):
         """Set UI text and translations"""
@@ -598,18 +637,18 @@ class MainWindow(QMainWindow):
             current_sizes = self.splitter.sizes()
             if current_sizes[0] > 100:
                 self.last_sidebar_width = current_sizes[0]
-            
+
             self.side_panel.hide()
             self.toggle_button.setText("▶")
-            
+
             # Collapse splitter to just the button width
             # We add a small buffer for margins/spacing
-            btn_width = self.toggle_button.width() + 15 
+            btn_width = self.toggle_button.width() + 15
             self.splitter.setSizes([btn_width, sum(current_sizes) - btn_width])
         else:
             self.side_panel.show()
             self.toggle_button.setText("◀")
-            
+
             # Restore previous width
             current_sizes = self.splitter.sizes()
             total = sum(current_sizes)
