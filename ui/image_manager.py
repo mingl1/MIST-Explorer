@@ -340,6 +340,7 @@ class ImageTreeWidget(QTreeView):
     segmentation_label = pyqtSignal(UUID, int)
     generation_source_selected = pyqtSignal(object, object)
     item_deleted = pyqtSignal(UUID)
+    image_dropped = pyqtSignal(str)
 
     def __init__(self, parent):
         super().__init__(parent)
@@ -348,6 +349,32 @@ class ImageTreeWidget(QTreeView):
         self._model_stardist = None
         self._model_reference_canvas = None
         self.doubleClicked.connect(self.show_on_canvas)
+        self.setAcceptDrops(True)
+
+    # pylint: disable=invalid-name
+    def dragEnterEvent(self, event):  # type: ignore
+        """Handle drag enter."""
+        mime = event.mimeData()
+        if mime and mime.hasUrls():
+            event.acceptProposedAction()
+
+    # pylint: disable=invalid-name
+    def dragMoveEvent(self, event):  # type: ignore
+        """Handle drag move."""
+        event.acceptProposedAction()
+
+    # pylint: disable=invalid-name
+    def dropEvent(self, event):  # type: ignore
+        """Handle drop."""
+        if event is None:
+            return
+        mime = event.mimeData()
+        if mime and mime.hasUrls():
+            for url in mime.urls():
+                file_path = url.toLocalFile()
+                if file_path is not None:
+                    self.image_dropped.emit(file_path)
+            event.acceptProposedAction()
 
     def selectionChanged(self, selected: QItemSelection, deselected: QItemSelection):
         """Emit generation context whenever image-manager selection changes."""

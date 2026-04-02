@@ -119,9 +119,9 @@ class RegisterUI(QWidget):
         _translate = QCoreApplication.translate
         self.register_groupbox.setTitle(_translate("MainWindow", "Align Arrays"))
         self.alignment_layer_label.setText(_translate("MainWindow", "Reference Layer"))
-        self.max_size_label.setText(_translate("MainWindow", "Max Size"))
+        self.max_size_label.setText(_translate("MainWindow", "Max Size (px)"))
         self.num_tiles_label.setText(_translate("MainWindow", "Number of Tiles"))
-        self.overlap_label.setText(_translate("MainWindow", "Overlap"))
+        self.overlap_label.setText(_translate("MainWindow", "Overlap (px)"))
         self.ncc_threshold_label.setText(_translate("MainWindow", "NCC Threshold"))
         self.run_button.setText(_translate("MainWindow", "Run Full Image"))
         self.cancel_button.setText(_translate("MainWindow", "Cancel"))

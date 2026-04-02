@@ -487,6 +487,9 @@ class SignalConnectionManager:
         self.c.view.small_view.image_dropped.connect(
             self.c.model_reference_canvas.add_to_canvas
         )
+        self.c.view.images_tab.image_tree_view.image_dropped.connect(
+            self.c.model_canvas.add_to_canvas
+        )
         self.c.model_reference_canvas.update_reference.connect(
             self.c.view.small_view.display
         )
