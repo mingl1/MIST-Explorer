@@ -983,7 +983,8 @@ class ImageOverlay(QWidget):
         layer = None
 
         for i, control in enumerate(self.controls):
-            control.title_label.setText(f"Layer {i + 1}: {control.name}")
+            chevron = control.title_label.text().split("  ", 1)[0]
+            control.title_label.setText(f"{chevron}  Layer {i + 1}: {control.name}")
         self.process_images()
         self.change_pix.emit(np.ndarray(0), index)
 
@@ -1058,8 +1059,14 @@ class ImageOverlay(QWidget):
         title_bar_layout.setContentsMargins(8, 3, 4, 3)
         title_bar_layout.setSpacing(4)
 
-        name_label = QLabel(f"Layer {idx + 1}: {c.name}")
-        name_label.setStyleSheet("font-weight: bold; font-size: 11px;")
+        name_label = QPushButton(f"▼  Layer {idx + 1}: {c.name}")
+        name_label.setFlat(True)
+        name_label.setCursor(Qt.CursorShape.PointingHandCursor)
+        name_label.setStyleSheet(
+            "QPushButton { font-weight: bold; font-size: 11px; color: #aaa;"
+            " background: transparent; border: none; text-align: left; padding: 0; }"
+            " QPushButton:hover { color: #ddd; }"
+        )
         title_bar_layout.addWidget(name_label, stretch=1)
 
         tint_square = QPushButton()
@@ -1300,9 +1307,17 @@ class ImageOverlay(QWidget):
 
         vis_toggle_btn.clicked.connect(on_vis_toggle)
 
+        def on_expand_toggled():
+            expanded = not body_widget.isVisible()
+            body_widget.setVisible(expanded)
+            chevron = "▼" if expanded else "▶"
+            layer_text = name_label.text().split("  ", 1)[1]
+            name_label.setText(f"{chevron}  {layer_text}")
+
+        name_label.clicked.connect(on_expand_toggled)
+
         def on_eye_toggled(checked, gb=layer_card):
             self.update_visibility(checked, gb)
-            body_widget.setVisible(checked)
             eye_btn.setIcon(icon_eye_open if checked else icon_eye_closed)
             eye_btn.setToolTip("Hide layer" if checked else "Show layer")
 

@@ -9,14 +9,15 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtCore import Qt, QPoint, QRect, QPointF, QRectF
 from PyQt6.QtWidgets import QGraphicsItem, QGraphicsPolygonItem
-import random
+
+from ui.lassos.Lasso import pick_distinct_color
 
 
 class PolyLasso(QGraphicsPolygonItem):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, existing_colors=None):
         super().__init__(parent)
         self.points = []  # Store scene coordinates
-        col = self._get_random_color()[:3]
+        col = pick_distinct_color(existing_colors or [])[:3]
         self.color = QColor(*col, 100)
         self.line_color = QColor(*col)  # Line color (solid)
         self.point_color = QColor(255, 0, 0)  # Point marker color (red)
@@ -34,14 +35,6 @@ class PolyLasso(QGraphicsPolygonItem):
         # Set up the appearance
         self.setPen(QPen(self.line_color, 2))
         self.setBrush(QBrush(self.color))
-
-    def _get_random_color(self):
-        return (
-            random.randint(0, 255),
-            random.randint(0, 255),
-            random.randint(0, 255),
-            50,
-        )
 
     def add_point(self, scene_point, image_point=None):
         """Add a point to the polygon in scene coordinates"""

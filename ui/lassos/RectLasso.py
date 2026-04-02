@@ -6,8 +6,8 @@ from ui.lassos.Lasso import Lasso
 
 
 class RectLasso(Lasso):
-    def __init__(self, parent=None):
-        super().__init__(QRubberBand.Shape.Rectangle, parent)
+    def __init__(self, parent=None, existing_colors=None):
+        super().__init__(QRubberBand.Shape.Rectangle, parent, existing_colors)
 
     def paintEvent(self, event):
         painter = QPainter(self)

@@ -208,6 +208,42 @@ class ProjectManager:
         return image_metadata
 
     @staticmethod
+    def save_image_reference(
+        project_path: Path,
+        image_uuid: str,
+        image_name: str,
+        channel_count: int,
+        original_filename: str = "",
+        contrast_settings: Optional[Dict[str, Tuple[int, int]]] = None,
+        channel_display_names: Optional[Dict[str, str]] = None,
+    ) -> ImageMetadata:
+        """Record image metadata in project.json without copying pixel data to disk."""
+        if contrast_settings is None:
+            contrast_settings = {}
+        if channel_display_names is None:
+            channel_display_names = {}
+
+        image_metadata = ImageMetadata(
+            uuid=image_uuid,
+            name=image_name,
+            channel_count=channel_count,
+            original_filename=original_filename,
+            contrast_settings=contrast_settings,
+            channel_display_names=channel_display_names,
+        )
+
+        metadata = ProjectManager.load_metadata(project_path)
+        if metadata is not None:
+            existing = metadata.get_image(image_uuid)
+            if existing is None:
+                metadata.add_image(image_metadata)
+            else:
+                metadata.update_image(image_metadata)
+            ProjectManager._save_metadata(metadata)
+
+        return image_metadata
+
+    @staticmethod
     def load_image(project_path: Path, image_uuid: str, channel: str = "Channel 1"):
         image_folder = project_path / "images" / image_uuid
         channel_num = channel.replace("Channel ", "")
@@ -219,6 +255,61 @@ class ProjectManager:
             except Exception as e:
                 logger.error("Failed to load image from '%s': %s", channel_path, e, exc_info=True)
                 return None
+        return None
+
+    @staticmethod
+    def load_channel_from_source(original_filename: str, channel_name: str) -> Optional[np.ndarray]:
+        """Load a specific channel from the original source file (TIFF, PNG, JPEG, etc.).
+
+        For multi-page TIFFs, reads non-blank pages in order and returns the page
+        matching channel_name (e.g. "Channel 2" → the 2nd non-blank page).
+        For single-image formats (PNG, JPEG, etc.), only Channel 1 is available.
+        Returns None on any failure.
+        """
+        if not original_filename:
+            return None
+        source_path = Path(original_filename)
+        if not source_path.exists():
+            return None
+        try:
+            channel_num = int(channel_name.replace("Channel ", ""))
+        except (ValueError, AttributeError):
+            return None
+
+        suffix = source_path.suffix.lower()
+        if suffix in (".tif", ".tiff"):
+            try:
+                with tifffile.TiffFile(str(source_path)) as tif:
+                    valid_idx = 0
+                    for page in tif.pages:
+                        try:
+                            image = page.asarray()
+                        except Exception:
+                            continue
+                        if np.all(image == image.flat[0]):
+                            continue
+                        valid_idx += 1
+                        if valid_idx == channel_num:
+                            return image
+            except Exception as e:
+                logger.error(
+                    "Failed to load channel '%s' from source '%s': %s",
+                    channel_name, original_filename, e, exc_info=True,
+                )
+            return None
+
+        # Non-TIFF formats (PNG, JPEG, etc.) — single channel only
+        if channel_num != 1:
+            return None
+        try:
+            from PIL import Image as PILImage
+            img = PILImage.open(str(source_path))
+            return np.asarray(img)
+        except Exception as e:
+            logger.error(
+                "Failed to load '%s' from source '%s': %s",
+                channel_name, original_filename, e, exc_info=True,
+            )
         return None
 
     @staticmethod

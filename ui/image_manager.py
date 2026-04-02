@@ -73,7 +73,7 @@ class ImageManager(QWidget):
         self.image_tree_view.item_deleted.connect(self._handle_item_deletion)
 
     def set_project_path(self, project_path: Path):
-        """Set the current project path for auto-saving."""
+        """Set the current project path."""
         self.current_project_path = project_path
         metadata = ProjectManager.load_project(project_path)
         if metadata is not None and metadata.name:
@@ -85,9 +85,73 @@ class ImageManager(QWidget):
             self.current_project_name = project_path.stem
             self.current_project_is_temp = is_temp_project_name(self.current_project_name)
 
-    def _should_auto_persist_project(self) -> bool:
-        """Return True when project-backed edits should be persisted automatically."""
+    def _can_save_project(self) -> bool:
+        """Return True when project-backed saves are possible."""
         return bool(self.current_project_path) and not self.current_project_is_temp
+
+    def save_all_images(self, copy_data: bool = False):
+        """Sync current in-memory images to disk.
+
+        copy_data=False: write only project.json metadata (reference save).
+        copy_data=True:  also copy channel TIFFs into the project folder.
+
+        Any images previously saved but no longer in memory are removed from disk.
+        """
+        if not self._can_save_project():
+            return
+
+        model = self.image_tree_model
+        current_uuids = set()
+        for i in range(model.rowCount()):
+            tree_item = model.item(i)
+            if tree_item is None:
+                continue
+            item_uuid = tree_item.data(Qt.ItemDataRole.UserRole)
+            if item_uuid is None:
+                continue
+            current_uuids.add(str(item_uuid))
+            item = self.storage.get_data(item_uuid)
+            if item is None:
+                continue
+            if copy_data:
+                self._save_image_to_project(item_uuid, item)
+            else:
+                self._save_image_reference(item_uuid, item)
+
+        # Reconcile: remove from disk any images no longer in memory
+        saved_metadata = ProjectManager.load_metadata(self.current_project_path)
+        if saved_metadata is not None:
+            for img_meta in list(saved_metadata.images):
+                if img_meta.uuid not in current_uuids:
+                    ProjectManager.delete_image(self.current_project_path, img_meta.uuid)
+
+    def _save_image_reference(self, item_uuid, item):
+        """Save only metadata/reference for an image (no pixel data copied)."""
+        if item is None:
+            return
+        item_data = item.get("data", {})
+        if not item_data:
+            return
+
+        image_name = item.get("name", f"Image_{item_uuid}")
+        channel_count = len(item_data)
+        original_filename = item.get("original_filename", "")
+
+        contrast_settings = {}
+        channel_display_names = {}
+        for channel_name, wrapper in item_data.items():
+            contrast_settings[channel_name] = (wrapper.contrast_min, wrapper.contrast_max)
+            channel_display_names[channel_name] = wrapper.name or channel_name
+
+        ProjectManager.save_image_reference(
+            project_path=self.current_project_path,
+            image_uuid=str(item_uuid),
+            image_name=image_name,
+            channel_count=channel_count,
+            original_filename=original_filename,
+            contrast_settings=contrast_settings,
+            channel_display_names=channel_display_names,
+        )
 
     def set_model_canvas(self, model):
         """Set the model canvas."""
@@ -118,9 +182,6 @@ class ImageManager(QWidget):
         item_data = item["data"]
         self._sync_channel_children(main_item, item_uuid, item_data)
         self.root_node.appendRow(main_item)
-
-        if self._should_auto_persist_project():
-            self._save_image_to_project(item_uuid, item)
 
     def _save_image_to_project(self, item_uuid, item):
         """Save image data to the project folder."""
@@ -257,9 +318,6 @@ class ImageManager(QWidget):
                 )
                 main_item.appendRow(channel_item)
 
-        if self._should_auto_persist_project():
-            item = self.storage.get_data(item_uuid)
-            self._save_image_to_project(item_uuid, item)
 
     def add_to_storage(self, item_uuid, obj):
         """Add data to storage."""
@@ -268,12 +326,7 @@ class ImageManager(QWidget):
 
     def _handle_item_deletion(self, item_uuid: UUID):
         """Handle backend cleanup when an item is deleted."""
-        # Remove from in-memory storage
         self.storage.remove_data(item_uuid)
-
-        # Remove from project files and metadata if project is open
-        if self._should_auto_persist_project():
-            ProjectManager.delete_image(self.current_project_path, str(item_uuid))
 
 
 class ImageTreeWidget(QTreeView):
@@ -537,8 +590,6 @@ class ImageTreeWidget(QTreeView):
                 item_uuid, as_new_image=False, target_channel=target_channel
             )
 
-        if isinstance(manager, ImageManager) and manager._should_auto_persist_project():
-            manager._save_image_to_project(item_uuid, image_entry)
 
     @staticmethod
     def _channel_sort_key(channel_key: str):

@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QSplitter,
+    QSplitterHandle,
     QStackedWidget,
     QStatusBar,
     QTabWidget,
@@ -39,13 +40,56 @@ from utils import resource_path
 logger = logging.getLogger(__name__)
 
 
+class SidebarHandle(QSplitterHandle):
+    """Custom splitter handle: visible 16px strip with a collapse/expand pill button."""
+
+    def __init__(self, orientation, parent):
+        super().__init__(orientation, parent)
+        self.setFixedWidth(16)
+        self.setStyleSheet("background: #e8e8e8;")
+
+        self._btn = QPushButton("‹", self)
+        self._btn.setFixedSize(14, 40)
+        self._btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn.setToolTip("Collapse/expand sidebar")
+        self._btn.setStyleSheet(
+            """
+            QPushButton {
+                background: #c0c0c0;
+                border: none;
+                border-radius: 4px;
+                font-size: 11px;
+                color: #333;
+            }
+            QPushButton:hover { background: #a0a0a0; }
+        """
+        )
+
+    def set_collapsed(self, collapsed: bool):
+        self._btn.setText("›" if collapsed else "‹")
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        bw, bh = self._btn.width(), self._btn.height()
+        self._btn.move((self.width() - bw) // 2, (self.height() - bh) // 2)
+
+
+class CollapsibleSplitter(QSplitter):
+    """QSplitter that uses SidebarHandle for its divider."""
+
+    def createHandle(self):
+        handle = SidebarHandle(self.orientation(), self)
+        handle._btn.clicked.connect(lambda: self.window().toggle_side_panel())
+        return handle
+
+
 class MainWindow(QMainWindow):
     """
     Main Application Window.
     """
 
     # pylint: disable=too-many-instance-attributes, attribute-defined-outside-init
-    def __init__(self, parent=None, project_path: Optional[Path] = None):
+    def __init__(self, parent=None, project_path: Optional[Path] = None, cli_args=None):
         QImageReader.setAllocationLimit(0)
         super().__init__(parent)
 
@@ -56,9 +100,10 @@ class MainWindow(QMainWindow):
         if sys.platform == "win32":
             self.drag_pos = QPoint()
 
-        self.args = (
-            self._parse_arguments()
-        )  # Enables passing in image & reference as cli arguments
+        self.args = argparse.Namespace(
+            image=getattr(cli_args, "image", None),
+            reference=getattr(cli_args, "reference", None),
+        )
 
         self._setup_main_window()
         self._add_shortcuts()
@@ -84,6 +129,9 @@ class MainWindow(QMainWindow):
         if self.current_project_path:
             self._load_project(self.current_project_path)
 
+        if cli_args is not None:
+            self._apply_cli_args(cli_args)
+
     def _init_attributes(self):
         """Initialize instance attributes."""
         self.drag_pos: Optional[QPoint] = None
@@ -94,7 +142,6 @@ class MainWindow(QMainWindow):
         self.side_panel_container: Optional[QWidget] = None
         self.side_panel: Optional[QWidget] = None
         self.side_panel_layout: Optional[QVBoxLayout] = None
-        self.toggle_button: Optional[QPushButton] = None
         self.stacked_widget: Optional[QStackedWidget] = None
         self.canvas: Optional[ImageGraphicsViewUI] = None
         self.small_view: Optional[ReferenceGraphicsViewUI] = None
@@ -123,16 +170,54 @@ class MainWindow(QMainWindow):
         self.current_project_path: Optional[Path] = None
         self.log_dialog = None
 
-    def _parse_arguments(self):
-        """Parse command line arguments"""
-        parser = argparse.ArgumentParser(
-            prog="MIST-Explorer",
-            description="Working on it...",
-            epilog="Intended for testing",
+    def _apply_cli_args(self, cli_args) -> None:
+        seg_path = getattr(cli_args, "segmentation", None)
+        cell_data_path = getattr(cli_args, "cell_data", None)
+        if seg_path and cell_data_path:
+            self._apply_view_tab_args(seg_path, cell_data_path)
+
+    def _apply_view_tab_args(self, seg_path: str, cell_data_path: str) -> None:
+        import pandas as pd
+        from pathlib import Path
+
+        if not Path(seg_path).is_file():
+            logger.warning("CLI -s path not found: %s", seg_path)
+            return
+        if not Path(cell_data_path).is_file():
+            logger.warning("CLI -c path not found: %s", cell_data_path)
+            return
+
+        view = self.view_tab
+
+        view.im_path = seg_path
+        view.open_image_label.setText(
+            f"File: {view.less_than_15_chars(os.path.basename(seg_path))}"
         )
-        parser.add_argument("-i", "--image")  # image path
-        parser.add_argument("-r", "--reference")  # reference path
-        return parser.parse_args()
+        view.open_image_label.setVisible(True)
+
+        view.df_path = cell_data_path
+        view.open_df_label.setText(
+            f"File: {view.less_than_15_chars(os.path.basename(cell_data_path))}"
+        )
+        view.open_df_label.setVisible(True)
+
+        try:
+            if cell_data_path.endswith("csv"):
+                df = pd.read_csv(cell_data_path)
+            elif cell_data_path.endswith("xlsx"):
+                df = pd.read_excel(cell_data_path)
+            else:
+                logger.warning("CLI -c: unsupported format %s", cell_data_path)
+                return
+            df = df[df.columns.drop(list(df.filter(regex="N/A")))]
+            view.loaded_df = df
+        except Exception as exc:
+            logger.error("CLI -c load failed: %s", exc)
+            return
+
+        self.stacked_widget.setCurrentIndex(1)
+        self.tool_bar.tab_buttons[1].setChecked(True)
+        self.tool_bar.onTabButtonClicked(1)
 
     def _setup_main_window(self):
         """Setup main window properties"""
@@ -179,6 +264,11 @@ class MainWindow(QMainWindow):
                 channel_array = ProjectManager.load_image(
                     project_path, image_meta.uuid, channel_name
                 )
+                if channel_array is None:
+                    # Fallback: load from original source file (reference-only save)
+                    channel_array = ProjectManager.load_channel_from_source(
+                        image_meta.original_filename, channel_name
+                    )
                 if channel_array is not None:
                     contrast = image_meta.contrast_settings.get(channel_name, (0, 255))
                     display_name = image_meta.channel_display_names.get(
@@ -277,10 +367,9 @@ class MainWindow(QMainWindow):
         """Setup the collapsible side panel"""
 
         self.side_panel_container = QWidget(self.centralWidget())
-        self.side_panel_container.setMinimumWidth(35)
         container_layout = QHBoxLayout(self.side_panel_container)
         container_layout.setContentsMargins(0, 0, 0, 0)
-        container_layout.setSpacing(10)
+        container_layout.setSpacing(0)
 
         self.side_panel = QWidget(self.side_panel_container)
         self.side_panel_layout = QVBoxLayout(self.side_panel)
@@ -291,24 +380,12 @@ class MainWindow(QMainWindow):
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding
         )
 
-        self.toggle_button = QPushButton("◀", self.side_panel_container)
-        self.toggle_button.setFixedSize(20, 60)
-        self.toggle_button.clicked.connect(self.toggle_side_panel)
-        self.toggle_button.setStyleSheet(
-            """
-            QPushButton:hover {
-                background-color: #e0e0e0;
-            }
-        """
-        )
-
         # Create stacked widget for tabs
         self.stacked_widget = QStackedWidget(self.side_panel)
         self.side_panel_layout.addWidget(self.stacked_widget)
 
         # Add to container
         container_layout.addWidget(self.side_panel)
-        container_layout.addWidget(self.toggle_button)
 
     def _setup_canvas(self):
         """Setup the main canvas and reference view"""
@@ -561,15 +638,14 @@ class MainWindow(QMainWindow):
     def _setup_layout(self):
         """Setup the final layout structure"""
         # Create a horizontal splitter
-        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter = CollapsibleSplitter(Qt.Orientation.Horizontal)
 
         # Add sidebar container and canvas to splitter
-        # Note: side_panel_container now contains both the panel and the toggle button
         self.splitter.addWidget(self.side_panel_container)
         self.splitter.addWidget(self.canvas)
 
-        # Prevent dragging the splitter to fully collapse the sidebar
-        self.splitter.setCollapsible(0, False)
+        # Allow dragging the splitter to fully collapse the sidebar
+        self.splitter.setCollapsible(0, True)
 
         # Set stretch factors so canvas takes available space
         self.splitter.setStretchFactor(1, 1)
@@ -591,6 +667,14 @@ class MainWindow(QMainWindow):
         # Connect toolbar tab change signal
         # Start with Images tab
         self.stacked_widget.setCurrentIndex(0)
+
+        # Modular save coordinator
+        self._save_handlers = [self.images_tab.save_all_images]
+
+    def _on_save_project(self, copy_data: bool):
+        """Call all registered save handlers."""
+        for handler in self._save_handlers:
+            handler(copy_data)
 
     def _retranslate_ui(self):
         """Set UI text and translations"""
@@ -630,6 +714,12 @@ class MainWindow(QMainWindow):
             return
         self.canvas.select = "poly"
 
+    def _sync_handle_button(self):
+        """Update the handle pill button direction after a toggle."""
+        handle = self.splitter.handle(1)
+        if isinstance(handle, SidebarHandle):
+            handle.set_collapsed(not self.side_panel.isVisible())
+
     def toggle_side_panel(self):
         """Toggle side panel visibility"""
         if self.side_panel.isVisible():
@@ -639,21 +729,21 @@ class MainWindow(QMainWindow):
                 self.last_sidebar_width = current_sizes[0]
 
             self.side_panel.hide()
-            self.toggle_button.setText("▶")
 
-            # Collapse splitter to just the button width
-            # We add a small buffer for margins/spacing
-            btn_width = self.toggle_button.width() + 15
-            self.splitter.setSizes([btn_width, sum(current_sizes) - btn_width])
+            # Collapse splitter to just the handle width
+            hw = self.splitter.handleWidth()
+            total = sum(current_sizes)
+            self.splitter.setSizes([hw, total - hw])
         else:
             self.side_panel.show()
-            self.toggle_button.setText("◀")
 
             # Restore previous width
             current_sizes = self.splitter.sizes()
             total = sum(current_sizes)
             target = getattr(self, "last_sidebar_width", 400)
             self.splitter.setSizes([target, total - target])
+
+        self._sync_handle_button()
 
     def show_log_dialog(self) -> None:
         """Show the application log dialog."""

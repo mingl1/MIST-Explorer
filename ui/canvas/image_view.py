@@ -54,6 +54,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.rubber_band = None
         self.rubber_bands = []
         self.rubber_band_colors = []
+        self.polygon_colors = []
         self.begin_crop = False
         self.origin = None
         self.crop_cursor = QCursor(Qt.CursorShape.CrossCursor)
@@ -526,6 +527,10 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.starting_x = int(self.image_pos.x())
         self.starting_y = int(self.image_pos.y())
 
+    def _get_existing_roi_colors(self):
+        """Return all current ROI colors as (r, g, b) tuples for distinctness checks."""
+        return [c.getRgb()[:3] for c in self.rubber_band_colors] + self.polygon_colors
+
     def _find_top_rubber_band(self, view_pos):
         """Return the top-most visible ROI under the given view position."""
         for rubber_band in reversed(self.rubber_bands):
@@ -597,7 +602,7 @@ class ImageGraphicsViewUI(QGraphicsView):
                     if not self.rubber_band:
                         self.rubber_band = RectLasso(self)
                 elif self.select == "rect":
-                    self.rubber_band = RectLasso(self)
+                    self.rubber_band = RectLasso(self, existing_colors=self._get_existing_roi_colors())
                     self.rubber_band.roi_moved.connect(lambda: self.update_roi_from_lasso(self.rubber_band))
                     self.rubber_bands.append(self.rubber_band)
                     self.rubber_band_colors.append(self.rubber_band.color)
@@ -605,7 +610,7 @@ class ImageGraphicsViewUI(QGraphicsView):
                     self.rubber_band.show()
                 elif self.select == "circle":
                     self.center = QPoint(self.starting_x, self.starting_y)
-                    self.rubber_band = CircleLasso(self)
+                    self.rubber_band = CircleLasso(self, existing_colors=self._get_existing_roi_colors())
                     self.rubber_band.roi_moved.connect(lambda: self.update_roi_from_lasso(self.rubber_band))
                     self.rubber_bands.append(self.rubber_band)
                     self.rubber_band_colors.append(self.rubber_band.color)
@@ -614,8 +619,10 @@ class ImageGraphicsViewUI(QGraphicsView):
                 elif self.select == "poly":
                     if not self.current_polygon:
                         self.current_polygon = PolyLasso(
-                            self.pixmap_item
+                            self.pixmap_item,
+                            existing_colors=self._get_existing_roi_colors(),
                         )  # Set pixmapItem as parent
+                        self.polygon_colors.append(self.current_polygon.color.getRgb()[:3])
                         self.get_scene().addItem(self.current_polygon)
                         # Enable mouse tracking for live preview
                         self.setMouseTracking(True)

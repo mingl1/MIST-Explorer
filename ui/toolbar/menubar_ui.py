@@ -27,6 +27,16 @@ class MenuBarUI(QMenuBar):
 
         self.menuFile.addSeparator()
 
+        self.save_action = QAction("Save", self.menuFile)
+        self.save_action.triggered.connect(lambda: parent._on_save_project(False))
+        self.menuFile.addAction(self.save_action)
+
+        self.save_with_data_action = QAction("Save with Data", self.menuFile)
+        self.save_with_data_action.triggered.connect(lambda: parent._on_save_project(True))
+        self.menuFile.addAction(self.save_with_data_action)
+
+        self.menuFile.addSeparator()
+
         self.open_project_folder = QAction("Open Project Folder", self.menuFile)
         self.open_project_folder.triggered.connect(parent.open_project_folder)
         self.menuFile.addAction(self.open_project_folder)
