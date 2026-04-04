@@ -1,24 +1,40 @@
-from PyQt6.QtWidgets import QRubberBand
-from PyQt6.QtGui import QPainter, QPen, QColor
-import random
+import pyqtgraph as pg
+from PyQt6.QtGui import QColor, QBrush, QPainter
+from PyQt6.QtCore import QRectF, Qt
 
-from ui.lassos.Lasso import Lasso
+from ui.lassos.Lasso import pick_distinct_color
 
 
-class CircleLasso(Lasso):
-    def __init__(self, parent=None, existing_colors=None):
-        super().__init__(QRubberBand.Shape.Rectangle, parent, existing_colors)
+class CircleLasso(pg.CircleROI):
+    def __init__(self, pos, size, parent=None, existing_colors=None):
+        col = pick_distinct_color(existing_colors or [])[:3]
+        self.color = QColor(*col)
+        pen = pg.mkPen(color=col, width=2)
+        super().__init__(pos, size, pen=pen)
+        self._filled = False
 
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        pen = QPen(self.color)
-        pen.setWidth(2)
-        painter.setPen(pen)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.drawEllipse(self.rect())
+    def set_filled(self, filled: bool):
+        self._filled = filled
+        self.update()
 
-        if self.filled:
-            color_trans = QColor(self.color)
-            color_trans.setAlpha(75)
-            painter.setBrush(color_trans)
-            painter.drawEllipse(self.rect())
+    def paint(self, p, opt, widget):
+        r = self.boundingRect()
+        if r.width() <= 0 or r.height() <= 0:
+            return
+        if self._filled:
+            p.save()
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            p.setPen(Qt.PenStyle.NoPen)
+            c = QColor(self.color)
+            c.setAlpha(75)
+            p.setBrush(QBrush(c))
+            p.scale(r.width(), r.height())
+            er = QRectF(r.x() / r.width(), r.y() / r.height(), 1, 1)
+            p.drawEllipse(er)
+            p.restore()
+        super().paint(p, opt, widget)
+
+    def remove_from_scene(self):
+        scene = self.scene()
+        if scene:
+            scene.removeItem(self)

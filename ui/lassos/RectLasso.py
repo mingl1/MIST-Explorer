@@ -1,22 +1,40 @@
-from PyQt6.QtWidgets import QRubberBand
-from PyQt6.QtGui import QPainter, QPen, QColor
-import random
+import pyqtgraph as pg
+from PyQt6.QtGui import QColor, QBrush, QPainter
+from PyQt6.QtCore import QRectF, Qt
 
-from ui.lassos.Lasso import Lasso
+from ui.lassos.Lasso import pick_distinct_color
 
 
-class RectLasso(Lasso):
-    def __init__(self, parent=None, existing_colors=None):
-        super().__init__(QRubberBand.Shape.Rectangle, parent, existing_colors)
+class RectLasso(pg.RectROI):
+    def __init__(self, pos, size, parent=None, existing_colors=None):
+        col = pick_distinct_color(existing_colors or [])[:3]
+        self.color = QColor(*col)
+        pen = pg.mkPen(color=col, width=2)
+        super().__init__(pos, size, pen=pen, rotatable=False)
+        self._filled = False
 
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        pen = QPen(self.color)
-        pen.setWidth(3)
-        painter.setPen(pen)
-        painter.drawRect(self.rect())
+    def set_filled(self, filled: bool):
+        self._filled = filled
+        self.update()
 
-        if self.filled:
-            color_trans = QColor(self.color)
-            color_trans.setAlpha(75)
-            painter.fillRect(self.rect(), color_trans)
+    def paint(self, p, opt, widget):
+        r = QRectF(0, 0, self.state['size'][0], self.state['size'][1]).normalized()
+        if r.width() <= 0 or r.height() <= 0:
+            return
+        if self._filled:
+            p.save()
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            p.setPen(Qt.PenStyle.NoPen)
+            c = QColor(self.color)
+            c.setAlpha(75)
+            p.setBrush(QBrush(c))
+            p.translate(r.left(), r.top())
+            p.scale(r.width(), r.height())
+            p.drawRect(0, 0, 1, 1)
+            p.restore()
+        super().paint(p, opt, widget)
+
+    def remove_from_scene(self):
+        scene = self.scene()
+        if scene:
+            scene.removeItem(self)
