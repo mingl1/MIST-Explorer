@@ -1,10 +1,10 @@
 import logging
 
-from PyQt6.QtCore import QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QIcon, QPixmap, QStandardItem, QStandardItemModel
+from PyQt6.QtCore import QSize, Qt
+from PyQt6.QtGui import QStandardItem, QStandardItemModel
 
 from core import ImageStorage
-from utils import numpy_to_qimage
+from core.image_utils import create_thumbnail
 
 logger = logging.getLogger(__name__)
 
@@ -33,13 +33,16 @@ class ImageTreeItem(QStandardItem):
         else:
             image_ready = True
         if image_ready:
-            icon = numpy_to_qimage(data[channel].data)
-
+            thumb_size = 50 if useItemName else 30
+            row_height = 60 if useItemName else 40
+            wrapper = data[channel]
+            icon = create_thumbnail(wrapper.data, size=thumb_size,
+                                    cmap=wrapper.cmap,
+                                    contrast_min=wrapper.contrast_min,
+                                    contrast_max=wrapper.contrast_max)
+            self.setIcon(icon)
+            self.setData(QSize(0, row_height), Qt.ItemDataRole.SizeHintRole)
             if useItemName:
-                thumbnail = QPixmap(icon).scaled(
-                    50, 50, Qt.AspectRatioMode.KeepAspectRatio
-                )
-                self.setData(QSize(0, 60), Qt.ItemDataRole.SizeHintRole)
                 self.setEditable(True)
                 self.setFlags(
                     Qt.ItemFlag.ItemIsEnabled
@@ -49,22 +52,14 @@ class ImageTreeItem(QStandardItem):
                 metadata_text = image_dict.get("metadata", None)
                 if metadata_text is not None:
                     self.setData(metadata_text, Qt.ItemDataRole.ToolTipRole)
-
             else:
-                thumbnail = QPixmap(icon).scaled(
-                    30, 30, Qt.AspectRatioMode.KeepAspectRatio
-                )
-                self.setData(QSize(0, 40), Qt.ItemDataRole.SizeHintRole)
                 self.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
-
-            icon = QIcon(thumbnail)
-            self.setIcon(icon)
         self.setText(text)
         self.setData(uuid, Qt.ItemDataRole.UserRole)
         self.setData(channel, Qt.ItemDataRole.WhatsThisRole)
 
     def set_icon(self, data=None):
-        """Set the icon for the item. Always a child"""
+        """Set the icon for the item."""
         logger.debug(
             f"Setting icon for {self.data(Qt.ItemDataRole.UserRole)} - {self.channel}"
         )
@@ -82,17 +77,14 @@ class ImageTreeItem(QStandardItem):
         channel_data = data.get(self.channel, None)
         if channel_data is None:
             raise ValueError(f"No data found for channel: {self.channel}")
-        icon = numpy_to_qimage(channel_data.data)
-        if self.useItemName:
-            thumbnail = QPixmap(icon).scaled(50, 50, Qt.AspectRatioMode.KeepAspectRatio)
-            self.setData(QSize(0, 60), Qt.ItemDataRole.SizeHintRole)
-        else:
-            thumbnail = QPixmap(icon).scaled(30, 30, Qt.AspectRatioMode.KeepAspectRatio)
-            self.setData(QSize(0, 40), Qt.ItemDataRole.SizeHintRole)
-        if thumbnail is None:
-            raise ValueError("Failed to create thumbnail from image data")
-        icon = QIcon(thumbnail)
+        thumb_size = 50 if self.useItemName else 30
+        row_height = 60 if self.useItemName else 40
+        icon = create_thumbnail(channel_data.data, size=thumb_size,
+                                cmap=channel_data.cmap,
+                                contrast_min=channel_data.contrast_min,
+                                contrast_max=channel_data.contrast_max)
         self.setIcon(icon)
+        self.setData(QSize(0, row_height), Qt.ItemDataRole.SizeHintRole)
 
     def onTextEdited(self, new_text):
         self.storage.update_name(self.data(Qt.ItemDataRole.UserRole), new_text)

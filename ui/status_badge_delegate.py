@@ -9,7 +9,7 @@ at paint time so it always reflects current state without any mirroring.
 
 from enum import Enum
 
-from PyQt6.QtCore import QRectF, Qt
+from PyQt6.QtCore import QRectF, QSize, Qt
 from PyQt6.QtGui import QColor, QPainter, QPainterPath
 from PyQt6.QtWidgets import QStyledItemDelegate, QStyleOptionViewItem
 
@@ -119,6 +119,14 @@ class StatusBadgeDelegate(QStyledItemDelegate):
                     badges.add(BadgeStyle.LABEL)
 
         return frozenset(badges)
+
+    def initStyleOption(self, option: QStyleOptionViewItem, index):
+        super().initStyleOption(option, index)
+        # Root items use 50 px icons; channel children use 30 px — tell Qt to
+        # allocate only the space actually needed so child rows have no gap.
+        is_root = not index.parent().isValid()
+        icon_px = 50 if is_root else 30
+        option.decorationSize = QSize(icon_px, icon_px)
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index):
         super().paint(painter, option, index)

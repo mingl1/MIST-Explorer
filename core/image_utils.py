@@ -1,7 +1,10 @@
 import cv2
 import numpy as np
+from matplotlib import colormaps
+from matplotlib.colors import Colormap
 from numpy.typing import NDArray
-from PyQt6.QtGui import QImage, QPixmap
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QIcon, QImage, QPixmap
 
 
 def scale_adjust(arr: np.ndarray) -> NDArray[np.uint8]:
@@ -87,6 +90,53 @@ def auto_contrast_helper(
             vmax = min(vmax_all, vmin + min_span)
 
     return vmin, vmax
+
+
+def generate_lut(cmap: str):
+    """Generate an 8-bit lookup table for a matplotlib colormap (BGR output)."""
+    color_map: Colormap = colormaps.get_cmap(cmap)
+    label_range = np.linspace(0, 1, 256)
+    temp = color_map(label_range)
+    temp = temp[:, 2::-1]  # drop alpha and convert RGBA → BGR
+    return np.uint8(temp * 256).reshape(256, 1, 3)
+
+
+def label2rgb(labels, lut):
+    """Apply a BGR colormap LUT to a grayscale (or already-3ch) image."""
+    if len(labels.shape) == 3 and labels.shape[2] == 3:
+        r, g, b = cv2.split(labels)
+        return cv2.LUT(cv2.merge((r, g, b)), lut)
+    if len(labels.shape) > 2:
+        labels = labels[:, :, 0]
+    return cv2.LUT(cv2.merge((labels, labels, labels)), lut)
+
+
+def create_thumbnail(data: np.ndarray, size: int = 50,
+                     cmap: str | None = None,
+                     contrast_min: int | None = None,
+                     contrast_max: int | None = None) -> QIcon:
+    """Create a QIcon thumbnail honoring stored contrast and colormap settings."""
+    arr = scale_adjust(data.copy())
+    if arr.size > 0:
+        if contrast_min is not None and contrast_max is not None:
+            vmin_i, vmax_i = int(contrast_min), int(contrast_max)
+        else:
+            vmin, vmax = auto_contrast_helper(data)
+            vmin_i, vmax_i = int(round(vmin)), int(round(vmax))
+        if vmax_i > vmin_i:
+            arr = create_lut(vmin_i, vmax_i)[arr]
+    if cmap is not None and cmap not in ("gray", "label_image"):
+        arr = label2rgb(arr, generate_lut(cmap))
+        arr = cv2.cvtColor(arr, cv2.COLOR_BGR2RGB)
+    qimage = numpy_to_qimage(arr)
+    # Render at 2x for Retina sharpness, with smooth downscaling
+    render_size = size * 2
+    thumbnail = QPixmap(qimage).scaled(
+        render_size, render_size,
+        Qt.AspectRatioMode.KeepAspectRatio,
+        Qt.TransformationMode.SmoothTransformation,
+    )
+    return QIcon(thumbnail)
 
 
 def adjustContrast(img, alpha=5, beta=15):

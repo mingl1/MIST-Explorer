@@ -22,6 +22,7 @@ class ReferenceGraphicsViewUI(QGraphicsView):
     """Reference view for displaying images with navigation arrows"""
 
     image_dropped = pyqtSignal(str)
+    channel_changed = pyqtSignal(int)
 
     def __init__(self, parent):
         super().__init__(parent)
@@ -193,12 +194,14 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         if self.current_index > 1:
             self.current_index -= 1
             self.update_slide()
+            self.channel_changed.emit(self.current_index)
 
     def next_slide(self):
         """Show next slide"""
         if self.current_index < len(self.np_channels.keys()):
             self.current_index += 1
             self.update_slide()
+            self.channel_changed.emit(self.current_index)
 
     def arrow_visibility(self):
         """Update visibility of arrows based on current index"""
@@ -219,14 +222,14 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         # scene.removeItem(self.pixmap_item)  # Clear previous image
         self.pixmap = QPixmap(
             utils.numpy_to_qimage(
-                self.np_channels[f"Channel {self.current_index}"].data
+                utils.to_uint8(self.np_channels[f"Channel {self.current_index}"].data)
             )
         )
         self.pixmap_item.setPixmap(self.pixmap)
         assert isinstance(self.pixmap_item, QGraphicsPixmapItem)
         item_rect = self.pixmap_item.boundingRect()
         self.setSceneRect(item_rect)
-        self.fitInView(self.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+        self.fitInView(item_rect, Qt.AspectRatioMode.KeepAspectRatio)
         self.arrow_visibility()
 
     def _center_image(self):
@@ -235,7 +238,7 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         self.fitInView(self.pixmap_item, Qt.AspectRatioMode.KeepAspectRatio)
         self.centerOn(self.pixmap_item)
 
-    def display(self, pixmap: QPixmap):
+    def display(self, pixmap: QPixmap, channel_index: int = 1):
         """Display the given pixmap"""
         self.show()
         # self.raise_()
@@ -243,7 +246,7 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         assert scene is not None, "Scene should be initialized"
         scene.clear()  # Clear previous image
         # reset
-        self.current_index = 1
+        self.current_index = channel_index
 
         # if not hasattr(self, "right_arrow"):
         # self.slideshow()  # Initialize arrows
@@ -258,7 +261,7 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         # Setup scene
         item_rect = self.pixmap_item.boundingRect()
         self.setSceneRect(item_rect)
-        self.fitInView(self.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+        self.fitInView(item_rect, Qt.AspectRatioMode.KeepAspectRatio)
         if self.pixmap.width() > 0:
             self.add_arrows()
             self.position_arrows()
@@ -293,7 +296,9 @@ class ReferenceGraphicsViewUI(QGraphicsView):
             self.height() - grip_size.height()
         )
         
-        # Reposition arrows when resized
+        # Re-fit image and reposition arrows when resized
+        if not self.is_empty():
+            self.fitInView(self.pixmap_item.boundingRect(), Qt.AspectRatioMode.KeepAspectRatio)
         self.position_arrows()
 
     def get_scene(self):

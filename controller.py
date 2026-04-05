@@ -400,7 +400,6 @@ class SignalConnectionManager:
             str(source_uuid),
             target_channel,
             wrapped,
-            emitter=self.c.model_canvas.update_sidebar,
         )
         return True
 
@@ -496,12 +495,15 @@ class SignalConnectionManager:
         self.c.model_reference_canvas.update_reference.connect(
             self.c.update_small_view_visibility
         )
+        self.c.view.small_view.channel_changed.connect(
+            self.c.model_reference_canvas.on_channel_changed
+        )
         self.c.model_canvas.update_canvas.connect(self.c.view.canvas.update_canvas)
         self.c.model_canvas.update_channel.connect(
             self.c.view.tool_bar.setChannelSelector
         )
 
-        self.c.model_canvas.update_sidebar.connect(
+        self.c.view.images_tab.storage.data_changed.connect(
             self.c.view.images_tab.set_channel_icon
         )
         self.c.view.view_tab.change_pix.connect(

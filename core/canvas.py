@@ -15,14 +15,11 @@ from uuid import UUID as UUID_Type
 import cv2
 import numpy as np
 import tifffile as tiff
-from matplotlib import colormaps
-
 # Third-party imports
-from matplotlib.colors import Colormap
 from PIL import Image
 
 # PyQt6 imports
-from PyQt6.QtCore import QSize, Qt, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QObject, QSize, Qt, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QCursor, QDragEnterEvent, QDragMoveEvent, QDropEvent, QPixmap
 from PyQt6.QtWidgets import (
     QDialog,
@@ -43,6 +40,8 @@ from core.image_utils import (
     adjustContrast,
     auto_contrast_helper,
     create_lut,
+    generate_lut,
+    label2rgb,
     numpy_to_qimage,
     scale_adjust,
     to_pixmap,
@@ -191,6 +190,10 @@ class MemoryEfficientImageCache:
         }
 
 
+class _ImageStorageSignals(QObject):
+    data_changed = pyqtSignal(str, str)  # (image_id, channel)
+
+
 class ImageStorage:
     """
     Thread-safe singleton class for managing image data storage.
@@ -224,6 +227,11 @@ class ImageStorage:
     def _init_instance(self):
         self.image_list = {}
         self._data_lock = threading.Lock()  # Instance-level lock for image_list
+        self._signals = _ImageStorageSignals()
+
+    @property
+    def data_changed(self):
+        return self._signals.data_changed
 
     def __len__(self):
         with self._data_lock:
@@ -268,18 +276,15 @@ class ImageStorage:
                 gc.collect()
 
     def update_data(
-        self, image_id, channel="Channel 1", new_wrapper=None, emitter=None
+        self, image_id, channel="Channel 1", new_wrapper=None
     ):
         with self._data_lock:
             image_id = str(image_id)
             if image_id in self.image_list:
-                self.image_list[str(image_id)]["data"][channel] = new_wrapper
-
+                self.image_list[image_id]["data"][channel] = new_wrapper
             else:
                 raise ValueError(f"UUID: {image_id} doesnt exist in storage")
-        if emitter:
-            logger.debug("emitting update sidebar")
-            emitter.emit(str(image_id), channel)
+        self.data_changed.emit(str(image_id), channel)
 
     def clear_data(self):
         with self._data_lock:
@@ -819,12 +824,10 @@ class BaseGraphicsView(QWidget):
 
     def _add_to_manager(self, file_name: str, image_channels, metadata=None) -> None:
         """Finalize processing with cleanup and emissions."""
-        # self._clear_caches()
         self.update_progress.emit(100, "Image Loaded")
-
-        # print("Emitting to update manager")
-
-        self.update_manager.emit(image_channels, file_name, metadata)
+        # Deep copy to prevent race: worker may mutate working_channels after emission
+        channels_snapshot = copy.deepcopy(image_channels)
+        self.update_manager.emit(channels_snapshot, file_name, metadata)
         self.image_count += 1
 
     def _clear_caches(self) -> None:
@@ -853,7 +856,8 @@ class BaseGraphicsView(QWidget):
 
 
 class ReferenceGraphicsView(BaseGraphicsView):
-    update_reference = pyqtSignal(QPixmap)
+    update_reference = pyqtSignal(QPixmap, int)
+    reference_channel_updated = pyqtSignal()
 
     def dropEvent(self, event: QDropEvent):  # type: ignore
         if self._accept_if_valid(event):
@@ -886,13 +890,21 @@ class ReferenceGraphicsView(BaseGraphicsView):
         self.uuid = uuid
         self.storage.add_data("reference_uuid", {"value": uuid})
 
+    def on_channel_changed(self, channel_index: int):
+        """Update stored reference channel and notify badge when user navigates via arrows."""
+        self.current_channel = channel_index - 1  # keep 0-indexed model in sync
+        self.storage.add_data("reference_channel", {"value": f"Channel {channel_index}"})
+        self.reference_channel_updated.emit()
+
     def set_pixmap(self, image):
+        if isinstance(image, np.ndarray) and image.dtype != np.uint8:
+            image = scale_adjust(image)
         qimage = to_pixmap(image)
-        self.update_reference.emit(qimage)
+        self.update_reference.emit(qimage, self.current_channel + 1)
 
     def remove_from_canvas(self, uuid: UUID_Type):
         if super().remove_from_canvas(uuid):
-            self.update_reference.emit(QPixmap())
+            self.update_reference.emit(QPixmap(), 1)
             return True
         return False
 
@@ -900,7 +912,6 @@ class ReferenceGraphicsView(BaseGraphicsView):
 ##########################################################
 class ImageGraphicsView(BaseGraphicsView):
     update_canvas = pyqtSignal(QPixmap)
-    update_sidebar = pyqtSignal(str, str)
     save_image = pyqtSignal(QGraphicsPixmapItem)
     change_slider = pyqtSignal(tuple)
     update_cmap = pyqtSignal(str)
@@ -1117,7 +1128,6 @@ class ImageGraphicsView(BaseGraphicsView):
             str(self.uuid),
             channel_key,
             wrapper.copy(),
-            emitter=self.update_sidebar,
         )
 
     def _build_stardist_overlay(self, labels: np.ndarray) -> np.ndarray:
@@ -1459,8 +1469,7 @@ class ImageGraphicsView(BaseGraphicsView):
                         str(self.uuid),
                         channel_name,
                         wrapper,
-                        emitter=self.update_sidebar,
-                    )
+                                )
             self.image_wrapper = self.working_channels.get(
                 channel_num, ImageWrapper(np.array([]), "")
             )
@@ -1612,8 +1621,7 @@ class ImageGraphicsView(BaseGraphicsView):
             for channel_name, wrapper in result.items():
                 if "Channel" in channel_name:
                     self.storage.update_data(
-                        result_uuid, channel_name, wrapper, emitter=self.update_sidebar
-                    )
+                        result_uuid, channel_name, wrapper                    )
             if self.same_uuid(result_uuid):
                 self.working_channels = self.storage.get_data(result_uuid)["data"]
                 channel_key = f"Channel {self.current_channel + 1}"
@@ -1719,8 +1727,7 @@ class ImageGraphicsView(BaseGraphicsView):
                 self.uuid,
                 self._blur_layer,
                 self.working_channels[self._blur_layer],
-                emitter=self.update_sidebar,
-            )
+                )
             if self._blur_layer in self.working_channels:
                 self.image_wrapper = self.working_channels[self._blur_layer]
             self._clear_caches(self.uuid, self._blur_layer)
@@ -1784,8 +1791,7 @@ class ImageGraphicsView(BaseGraphicsView):
             if "Channel" in channel_name:
                 wrapper.data = cv2.flip(wrapper.data, 1)
                 self.storage.update_data(
-                    self.uuid, channel_name, wrapper, emitter=self.update_sidebar
-                )
+                    self.uuid, channel_name, wrapper                )
         channel_key = f"Channel {self.current_channel + 1}"
         if channel_key in self.working_channels:
             self.image_wrapper = self.working_channels[channel_key]
@@ -1801,8 +1807,7 @@ class ImageGraphicsView(BaseGraphicsView):
             if "Channel" in channel_name:
                 wrapper.data = cv2.flip(wrapper.data, 0)
                 self.storage.update_data(
-                    self.uuid, channel_name, wrapper, emitter=self.update_sidebar
-                )
+                    self.uuid, channel_name, wrapper                )
         channel_key = f"Channel {self.current_channel + 1}"
         if channel_key in self.working_channels:
             self.image_wrapper = self.working_channels[channel_key]
@@ -1968,28 +1973,3 @@ def contrast_key_from_wrapper(wrapper: ImageWrapper):
     return (wrapper.contrast_min, wrapper.contrast_max)
 
 
-def generate_lut(cmap: str):
-    """generate a 8 bit look-up table and converts to rgb space"""
-
-    color_map: Colormap = colormaps.get_cmap(cmap)
-
-    label_range = np.linspace(0, 1, 256)
-
-    temp = color_map(label_range)
-    temp = temp[:, 2::-1]  # drop alpha channel and convert to bgr
-    uint8_temp = np.uint8(temp * 256)
-    result = uint8_temp.reshape(256, 1, 3)
-    return result
-
-
-def label2rgb(labels, lut):
-    """applys the look-up table and merges r, g, b channels to form colored image"""
-    # print(type(labels))
-    if len(labels.shape) == 3 and labels.shape[2] == 3:
-        red, green, blue = cv2.split(labels)
-        return cv2.LUT(cv2.merge((red, green, blue)), lut)
-        # Ensure labels is 2D before merging
-    if len(labels.shape) > 2:
-        labels = labels[:, :, 0]  # Take first channel if multi-channel
-    result = cv2.LUT(cv2.merge((labels, labels, labels)), lut)  # gray to color
-    return result

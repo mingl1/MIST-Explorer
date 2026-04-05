@@ -269,18 +269,18 @@ class ImageManager(QWidget):
             main_item.appendRow(channel_item)
 
     def set_channel_icon(self, item_uuid, channel):
-        """Set the icon for the channel item"""
-        assert self.root_node is not None, "Root node is not initialized"
-        main_item = None
+        """Set the icon for the channel item."""
+        if self.root_node is None:
+            return
         image_data = self.storage.get_data(item_uuid)
         if image_data is None:
-            raise ValueError(f"No image data found for UUID: {item_uuid}")
+            return  # UUID not in storage (e.g. internal bookkeeping keys)
         image_data = image_data.get("data", {})
-        if channel not in image_data:
-            raise ValueError(
-                f"Channel {channel} not found in image data for UUID: {item_uuid}"
-            )
+        if not image_data or channel not in image_data:
+            return
+
         model = self.image_tree_model
+        main_item = None
         for i in range(model.rowCount()):
             item = model.item(i)
             if item is None:
@@ -289,24 +289,25 @@ class ImageManager(QWidget):
                 main_item = item
                 break
         if main_item is None:
-            raise ValueError(f"No main item found for UUID: {item_uuid}")
+            return  # UUID not in sidebar tree (e.g. internal storage entries)
 
         self._sync_channel_children(main_item, item_uuid, image_data)
 
-        channel_item = None
-        if main_item.data(Qt.ItemDataRole.WhatsThisRole) == channel:
-            if isinstance(main_item, ImageTreeItem):
-                main_item.set_icon(image_data)
+        # Always refresh parent icon (parent.channel is always "Channel 1")
+        if isinstance(main_item, ImageTreeItem):
+            main_item.set_icon(image_data)
+
+        # Refresh the specific child channel
         for i in range(main_item.rowCount()):
             child = main_item.child(i)
             if child is None:
                 continue
             if child.data(Qt.ItemDataRole.WhatsThisRole) == channel:
-                channel_item = child
+                if isinstance(child, ImageTreeItem):
+                    child.set_icon(image_data)
                 break
-        if isinstance(channel_item, ImageTreeItem):
-            channel_item.set_icon(image_data)
         else:
+            # New channel not yet in tree
             if isinstance(main_item, ImageTreeItem) and len(image_data) > 1:
                 channel_item = ImageTreeItem(
                     item_uuid,
@@ -877,6 +878,7 @@ class ImageTreeWidget(QTreeView):
             self._model_canvas.uuid_changed,
             self._model_canvas.update_channel,
             self._model_reference_canvas.update_reference,
+            self._model_reference_canvas.reference_channel_updated,
             self._model_stardist.cell_image_set,
         ]
         deferred_signals = [
