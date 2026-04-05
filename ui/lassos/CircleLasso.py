@@ -6,6 +6,9 @@ from ui.lassos.Lasso import pick_distinct_color
 
 
 class CircleLasso(pg.CircleROI):
+    def _addHandles(self):
+        pass
+
     def __init__(self, pos, size, parent=None, existing_colors=None):
         col = pick_distinct_color(existing_colors or [])[:3]
         self.color = QColor(*col)

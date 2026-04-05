@@ -289,7 +289,6 @@ class ImageGraphicsViewUI(QGraphicsView):
     def start_crop_mode(self):
         """Start crop mode - called from external crop button"""
         self.crop_mode = True
-        self.begin_crop = True
         self.select = False
         self.current_polygon = None
         self.setFocus()
@@ -306,6 +305,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.crop_mode = False
         self.begin_crop = False
         self.crop_start_pos = None
+        self._roi_origin_scene = None
 
         if self.active_crop_rect:
             self.get_scene().removeItem(self.active_crop_rect)

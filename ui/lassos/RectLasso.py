@@ -6,6 +6,12 @@ from ui.lassos.Lasso import pick_distinct_color
 
 
 class RectLasso(pg.RectROI):
+    def addScaleHandle(self, *args, **kwargs):
+        pass
+
+    def addRotateHandle(self, *args, **kwargs):
+        pass
+
     def __init__(self, pos, size, parent=None, existing_colors=None):
         col = pick_distinct_color(existing_colors or [])[:3]
         self.color = QColor(*col)
