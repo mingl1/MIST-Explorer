@@ -48,7 +48,8 @@ def numpy_to_qimage(array: np.ndarray) -> QImage:
         raise ValueError("Unsupported array shape: {}".format(array.shape))
     if qimage is None:
         raise ValueError("Failed to create QImage from numpy array")
-    return qimage if qimage is not None else QImage()
+    qimage.ndarray = array  # keep numpy buffer alive as long as QImage lives
+    return qimage
 
 
 def qimage_to_numpy(qimage: QImage):

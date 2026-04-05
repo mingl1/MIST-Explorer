@@ -1776,12 +1776,7 @@ class ImageGraphicsView(BaseGraphicsView):
                 channels[channel_name] = wrapper_copy
 
             target_channel = f"Channel {self.current_channel + 1}"
-            self.crop_worker = Worker(
-                self.add_to_canvas, channels, True, name, target_channel
-            )
-            self.crop_worker.finished.connect(self.crop_worker.quit)
-            self.crop_worker.finished.connect(self.crop_worker.deleteLater)
-            self.crop_worker.start()
+            self.add_to_canvas(channels, True, name, target_channel)
         else:
             self.crop_signal.emit(False)
         if right <= left or bottom <= top:

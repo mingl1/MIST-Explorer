@@ -155,6 +155,8 @@ def test_crop_new_image_opens_on_active_channel(qapp, monkeypatch):
         def __init__(self, fn, *args):
             self.fn = fn
             self.args = args
+            self.signal = DummySignal()
+            self.error = DummySignal()
             self.finished = DummySignal()
 
         def quit(self):
@@ -171,8 +173,9 @@ def test_crop_new_image_opens_on_active_channel(qapp, monkeypatch):
 
     view.crop(QRect(0, 0, 2, 2))
 
-    assert isinstance(view.crop_worker, DummyWorker)
-    assert view.crop_worker.args[-1] == "Channel 2"
+    # crop() now calls add_to_canvas() directly; image_worker holds target_channel as last arg
+    assert isinstance(view.image_worker, DummyWorker)
+    assert view.image_worker.args[-1] == "Channel 2"
 
 
 def test_uuid_reload_restores_stardist_overlay_state(qapp):
