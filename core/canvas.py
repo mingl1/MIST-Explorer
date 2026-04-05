@@ -311,6 +311,9 @@ class ImageWrapper:
         self.data = data.copy()
         self.contrast_min = 0
         self.contrast_max = 255
+        # Keyed by render_size (pixels). Populated lazily by create_thumbnail;
+        # intentionally NOT copied so that a new wrapper always gets a fresh cache.
+        self._thumb_cache: dict[int, np.ndarray] = {}
 
     def copy(self):
         arr = copy.copy(self.data)

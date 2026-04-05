@@ -111,26 +111,41 @@ def label2rgb(labels, lut):
     return cv2.LUT(cv2.merge((labels, labels, labels)), lut)
 
 
-def create_thumbnail(data: np.ndarray, size: int = 50,
-                     cmap: str | None = None,
-                     contrast_min: int | None = None,
-                     contrast_max: int | None = None) -> QIcon:
-    """Create a QIcon thumbnail honoring stored contrast and colormap settings."""
-    arr = scale_adjust(data.copy())
+def create_thumbnail(wrapper, size: int = 50) -> QIcon:
+    """Create a QIcon thumbnail from an ImageWrapper.
+
+    Expensive work (scale_adjust + downscale to render_size) is cached on
+    ``wrapper._thumb_cache`` so that repeated calls caused by contrast/cmap
+    changes only execute cheap LUT operations on the already-small array.
+    """
+    render_size = size * 2  # 2× for Retina sharpness
+
+    # --- Stage 1: build/retrieve the pre-scaled base array (cached) ---
+    if render_size not in wrapper._thumb_cache:
+        arr = scale_adjust(wrapper.data.copy())
+        h, w = arr.shape[:2]
+        if h > 0 and w > 0 and max(h, w) > render_size:
+            scale = render_size / max(h, w)
+            new_h = max(1, int(h * scale))
+            new_w = max(1, int(w * scale))
+            arr = cv2.resize(arr, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        wrapper._thumb_cache[render_size] = arr
+    arr = wrapper._thumb_cache[render_size].copy()
+
+    # --- Stage 2: apply contrast LUT (cheap on small array) ---
     if arr.size > 0:
-        if contrast_min is not None and contrast_max is not None:
-            vmin_i, vmax_i = int(contrast_min), int(contrast_max)
-        else:
-            vmin, vmax = auto_contrast_helper(data)
-            vmin_i, vmax_i = int(round(vmin)), int(round(vmax))
+        vmin_i = int(wrapper.contrast_min)
+        vmax_i = int(wrapper.contrast_max)
         if vmax_i > vmin_i:
             arr = create_lut(vmin_i, vmax_i)[arr]
+
+    # --- Stage 3: apply colormap (cheap on small array) ---
+    cmap = wrapper.cmap
     if cmap is not None and cmap not in ("gray", "label_image"):
         arr = label2rgb(arr, generate_lut(cmap))
         arr = cv2.cvtColor(arr, cv2.COLOR_BGR2RGB)
+
     qimage = numpy_to_qimage(arr)
-    # Render at 2x for Retina sharpness, with smooth downscaling
-    render_size = size * 2
     thumbnail = QPixmap(qimage).scaled(
         render_size, render_size,
         Qt.AspectRatioMode.KeepAspectRatio,

@@ -27,7 +27,6 @@ from PyQt6.QtWidgets import (
 
 from core import ImageGraphicsView, ImageStorage, StarDist
 from core.canvas import ReferenceGraphicsView
-from ui.status_badge_delegate import StatusBadgeDelegate
 from core.project_manager import ProjectManager
 from core.project_naming import (
     SEGMENTATION_BASE_NAME,
@@ -35,6 +34,7 @@ from core.project_naming import (
     is_temp_project_name,
 )
 from models.image_list_model import ImageTreeItem, ImageTreeModel
+from ui.status_badge_delegate import StatusBadgeDelegate
 
 logger = logging.getLogger(__name__)
 
@@ -78,12 +78,14 @@ class ImageManager(QWidget):
         metadata = ProjectManager.load_project(project_path)
         if metadata is not None and metadata.name:
             self.current_project_name = metadata.name
-            self.current_project_is_temp = bool(metadata.is_temporary) or is_temp_project_name(
-                self.current_project_name
-            )
+            self.current_project_is_temp = bool(
+                metadata.is_temporary
+            ) or is_temp_project_name(self.current_project_name)
         else:
             self.current_project_name = project_path.stem
-            self.current_project_is_temp = is_temp_project_name(self.current_project_name)
+            self.current_project_is_temp = is_temp_project_name(
+                self.current_project_name
+            )
 
     def _can_save_project(self) -> bool:
         """Return True when project-backed saves are possible."""
@@ -123,7 +125,9 @@ class ImageManager(QWidget):
         if saved_metadata is not None:
             for img_meta in list(saved_metadata.images):
                 if img_meta.uuid not in current_uuids:
-                    ProjectManager.delete_image(self.current_project_path, img_meta.uuid)
+                    ProjectManager.delete_image(
+                        self.current_project_path, img_meta.uuid
+                    )
 
     def _save_image_reference(self, item_uuid, item):
         """Save only metadata/reference for an image (no pixel data copied)."""
@@ -140,7 +144,10 @@ class ImageManager(QWidget):
         contrast_settings = {}
         channel_display_names = {}
         for channel_name, wrapper in item_data.items():
-            contrast_settings[channel_name] = (wrapper.contrast_min, wrapper.contrast_max)
+            contrast_settings[channel_name] = (
+                wrapper.contrast_min,
+                wrapper.contrast_max,
+            )
             channel_display_names[channel_name] = wrapper.name or channel_name
 
         ProjectManager.save_image_reference(
@@ -157,6 +164,8 @@ class ImageManager(QWidget):
         """Set the model canvas."""
         self.model_canvas = model
         self.image_tree_view.model_canvas = model
+        if hasattr(model, "update_channel"):
+            model.update_channel.connect(self._refresh_canvas_thumbnail)
 
     def set_model_stardist(self, model):
         """Set the stardist model."""
@@ -268,6 +277,46 @@ class ImageManager(QWidget):
             )
             main_item.appendRow(channel_item)
 
+    def _refresh_canvas_thumbnail(self, channel_int: int):
+        """Lightweight thumbnail refresh triggered by canvas display updates.
+
+        Reads from canvas.working_channels — the live in-memory wrappers whose
+        contrast_min/max and cmap are kept current by update_contrast/change_cmap.
+        Storage holds separate copies that are NOT updated on every contrast change,
+        so reading from storage would always produce stale thumbnails.
+        """
+        canvas = self.model_canvas
+        if canvas is None or canvas.uuid is None:
+            return
+        channel_name = f"Channel {channel_int + 1}"
+
+        # working_channels is the authoritative source for current contrast/cmap.
+        data = canvas.working_channels
+        if channel_name not in data:
+            return
+
+        model = self.image_tree_model
+        for i in range(model.rowCount()):
+            item = model.item(i)
+            if item is None or str(item.data(Qt.ItemDataRole.UserRole)) != str(
+                canvas.uuid
+            ):
+                continue
+            # Parent item mirrors Channel 1; update it when that channel changes.
+            if isinstance(item, ImageTreeItem) and item.channel == channel_name:
+                item.set_icon(data)
+            # Update the matching channel child.
+            for j in range(item.rowCount()):
+                child = item.child(j)
+                if (
+                    child is not None
+                    and isinstance(child, ImageTreeItem)
+                    and child.data(Qt.ItemDataRole.WhatsThisRole) == channel_name
+                ):
+                    child.set_icon(data)
+                    break
+            break
+
     def set_channel_icon(self, item_uuid, channel):
         """Set the icon for the channel item."""
         if self.root_node is None:
@@ -318,7 +367,6 @@ class ImageManager(QWidget):
                     ),
                 )
                 main_item.appendRow(channel_item)
-
 
     def add_to_storage(self, item_uuid, obj):
         """Add data to storage."""
@@ -618,7 +666,6 @@ class ImageTreeWidget(QTreeView):
                 item_uuid, as_new_image=False, target_channel=target_channel
             )
 
-
     @staticmethod
     def _channel_sort_key(channel_key: str):
         try:
@@ -801,7 +848,7 @@ class ImageTreeWidget(QTreeView):
             wrapper = channel_dict.get(channel_key)
             if wrapper is None:
                 return
-            
+
             # Preserve label IDs for integer label arrays.
             # PNG is limited to 16-bit (max 65535).  If an int32 stardist label
             # image has cell IDs above that ceiling, fall back to TIF so the
@@ -829,12 +876,16 @@ class ImageTreeWidget(QTreeView):
 
     def set_as_tissue_target(self, i_uuid: UUID, is_leaf: bool, channel: int):
         """Set the selected image as the tissue target image for alignment"""
-        self.storage.add_data("tissue_target_uuid", {"value": i_uuid, "channel": channel})
+        self.storage.add_data(
+            "tissue_target_uuid", {"value": i_uuid, "channel": channel}
+        )
         self.tissue_target_selected.emit(i_uuid, is_leaf, channel)
 
     def set_as_tissue_unaligned(self, i_uuid: UUID, is_leaf: bool, channel: int):
         """Set the selected image as the tissue unaligned image for alignment"""
-        self.storage.add_data("tissue_unaligned_uuid", {"value": i_uuid, "channel": channel})
+        self.storage.add_data(
+            "tissue_unaligned_uuid", {"value": i_uuid, "channel": channel}
+        )
         self.tissue_unaligned_selected.emit(i_uuid, is_leaf, channel)
 
     def set_as_segmentation_label(self, i_uuid: UUID, channel: int):

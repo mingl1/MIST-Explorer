@@ -35,11 +35,7 @@ class ImageTreeItem(QStandardItem):
         if image_ready:
             thumb_size = 50 if useItemName else 30
             row_height = 60 if useItemName else 40
-            wrapper = data[channel]
-            icon = create_thumbnail(wrapper.data, size=thumb_size,
-                                    cmap=wrapper.cmap,
-                                    contrast_min=wrapper.contrast_min,
-                                    contrast_max=wrapper.contrast_max)
+            icon = create_thumbnail(data[channel], size=thumb_size)
             self.setIcon(icon)
             self.setData(QSize(0, row_height), Qt.ItemDataRole.SizeHintRole)
             if useItemName:
@@ -79,10 +75,7 @@ class ImageTreeItem(QStandardItem):
             raise ValueError(f"No data found for channel: {self.channel}")
         thumb_size = 50 if self.useItemName else 30
         row_height = 60 if self.useItemName else 40
-        icon = create_thumbnail(channel_data.data, size=thumb_size,
-                                cmap=channel_data.cmap,
-                                contrast_min=channel_data.contrast_min,
-                                contrast_max=channel_data.contrast_max)
+        icon = create_thumbnail(channel_data, size=thumb_size)
         self.setIcon(icon)
         self.setData(QSize(0, row_height), Qt.ItemDataRole.SizeHintRole)
 
