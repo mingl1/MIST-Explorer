@@ -2,6 +2,7 @@
 from PyInstaller.utils.hooks import collect_submodules
 from PyInstaller.utils.hooks import copy_metadata
 from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.hooks import collect_dynamic_libs
 
 datas = [('assets', 'assets')]
 hiddenimports = ['metadata']
@@ -9,14 +10,16 @@ datas += copy_metadata('scanpy')
 datas += copy_metadata('scikit-learn')
 datas += copy_metadata('pandas')
 datas += collect_data_files('matplotlib')
+datas += collect_data_files('openvino')
 hiddenimports += collect_submodules('scikit-learn')
 hiddenimports += collect_submodules('stardist')
 
+binaries = collect_dynamic_libs('openvino')
 
 a = Analysis(
     ['main.py'],
     pathex=[],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
@@ -41,11 +44,6 @@ a = Analysis(
     },
     runtime_hooks=[],
     excludes=[
-        # TensorFlow extras not needed at runtime
-        'tensorboard',
-        'tensorflow.python.debug',
-        'tensorflow_estimator',
-        'tensorflow.lite',
         # Jupyter/IPython - not needed in bundled app
         'IPython',
         'ipykernel',
