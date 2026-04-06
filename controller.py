@@ -200,9 +200,8 @@ class Controller:
         """Handles the main image open action."""
         self.open_file_dialog(self.model_canvas)
 
-    # add new image to storage
-    def handle_new_image(self, data, file_name, metadata=None):
-        """Handles a new image by adding it to storage."""
+    def _store_uploaded_image(self, data, file_name, metadata=None) -> str:
+        """Persist a newly uploaded image in storage/sidebar and return its UUID."""
         storage_item = {}
         storage_item["name"] = os.path.basename(file_name)
         storage_item["original_filename"] = file_name
@@ -212,21 +211,23 @@ class Controller:
         storage_item["data"] = data
         my_uuid = str(uuid.uuid4())
         self.view.images_tab.add_to_storage(my_uuid, storage_item)
-        self.model_canvas.set_uuid(my_uuid)
         self.view.images_tab.add_item(my_uuid)
+        return my_uuid
+
+    # add new image to storage
+    def handle_new_image(self, data, file_name, metadata=None):
+        """Handles a new image by adding it to storage."""
+        my_uuid = Controller._store_uploaded_image(self, data, file_name, metadata)
+        # Set the active canvas UUID after selectors have refreshed from the new tree row.
+        self.model_canvas.set_uuid(my_uuid)
 
     def handle_new_reference_image(self, data, file_name):
         """Handles a new reference image by adding it to storage."""
-        storage_item = {}
-        storage_item["name"] = os.path.basename(file_name)
-        storage_item["original_filename"] = file_name
-        self.image_count += 1
-
-        storage_item["data"] = data
-        my_uuid = str(uuid.uuid4())
-        self.view.images_tab.add_to_storage(my_uuid, storage_item)
+        my_uuid = Controller._store_uploaded_image(self, data, file_name)
         self.model_reference_canvas.set_uuid(my_uuid)
-        self.view.images_tab.add_item(my_uuid)
+        # Reference uploads do not emit a dedicated UUID-changed signal, so
+        # update the selector directly after the new image exists in the model.
+        self.view.register_groupbox.reference_selector.follow_canvas_uuid(str(my_uuid))
 
     def _handle_aligned_image(self, aligned_data, target_small, aligned_small):
         """Handle the aligned image result"""
