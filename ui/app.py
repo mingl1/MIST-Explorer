@@ -51,6 +51,13 @@ from utils import resource_path
 
 logger = logging.getLogger(__name__)
 
+_WINDOWS_CUSTOM_CHROME_ENABLED = False
+
+
+def should_use_custom_windows_chrome() -> bool:
+    """Gate the experimental frameless Windows window chrome."""
+    return sys.platform == "win32" and _WINDOWS_CUSTOM_CHROME_ENABLED
+
 if sys.platform == "win32":
     _WM_NCHITTEST = 0x0084
     _HTLEFT = 10
@@ -226,6 +233,7 @@ class MainWindow(QMainWindow):
 
     def _init_attributes(self):
         """Initialize instance attributes."""
+        self.custom_windows_chrome_enabled = should_use_custom_windows_chrome()
         self.drag_pos: Optional[QPoint] = None
         self.menu_bar: Optional[MenuBarUI] = None
         self.tool_bar: Optional[ToolBarUI] = None
@@ -314,7 +322,7 @@ class MainWindow(QMainWindow):
 
     def _setup_main_window(self):
         """Setup main window properties"""
-        if sys.platform == "win32":
+        if self.custom_windows_chrome_enabled:
             self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.setWindowIcon(QIcon(resource_path("assets/final_icon.png")))
         self.resize(1440, 1000)
@@ -404,7 +412,7 @@ class MainWindow(QMainWindow):
     # pylint: disable=invalid-name
     def eventFilter(self, obj, event):  # type: ignore
         """Event filter for handling window dragging"""
-        if sys.platform == "win32":
+        if self.custom_windows_chrome_enabled:
             if obj == self.menu_bar:
                 if event.type() == QEvent.Type.MouseButtonPress:
                     self.drag_pos = event.globalPosition().toPoint()
@@ -430,7 +438,7 @@ class MainWindow(QMainWindow):
     # pylint: disable=invalid-name
     def nativeEvent(self, eventType, message):
         """Handle Windows native hit-testing for frameless window resize from all edges."""
-        if sys.platform == "win32" and eventType == b"windows_generic_MSG":
+        if self.custom_windows_chrome_enabled and eventType == b"windows_generic_MSG":
             try:
                 msg = ctypes.wintypes.MSG.from_address(message.__int__())
                 if msg.message == _WM_NCHITTEST and not self.isMaximized():
@@ -493,7 +501,7 @@ class MainWindow(QMainWindow):
         self.tool_bar = ToolBarUI(self)
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.tool_bar)
         self.setMenuBar(self.menu_bar)
-        if sys.platform == "win32":
+        if self.custom_windows_chrome_enabled:
             self.menu_bar.installEventFilter(self)
 
     def _setup_side_panel(self):

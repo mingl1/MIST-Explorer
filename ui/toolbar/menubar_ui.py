@@ -54,7 +54,9 @@ class MenuBarUI(QMenuBar):
         view_log_action.triggered.connect(parent.show_log_dialog)
         self.menuView.addAction(view_log_action)
 
-        if sys.platform == "win32":
+        if sys.platform == "win32" and getattr(
+            parent, "custom_windows_chrome_enabled", False
+        ):
             # Window controls
             self.controls_widget = QWidget()
             self.controls_layout = QHBoxLayout(self.controls_widget)
