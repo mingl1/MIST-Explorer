@@ -118,7 +118,11 @@ class SidebarHandle(QSplitterHandle):
     def __init__(self, orientation, parent):
         super().__init__(orientation, parent)
         self.setFixedWidth(16)
-        self.setStyleSheet("background: #e8e8e8;")
+        # Windows renders this custom splitter strip as a bright slab between the
+        # sidebar and canvas. Keep it transparent there so only the pill controls
+        # are visible, while preserving the existing look elsewhere.
+        handle_background = "transparent" if sys.platform == "win32" else "#e8e8e8"
+        self.setStyleSheet(f"background: {handle_background};")
 
         self._btn = QPushButton("‹", self)
         self._btn.setFixedSize(14, 40)
@@ -426,43 +430,40 @@ class MainWindow(QMainWindow):
     # pylint: disable=invalid-name
     def nativeEvent(self, eventType, message):
         """Handle Windows native hit-testing for frameless window resize from all edges."""
-        if sys.platform == "win32":
-            msg = ctypes.wintypes.MSG.from_address(int(message))
-            if msg.message == _WM_NCHITTEST and not self.isMaximized():
-                # Extract screen-space cursor position from lParam
-                x = msg.lParam & 0xFFFF
-                y = (msg.lParam >> 16) & 0xFFFF
-                # Sign extension for multi-monitor (negative coordinates)
-                if x >= 32768:
-                    x -= 65536
-                if y >= 32768:
-                    y -= 65536
+        if sys.platform == "win32" and eventType == b"windows_generic_MSG":
+            try:
+                msg = ctypes.wintypes.MSG.from_address(message.__int__())
+                if msg.message == _WM_NCHITTEST and not self.isMaximized():
+                    x = ctypes.c_short(msg.lParam & 0xFFFF).value
+                    y = ctypes.c_short((msg.lParam >> 16) & 0xFFFF).value
 
-                pos = self.mapFromGlobal(QPoint(x, y))
-                w, h = self.width(), self.height()
-                bw = _RESIZE_BORDER_WIDTH
+                    pos = self.mapFromGlobal(QPoint(x, y))
+                    w, h = self.width(), self.height()
+                    bw = _RESIZE_BORDER_WIDTH
 
-                left = pos.x() < bw
-                right = pos.x() > w - bw
-                top = pos.y() < bw
-                bottom = pos.y() > h - bw
+                    left = pos.x() < bw
+                    right = pos.x() > w - bw
+                    top = pos.y() < bw
+                    bottom = pos.y() > h - bw
 
-                if top and left:
-                    return True, _HTTOPLEFT
-                if top and right:
-                    return True, _HTTOPRIGHT
-                if bottom and left:
-                    return True, _HTBOTTOMLEFT
-                if bottom and right:
-                    return True, _HTBOTTOMRIGHT
-                if left:
-                    return True, _HTLEFT
-                if right:
-                    return True, _HTRIGHT
-                if top:
-                    return True, _HTTOP
-                if bottom:
-                    return True, _HTBOTTOM
+                    if top and left:
+                        return True, _HTTOPLEFT
+                    if top and right:
+                        return True, _HTTOPRIGHT
+                    if bottom and left:
+                        return True, _HTBOTTOMLEFT
+                    if bottom and right:
+                        return True, _HTBOTTOMRIGHT
+                    if left:
+                        return True, _HTLEFT
+                    if right:
+                        return True, _HTRIGHT
+                    if top:
+                        return True, _HTTOP
+                    if bottom:
+                        return True, _HTBOTTOM
+            except Exception:
+                pass
 
         return super().nativeEvent(eventType, message)
 
