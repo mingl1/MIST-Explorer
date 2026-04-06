@@ -961,9 +961,6 @@ class SignalConnectionManager:
     def _setup_registration_connections(self):
         """Registration-related connections"""
         # Parameters
-        self.c.view.register_groupbox.alignment_layer.currentTextChanged.connect(
-            self.c.model_register.set_alignment_layer
-        )
         self.c.view.register_groupbox.overlap.valueChanged.connect(
             self.c.model_register.set_overlap
         )
@@ -996,8 +993,14 @@ class SignalConnectionManager:
         self.c.view.register_groupbox.image_selector.image_changed.connect(
             self._on_register_image_selected
         )
+        self.c.view.register_groupbox.image_selector.channel_changed.connect(
+            self.c.model_register.set_moving_channel_key
+        )
         self.c.view.register_groupbox.reference_selector.image_changed.connect(
             self._on_register_reference_image_selected
+        )
+        self.c.view.register_groupbox.reference_selector.channel_changed.connect(
+            self.c.model_register.set_reference_channel_key
         )
         tree_model = self.c.view.images_tab.image_tree_model
         tree_model.rowsInserted.connect(lambda *_: self._repopulate_register_selector())
@@ -1019,9 +1022,11 @@ class SignalConnectionManager:
         if img_data is None:
             return
         channels = img_data["data"]
-        self.c.view.register_groupbox.updateChannelSelector(channels)
         self.c.model_register.update_moving_image(channels)
         self.c.view.register_groupbox.image_selector.set_channels(channels)
+        self.c.model_register.set_moving_channel_key(
+            self.c.view.register_groupbox.image_selector.current_channel()
+        )
 
     def _on_register_reference_image_selected(self, uuid: str) -> None:
         """Called when user picks a reference image in the Alignment tab selector."""
@@ -1032,6 +1037,9 @@ class SignalConnectionManager:
         channels = img_data["data"]
         self.c.model_register.update_reference_channels(channels)
         self.c.view.register_groupbox.reference_selector.set_channels(channels)
+        self.c.model_register.set_reference_channel_key(
+            self.c.view.register_groupbox.reference_selector.current_channel()
+        )
 
     def _setup_cell_intensity_conns(self):
         """Cell intensity-related connections"""
