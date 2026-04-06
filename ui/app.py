@@ -14,7 +14,15 @@ if sys.platform == "win32":
 from typing import Optional
 
 # pylint: disable=no-name-in-module
-from PyQt6.QtCore import QCoreApplication, QEvent, QMetaObject, QPoint, QPointF, QSize, Qt
+from PyQt6.QtCore import (
+    QCoreApplication,
+    QEvent,
+    QMetaObject,
+    QPoint,
+    QPointF,
+    QSize,
+    Qt,
+)
 from PyQt6.QtGui import QIcon, QImageReader, QKeySequence, QMouseEvent, QShortcut
 from PyQt6.QtWidgets import (
     QGroupBox,
@@ -62,7 +70,7 @@ class _ResizeDragButton(QPushButton):
     def __init__(self, handle: "SidebarHandle"):
         super().__init__(handle)
         self._handle = handle
-        icon_path = Path(__file__).parent.parent / "left_right_indicator.svg"
+        icon_path = resource_path("assets/icons/left_right_indicator.svg")
         self.setIcon(QIcon(str(icon_path)))
         self.setIconSize(QSize(12, 12))
         self.setFixedSize(14, 40)
@@ -133,7 +141,9 @@ class SidebarHandle(QSplitterHandle):
 
         self._container = QWidget(self)
         self._container.setStyleSheet("background: transparent;")
-        self._container.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+        self._container.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, False
+        )
         layout = QVBoxLayout(self._container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
@@ -255,8 +265,9 @@ class MainWindow(QMainWindow):
             self._apply_view_tab_args(seg_path, cell_data_path)
 
     def _apply_view_tab_args(self, seg_path: str, cell_data_path: str) -> None:
-        import pandas as pd
         from pathlib import Path
+
+        import pandas as pd
 
         if not Path(seg_path).is_file():
             logger.warning("CLI -s path not found: %s", seg_path)
@@ -605,7 +616,9 @@ class MainWindow(QMainWindow):
         transform_scroll = QScrollArea()
         transform_scroll.setWidget(transform_tab)
         transform_scroll.setWidgetResizable(True)
-        transform_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        transform_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
         self.processing_tabs.addTab(transform_scroll, "Transform")
 
     def _setup_alignment_tab(self):
@@ -623,7 +636,9 @@ class MainWindow(QMainWindow):
         alignment_scroll = QScrollArea()
         alignment_scroll.setWidget(alignment_tab)
         alignment_scroll.setWidgetResizable(True)
-        alignment_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        alignment_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
         self.processing_tabs.addTab(alignment_scroll, "Alignment")
 
     def _setup_segmentation_tab(self):
@@ -651,7 +666,9 @@ class MainWindow(QMainWindow):
         segmentation_scroll = QScrollArea()
         segmentation_scroll.setWidget(segmentation_tab)
         segmentation_scroll.setWidgetResizable(True)
-        segmentation_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        segmentation_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
         self.processing_tabs.addTab(segmentation_scroll, "Segmentation")
 
     def _setup_quantification_tab(self):
@@ -670,7 +687,9 @@ class MainWindow(QMainWindow):
         quantification_scroll = QScrollArea()
         quantification_scroll.setWidget(quantification_tab)
         quantification_scroll.setWidgetResizable(True)
-        quantification_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        quantification_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
         self.processing_tabs.addTab(quantification_scroll, "Generation")
 
     def _setup_view_tab(self):
