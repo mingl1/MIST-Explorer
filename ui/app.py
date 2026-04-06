@@ -10,25 +10,15 @@ from pathlib import Path
 from typing import Optional
 
 # pylint: disable=no-name-in-module
-from PyQt6.QtCore import QCoreApplication, QEvent, QMetaObject, QPoint, QPointF, QSize, Qt
-from PyQt6.QtGui import QIcon, QImageReader, QKeySequence, QMouseEvent, QShortcut
-from PyQt6.QtWidgets import (
-    QGroupBox,
-    QHBoxLayout,
-    QLabel,
-    QMainWindow,
-    QProgressBar,
-    QPushButton,
-    QScrollArea,
-    QSizePolicy,
-    QSplitter,
-    QSplitterHandle,
-    QStackedWidget,
-    QStatusBar,
-    QTabWidget,
-    QVBoxLayout,
-    QWidget,
-)
+from PyQt6.QtCore import (QCoreApplication, QEvent, QMetaObject, QPoint,
+                          QPointF, QSize, Qt)
+from PyQt6.QtGui import (QIcon, QImageReader, QKeySequence, QMouseEvent,
+                         QShortcut)
+from PyQt6.QtWidgets import (QGroupBox, QHBoxLayout, QLabel, QMainWindow,
+                             QProgressBar, QPushButton, QScrollArea,
+                             QSizePolicy, QSplitter, QSplitterHandle,
+                             QStackedWidget, QStatusBar, QTabWidget,
+                             QVBoxLayout, QWidget)
 
 from core import MetaData
 from core.project_manager import ProjectManager
@@ -94,7 +84,7 @@ class SidebarHandle(QSplitterHandle):
     def __init__(self, orientation, parent):
         super().__init__(orientation, parent)
         self.setFixedWidth(16)
-        self.setStyleSheet("background: #e8e8e8;")
+        self.setStyleSheet("background: transparent;")
 
         self._btn = QPushButton("‹", self)
         self._btn.setFixedSize(14, 40)
@@ -239,8 +229,9 @@ class MainWindow(QMainWindow):
             self._apply_view_tab_args(seg_path, cell_data_path)
 
     def _apply_view_tab_args(self, seg_path: str, cell_data_path: str) -> None:
-        import pandas as pd
         from pathlib import Path
+
+        import pandas as pd
 
         if not Path(seg_path).is_file():
             logger.warning("CLI -s path not found: %s", seg_path)
@@ -570,7 +561,8 @@ class MainWindow(QMainWindow):
     def _setup_segmentation_tab(self):
         """Sets up the 'Segmentation' tab with Gaussian Blur and StarDist."""
         from ui.processing.gaussian_blur import GaussianBlur
-        from ui.processing.segmentation_image_selector import SegmentationImageSelector
+        from ui.processing.segmentation_image_selector import \
+            SegmentationImageSelector
         from ui.stardist.stardist_ui import StarDistUI
 
         segmentation_tab = QWidget()
