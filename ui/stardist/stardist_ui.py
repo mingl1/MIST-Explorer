@@ -235,6 +235,15 @@ class StarDistUI(QWidget):
             page.setSizePolicy(sp)
         self.segmentation_tabs.updateGeometry()
 
+    def hide_channel_selector_row(self):
+        """Hide the built-in channel selector row.
+
+        Called when an external shared selector manages image/channel selection
+        so the row is not shown as a redundant duplicate.
+        """
+        self.stardist_channel_selector_label.setVisible(False)
+        self.stardist_channel_selector.setVisible(False)
+
     def set_groupbox_title(self, name, channel):
         self.stardist_groupbox.setTitle(f"Cell Segmentation - {name}")
         self.stardist_channel_selector.setCurrentText(channel)

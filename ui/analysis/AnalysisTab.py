@@ -1146,20 +1146,6 @@ class GraphsList(QWidget):
                 button.clicked.connect(lambda _, idx=index: navigate_to_page(idx))
                 layout.addWidget(button)
 
-        layout.addStretch()  # Add stretch to push the status layout to the bottom
-
-        add_chart_button = QPushButton("Add Chart")
-        add_chart_button.setFixedHeight(70)
-        add_chart_button.setStyleSheet(
-            "text-align:left; padding: 10px; margin-top: 10px;"
-        )
-        add_chart_button.setIcon(
-            QIcon(
-                "/Users/clark/Desktop/wang/protein_visualization_app/ui/graphing/icons/addchart.png"
-            )
-        )
-        add_chart_button.clicked.connect(navigate_to_page)
-        layout.addWidget(add_chart_button)
 
 
 class RegenerateOnCloseWindow(QWidget):

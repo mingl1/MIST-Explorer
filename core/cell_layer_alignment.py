@@ -352,6 +352,11 @@ class CellLayerAligner(QThread):
         """
         Preprocess two images for coarse alignment.
         """
+        _cv2_supported = {np.uint8, np.uint16, np.int16, np.float32, np.float64}
+        if target_image.dtype not in _cv2_supported:
+            target_image = target_image.astype(np.float32)
+        if unaligned_image.dtype not in _cv2_supported:
+            unaligned_image = unaligned_image.astype(np.float32)
         coarse_target = cv2.resize(
             target_image,
             (0, 0),

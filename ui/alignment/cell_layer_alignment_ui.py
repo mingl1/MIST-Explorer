@@ -5,7 +5,6 @@ Cell layer alignment UI module.
 from PyQt6.QtCore import QCoreApplication, Qt, pyqtSignal, pyqtSlot
 from PyQt6.QtWidgets import (
     QCheckBox,
-    QComboBox,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -18,6 +17,7 @@ from PyQt6.QtWidgets import (
 
 from core import CellLayerAligner, ImageStorage
 from ui.alignment.alignment_preview_dialog import AlignmentPreviewDialog
+from ui.processing.segmentation_image_selector import SegmentationImageSelector
 
 
 # pylint: disable=too-many-instance-attributes
@@ -38,7 +38,6 @@ class CellLayerAlignmentUI(QWidget):
         parent=None,
     ):
         super().__init__(parent)
-        self.image_channels = [1, 1]
 
         self.target_image = None
         self.target_uuid = ""
@@ -54,14 +53,10 @@ class CellLayerAlignmentUI(QWidget):
         # Attributes initialized in setup methods
         self.alignment_groupbox = None
         self.main_layout = None
-        self.image1_layout = None
-        self.image1_label = None
-        self.image1_status = None
-        self.target_channel_selector = None
-        self.image2_layout = None
-        self.image2_label = None
-        self.image2_status = None
-        self.unaligned_channel_selector = None
+        self._target_groupbox = None
+        self.target_image_selector = None
+        self._unaligned_groupbox = None
+        self.unaligned_image_selector = None
         self.target_spacing_row = None
         self.target_spacing_label = None
         self.target_spacing_x = None
@@ -90,9 +85,9 @@ class CellLayerAlignmentUI(QWidget):
         self._setup_checkboxes()
         self._setup_buttons()
 
-        self.main_layout.addLayout(self.image1_layout)
+        self.main_layout.addWidget(self._target_groupbox)
         self.main_layout.addLayout(self.target_spacing_row)
-        self.main_layout.addLayout(self.image2_layout)
+        self.main_layout.addWidget(self._unaligned_groupbox)
         self.main_layout.addLayout(self.unaligned_spacing_row)
         self.main_layout.addLayout(self.checkbox_layout)
         self.main_layout.addSpacing(10)
@@ -104,33 +99,18 @@ class CellLayerAlignmentUI(QWidget):
         self._retranslate_ui()
 
     def _setup_image_layouts(self):
-        """Setup layouts for image selection and status."""
-        self.image1_layout = QHBoxLayout()
-        self.image1_label = QLabel("Target Image:")
-        self.image1_status = QLabel("not loaded")
-        self.image1_status.setStyleSheet("font-weight: bold; color: #555;")
-        self.target_channel_selector = QComboBox(self)
-        self.target_channel_selector.setVisible(False)
-        self.image1_layout.addWidget(self.image1_label)
-        self.image1_layout.addWidget(self.image1_status)
-        self.image1_layout.addWidget(self.target_channel_selector)
-        self.image1_layout.setStretch(1, 1)
+        """Setup image selectors for target and moving images."""
+        self._target_groupbox = QGroupBox("Target Image", self)
+        target_layout = QVBoxLayout(self._target_groupbox)
+        target_layout.setContentsMargins(4, 4, 4, 4)
+        self.target_image_selector = SegmentationImageSelector(self)
+        target_layout.addWidget(self.target_image_selector)
 
-        self.image2_layout = QHBoxLayout()
-        self.image2_label = QLabel("Unaligned Image:")
-        self.image2_status = QLabel("not loaded")
-        self.image2_status.setStyleSheet("font-weight: bold; color: #555;")
-        self.unaligned_channel_selector = QComboBox(self)
-        self.unaligned_channel_selector.setVisible(False)
-        self.image2_layout.addWidget(self.image2_label)
-        self.image2_layout.addWidget(self.image2_status)
-        self.image2_layout.addWidget(self.unaligned_channel_selector)
-        self.image2_layout.setStretch(1, 1)
-
-        max_width = max(self.image1_label.sizeHint().width(),
-                        self.image2_label.sizeHint().width())
-        self.image1_label.setMinimumWidth(max_width)
-        self.image2_label.setMinimumWidth(max_width)
+        self._unaligned_groupbox = QGroupBox("Moving Image", self)
+        unaligned_layout = QVBoxLayout(self._unaligned_groupbox)
+        unaligned_layout.setContentsMargins(4, 4, 4, 4)
+        self.unaligned_image_selector = SegmentationImageSelector(self)
+        unaligned_layout.addWidget(self.unaligned_image_selector)
 
     def _setup_spacing_layouts(self):
         """Setup layouts for spacing input."""
@@ -210,12 +190,8 @@ class CellLayerAlignmentUI(QWidget):
         self.aligner.error.connect(self._handle_error)
         self.aligner.snapshot.connect(self._handle_snapshot)
 
-        self.target_channel_selector.currentIndexChanged.connect(
-            self.change_target_channel
-        )
-        self.unaligned_channel_selector.currentIndexChanged.connect(
-            self.change_unaligned_channel
-        )
+        self.target_image_selector.image_changed.connect(self._on_target_image_changed)
+        self.unaligned_image_selector.image_changed.connect(self._on_unaligned_image_changed)
 
         self.aligner.error.connect(self.errorSignal)
 
@@ -240,61 +216,62 @@ class CellLayerAlignmentUI(QWidget):
         )
         snapshot_dialog.exec()
 
-    @pyqtSlot(int)
-    def change_target_channel(self, index):
-        """Update target channel index."""
-        self.image_channels[0] = index
+    def _on_target_image_changed(self, uuid: str):
+        """Called when user picks a different target image in the selector."""
+        item = self.storage.get_data(uuid)
+        if item is None:
+            return
+        self.target_uuid = uuid
+        self.target_image = item["data"]
+        self.target_name = item["name"]
+        self.target_image_selector.set_channels(item["data"])
+        self._check_can_register()
 
-    @pyqtSlot(int)
-    def change_unaligned_channel(self, index):
-        """Update unaligned channel index."""
-        self.image_channels[1] = index
+    def _on_unaligned_image_changed(self, uuid: str):
+        """Called when user picks a different moving image in the selector."""
+        item = self.storage.get_data(uuid)
+        if item is None:
+            return
+        self.unaligned_uuid = uuid
+        self.unaligned_image = item["data"]
+        self.unaligned_name = item["name"]
+        self.unaligned_image_selector.set_channels(item["data"])
+        self._check_can_register()
 
     def _retranslate_ui(self):
         """Retranslate UI components."""
         _translate = QCoreApplication.translate
         self.alignment_groupbox.setTitle(_translate("MainWindow", "Registeration"))
-        self.image1_label.setText(_translate("MainWindow", "Target Image:"))
-        self.image2_label.setText(_translate("MainWindow", "Moving Image:"))
         self.register_button.setText(_translate("MainWindow", "Register Images"))
         self.manually_align_button.setText(_translate("MainWindow", "Manually Align"))
 
     # pylint: disable=unused-argument
     def set_target_image(self, item_uuid, is_leaf, channel):
-        """Set the target image for alignment"""
-        self.target_uuid = item_uuid
+        """Set the target image for alignment (called by context menu)."""
         item = self.storage.get_data(item_uuid)
         assert item is not None, f"No data found for UUID: {item_uuid}"
         obj, name = item["data"], item["name"]
+        self.target_uuid = item_uuid
         self.target_image = obj
-
         self.target_name = name
-        self.image1_status.setText(name)
-        self.image1_status.setStyleSheet("font-weight: bold; color: #007700;")
-        self.image1_status.setWordWrap(True)
-        self.target_channel_selector.setVisible(True)
-        self.target_channel_selector.clear()
-        self.target_channel_selector.addItems(obj.keys())
-        self.target_channel_selector.setCurrentIndex(channel)
+        # Update selector silently so context-menu picks don't re-trigger image_changed
+        self.target_image_selector.set_selected_uuid_silent(item_uuid)
+        self.target_image_selector.set_channels(obj)
+        self.target_image_selector.set_current_channel_silent(f"Channel {channel + 1}")
         self._check_can_register()
 
     # pylint: disable=unused-argument
     def set_unaligned_image(self, item_uuid, is_leaf, channel):
-        """Set the unaligned image that will be registered to the target"""
-        self.unaligned_uuid = item_uuid
+        """Set the unaligned image that will be registered to the target (called by context menu)."""
         item = self.storage.get_data(item_uuid)
         assert item is not None, f"No data found for UUID: {item_uuid}"
         obj, name = item["data"], item["name"]
+        self.unaligned_uuid = item_uuid
         self.unaligned_image = obj
         self.unaligned_name = name
-        self.image2_status.setText(name)
-        self.image2_status.setWordWrap(True)
-        self.image2_status.setStyleSheet("font-weight: bold; color: #007700;")
-        self.unaligned_channel_selector.setVisible(True)
-        self.unaligned_channel_selector.clear()
-        self.unaligned_channel_selector.addItems(obj.keys())
-        self.unaligned_channel_selector.setCurrentIndex(channel)
-
+        self.unaligned_image_selector.set_selected_uuid_silent(item_uuid)
+        self.unaligned_image_selector.set_channels(obj)
+        self.unaligned_image_selector.set_current_channel_silent(f"Channel {channel + 1}")
         self._check_can_register()
 
     def _check_can_register(self):
@@ -334,8 +311,8 @@ class CellLayerAlignmentUI(QWidget):
             )
             return
 
-        target_ch_name = f"Channel {self.image_channels[0]+1}"
-        unaligned_ch_name = f"Channel {self.image_channels[1]+1}"
+        target_ch_name = self.target_image_selector.current_channel()
+        unaligned_ch_name = self.unaligned_image_selector.current_channel()
 
         self.aligner.set_target_image(
             self.target_image[target_ch_name].data,
@@ -365,9 +342,8 @@ class CellLayerAlignmentUI(QWidget):
             )
             return
         self.prepare_aligner()
-        target_ch_idx, unaligned_ch_idx = self.image_channels
-        target_ch_name = f"Channel {target_ch_idx + 1}"
-        unaligned_ch_name = f"Channel {unaligned_ch_idx + 1}"
+        target_ch_name = self.target_image_selector.current_channel()
+        unaligned_ch_name = self.unaligned_image_selector.current_channel()
 
         preview_dialog = AlignmentPreviewDialog(
             {
@@ -391,11 +367,6 @@ class CellLayerAlignmentUI(QWidget):
         """Handle error messages from the aligner thread"""
         QMessageBox.critical(self, "Alignment Error", error_message)
         self.progress.emit(100, "Error occurred during alignment.")
-
-        if self.target_image is not None:
-            self.image1_status.setStyleSheet("font-weight: bold; color: #FF0000;")
-        if self.unaligned_image is not None:
-            self.image2_status.setStyleSheet("font-weight: bold; color: #FF0000;")
 
     def _handle_finished(self):
         """Handle when the alignment thread finishes"""

@@ -936,6 +936,7 @@ class ImageGraphicsView(BaseGraphicsView):
         self.stardist_source_channel = None
         self.stardist_virtual_channel = None
         self._blur_layer = ""
+        self._blur_source_uuid = None
         self.corrected_layer = None
         self.uuid = None
 
@@ -1678,7 +1679,7 @@ class ImageGraphicsView(BaseGraphicsView):
 
         self.update_contrast((int(round(vmin)), int(round(vmax))))
 
-    def blur_layer(self, blur_percentage: float, confirm=False):
+    def blur_layer(self, blur_percentage: float, confirm=False, source_uuid=None, source_channel=None):
         """start gaussian blur in a separate thread"""
         if confirm and self.blur_worker is not None and self.blur_worker.isRunning():
             self.blur_worker.wait()
@@ -1686,54 +1687,70 @@ class ImageGraphicsView(BaseGraphicsView):
             # cancel previous worker if still running
             self.blur_worker.terminate()
             self.blur_worker.wait()
-        self.blur_worker = Worker(self.blur_layer_task, blur_percentage, confirm)
+        self.blur_worker = Worker(self.blur_layer_task, blur_percentage, confirm, source_uuid, source_channel)
         # self.blur_worker.signal.connect() # result is rotated_channels
         self.blur_worker.error.connect(self.on_error)
         self.blur_worker.finished.connect(self.blur_worker.quit)
         self.blur_worker.start()
 
-    def blur_layer_task(self, blur_percentage: float, confirm=False):
+    def blur_layer_task(self, blur_percentage: float, confirm=False, source_uuid=None, source_channel=None):
         """
-        Applies Gaussian blur chosen of the image stack and subtracts
+        Applies Gaussian blur to the specified image channel and subtracts
         the specified percentage of the blurred image from the original.
-        """
 
-        self._blur_layer = f"Channel {self.current_channel + 1}"
+        When source_uuid/source_channel are provided the operation targets that
+        image in storage rather than the current canvas image.
+        """
         logger.debug("blur")
-        # self._clear_caches(self.uuid, self._blur_layer)
+
+        if source_uuid is not None and source_channel is not None:
+            # Non-canvas image path: read from storage
+            img_entry = self.storage.get_data(source_uuid)
+            if img_entry is None:
+                return
+            target_wrapper = img_entry["data"].get(source_channel)
+            if target_wrapper is None:
+                return
+            self._blur_layer = source_channel
+            self._blur_source_uuid = str(source_uuid)
+            layer_to_blur = copy.deepcopy(target_wrapper.data)
+            preview_cmap = target_wrapper.cmap
+        else:
+            # Default canvas path
+            self._blur_layer = f"Channel {self.current_channel + 1}"
+            self._blur_source_uuid = str(self.uuid)
+            layer_to_blur = copy.deepcopy(self.working_channels[self._blur_layer].data)
+            preview_cmap = self.image_wrapper.cmap
 
         if not confirm:
-            # blur_percentage = self._blur_percentage
-            layer_to_blur = copy.deepcopy(self.working_channels[self._blur_layer].data)
-            # layer_to_blur = scale_adjust(layer_to_blur)
             blurred_mask = cv2.GaussianBlur(layer_to_blur, (101, 101), 0)
             blurred_mask_adjusted = (blurred_mask * blur_percentage).astype(
                 layer_to_blur.dtype
             )
             self.corrected_layer = cv2.subtract(layer_to_blur, blurred_mask_adjusted)
-
             self.corrected_layer = np.clip(
                 self.corrected_layer, 0, np.iinfo(layer_to_blur.dtype).max
             )
-            self.update_image(
-                self.image_wrapper.cmap, self.corrected_layer, cache_result=False
-            )
+            self.update_image(preview_cmap, self.corrected_layer, cache_result=False)
 
-        if (
-            confirm
-            and hasattr(self, "corrected_layer")
-            and (self.working_channels.get(self._blur_layer) is not None)
-        ):
-            logger.debug(f"saving. {self.uuid} {self._blur_layer}")
-            self.working_channels[self._blur_layer].data = self.corrected_layer
-            self.storage.update_data(
-                self.uuid,
-                self._blur_layer,
-                self.working_channels[self._blur_layer],
-                )
-            if self._blur_layer in self.working_channels:
-                self.image_wrapper = self.working_channels[self._blur_layer]
-            self._clear_caches(self.uuid, self._blur_layer)
+        if confirm and hasattr(self, "corrected_layer"):
+            target_uuid = self._blur_source_uuid
+            img_entry = self.storage.get_data(target_uuid)
+            if img_entry is None:
+                return
+            wrapper = img_entry["data"].get(self._blur_layer)
+            if wrapper is None:
+                return
+            wrapper_copy = copy.deepcopy(wrapper)
+            wrapper_copy.data = self.corrected_layer
+            logger.debug(f"saving. {target_uuid} {self._blur_layer}")
+            self.storage.update_data(target_uuid, self._blur_layer, wrapper_copy)
+            # If this is the current canvas image, keep working_channels in sync
+            if str(target_uuid) == str(self.uuid):
+                self.working_channels[self._blur_layer].data = self.corrected_layer
+                if self._blur_layer in self.working_channels:
+                    self.image_wrapper = self.working_channels[self._blur_layer]
+            self._clear_caches(target_uuid, self._blur_layer)
             self.image_signal.emit(self.working_channels, False)
             self.update_progress.emit(100, f"Replaced {self._blur_layer}")
 

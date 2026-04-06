@@ -235,6 +235,9 @@ class Register(QThread):
                     transf = transforms[0]
                     itk_transf = transforms[1]
 
+                    _cv2_supported = {np.uint8, np.uint16, np.int16, np.float32, np.float64}
+                    if source.dtype not in _cv2_supported:
+                        source = source.astype(np.float32)
                     if transf is not None:
                         if isinstance(transf, np.ndarray):
                             registered = cv2.warpAffine(

@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import QFileDialog, QMessageBox
 from core import (
     CellIntensity,
     ImageGraphicsView,
+    ImageStorage,
     ImageWrapper,
     ReferenceGraphicsView,
     Register,
@@ -250,13 +251,17 @@ class Controller:
                 # treat moving_image as transformation matrix
                 transf_matrix = moving_image
                 # print(transf_matrix)
+                _cv2_supported_dtypes = {np.uint8, np.uint16, np.int16, np.float32, np.float64}
                 for layer_key in layer:
                     # print(L)
                     height, width = data[layer_key].data.shape[-2:]
                     # print(h,w)
-                    aligned_data["data"][layer_key] = cv2.warpAffine(  # pylint: disable=no-member
-                        item["data"][layer_key].data, transf_matrix, (width, height)
-                    )
+                    img = item["data"][layer_key].data
+                    original_dtype = img.dtype
+                    if img.dtype not in _cv2_supported_dtypes:
+                        img = img.astype(np.float32)
+                    warped = cv2.warpAffine(img, transf_matrix, (width, height))  # pylint: disable=no-member
+                    aligned_data["data"][layer_key] = warped.astype(original_dtype) if warped.dtype != original_dtype else warped
             filename = item["name"]
             if isinstance(layer, list):
                 # handles register.py
@@ -358,6 +363,8 @@ class SignalConnectionManager:
     def __init__(self, controller: Controller):
         self.c = controller
         self.blur_timer = None
+        self._seg_source_uuid = None
+        self._seg_source_channel = None
 
     @staticmethod
     def _next_available_channel_key(channel_map: dict) -> str:
@@ -440,6 +447,8 @@ class SignalConnectionManager:
         self._setup_cell_intensity_conns()
         self._setup_img_broadcast_conns()
         self._setup_misc_connections()
+        self._setup_segmentation_selector_connections()
+        self._setup_cell_layer_alignment_selector_connections()
 
     def _setup_alignment_connections(self):
         """Alignment section signal connections"""
@@ -570,7 +579,10 @@ class SignalConnectionManager:
         # Gaussian blur
         self.c.view.gaussian_blur.confirm.clicked.connect(
             lambda: self.c.model_canvas.blur_layer(
-                self.c.view.gaussian_blur.slider.value(), confirm=True
+                self.c.view.gaussian_blur.slider.value(),
+                confirm=True,
+                source_uuid=self._seg_source_uuid,
+                source_channel=self._seg_source_channel,
             )
         )
         self.c.view.gaussian_blur.slider.doubleValueChanged.connect(
@@ -583,7 +595,9 @@ class SignalConnectionManager:
         # Connect the timer timeout to the actual blur update
         self.blur_timer.timeout.connect(
             lambda: self.c.model_canvas.blur_layer(
-                self.c.view.gaussian_blur.slider.value()
+                self.c.view.gaussian_blur.slider.value(),
+                source_uuid=self._seg_source_uuid,
+                source_channel=self._seg_source_channel,
             )
         )
         self.c.view.gaussian_blur.slider.doubleValueChanged.connect(
@@ -978,7 +992,46 @@ class SignalConnectionManager:
             self.c.handle_cancel_registration
         )
 
+        # Image selectors
+        self.c.view.register_groupbox.image_selector.image_changed.connect(
+            self._on_register_image_selected
+        )
+        self.c.view.register_groupbox.reference_selector.image_changed.connect(
+            self._on_register_reference_image_selected
+        )
+        tree_model = self.c.view.images_tab.image_tree_model
+        tree_model.rowsInserted.connect(lambda *_: self._repopulate_register_selector())
+        tree_model.rowsRemoved.connect(lambda *_: self._repopulate_register_selector())
+        self._repopulate_register_selector()
+
         # Results
+
+    def _repopulate_register_selector(self):
+        """Rebuild both Alignment tab image selector lists."""
+        tree = self.c.view.images_tab.image_tree_model
+        self.c.view.register_groupbox.image_selector.refresh_images(tree)
+        self.c.view.register_groupbox.reference_selector.refresh_images(tree)
+
+    def _on_register_image_selected(self, uuid: str) -> None:
+        """Called when user picks a moving image in the Alignment tab selector."""
+        storage = self.c.view.images_tab.storage
+        img_data = storage.get_data(uuid)
+        if img_data is None:
+            return
+        channels = img_data["data"]
+        self.c.view.register_groupbox.updateChannelSelector(channels)
+        self.c.model_register.update_moving_image(channels)
+        self.c.view.register_groupbox.image_selector.set_channels(channels)
+
+    def _on_register_reference_image_selected(self, uuid: str) -> None:
+        """Called when user picks a reference image in the Alignment tab selector."""
+        storage = self.c.view.images_tab.storage
+        img_data = storage.get_data(uuid)
+        if img_data is None:
+            return
+        channels = img_data["data"]
+        self.c.model_register.update_reference_channels(channels)
+        self.c.view.register_groupbox.reference_selector.set_channels(channels)
 
     def _setup_cell_intensity_conns(self):
         """Cell intensity-related connections"""
@@ -1024,6 +1077,33 @@ class SignalConnectionManager:
         )
         self.c.view.cell_intensity_groupbox.set_generation_enabled(False)
 
+        # Image selector
+        self.c.view.cell_intensity_groupbox.image_selector.image_changed.connect(
+            self._on_generation_image_selected
+        )
+        tree_model = self.c.view.images_tab.image_tree_model
+        tree_model.rowsInserted.connect(lambda *_: self._repopulate_generation_selector())
+        tree_model.rowsRemoved.connect(lambda *_: self._repopulate_generation_selector())
+        self._repopulate_generation_selector()
+
+    def _repopulate_generation_selector(self):
+        """Rebuild the Generation tab image selector list."""
+        self.c.view.cell_intensity_groupbox.image_selector.refresh_images(
+            self.c.view.images_tab.image_tree_model
+        )
+
+    def _on_generation_image_selected(self, uuid: str) -> None:
+        """Called when user picks an image in the Generation tab selector."""
+        storage = self.c.view.images_tab.storage
+        img_data = storage.get_data(uuid)
+        if img_data is None:
+            return
+        channels = img_data["data"]
+        self.c.view.cell_intensity_groupbox.update_channels(channels)
+        self.c.view.cell_intensity_groupbox.image_selector.set_channels(channels)
+        self.c.model_cell_intensity.set_source_uuid(uuid)
+        self.c.view.cell_intensity_groupbox.set_generation_enabled(True)
+
     def _handle_generation_source_selected(self, item_uuid, stardist_channel):
         """Enable generation only after source selection and auto-load virtual StarDist labels."""
         has_source = item_uuid is not None
@@ -1041,24 +1121,27 @@ class SignalConnectionManager:
             item_uuid, int(stardist_channel)
         )
 
+        # Sync the image selector to reflect the context-menu selection
+        selector = self.c.view.cell_intensity_groupbox.image_selector
+        selector.set_selected_uuid_silent(item_uuid)
+        img_data = self.c.view.images_tab.storage.get_data(item_uuid)
+        if img_data:
+            selector.set_channels(img_data["data"])
+            self.c.view.cell_intensity_groupbox.update_channels(img_data["data"])
+
     def _setup_img_broadcast_conns(self):
         """Image signal broadcast to multiple targets"""
         # ensure all the relevant UI components are not None
 
         image_signal = self.c.model_canvas.image_signal
         image_signal.connect(self.c.view.tool_bar.updateChannelSelector)
-        image_signal.connect(self.c.view.register_groupbox.updateChannelSelector)
         image_signal.connect(self.c.view.canvas.load_channels)
-        image_signal.connect(self.c.model_stardist.update_channels)
-        self.c.model_canvas.uuid_changed.connect(self.c.model_stardist.set_source_uuid)
-        image_signal.connect(self.c.view.stardist_groupbox.updateChannelSelector)
-        image_signal.connect(self.c.view.gaussian_blur.updateChannelSelector)
-        image_signal.connect(self.c.model_register.update_moving_image)
-        image_signal.connect(self.c.view.cell_intensity_groupbox.update_channels)
+        # StarDist, registration, and generation are driven by their image selectors, not canvas signal
+        self.c.model_canvas.uuid_changed.connect(self._on_canvas_uuid_changed)
 
         ref_image = self.c.model_reference_canvas.image_signal
-        ref_image.connect(self.c.model_register.update_reference_channels)
         ref_image.connect(self.c.view.small_view.load_channels)
+        ref_image.connect(self._on_reference_canvas_image_changed)
 
         deleted_uuid_signal = self.c.view.images_tab.image_tree_view.item_deleted
         deleted_uuid_signal.connect(self.c.model_canvas.remove_from_canvas)
@@ -1070,3 +1153,101 @@ class SignalConnectionManager:
         self.c.view.stacked_widget.currentChanged.connect(
             self.c.update_small_view_visibility
         )
+
+    def _on_canvas_uuid_changed(self, uuid: str) -> None:
+        """Forward canvas image switches to all three tab selectors (unless manually overridden)."""
+        self.c.view.segmentation_image_selector.follow_canvas_uuid(uuid)
+        self.c.view.register_groupbox.image_selector.follow_canvas_uuid(uuid)
+        self.c.view.cell_intensity_groupbox.image_selector.follow_canvas_uuid(uuid)
+
+    def _on_reference_canvas_image_changed(self, _channels: dict, _full: bool) -> None:
+        """Forward reference canvas image switches to the Alignment reference selector."""
+        uuid = self.c.model_reference_canvas.uuid
+        if uuid is None:
+            return
+        self.c.view.register_groupbox.reference_selector.follow_canvas_uuid(str(uuid))
+
+    # ------------------------------------------------------------------
+    # Segmentation image/channel selector
+    # ------------------------------------------------------------------
+
+    def _setup_segmentation_selector_connections(self):
+        """Wire the shared image+channel selector in the Segmentation tab."""
+        selector = self.c.view.segmentation_image_selector
+        selector.image_changed.connect(self._on_segmentation_image_selected)
+        selector.channel_changed.connect(self._on_segmentation_channel_selected)
+
+        tree_model = self.c.view.images_tab.image_tree_model
+        tree_model.rowsInserted.connect(lambda *_: self._repopulate_segmentation_selector())
+        tree_model.rowsRemoved.connect(lambda *_: self._repopulate_segmentation_selector())
+        # Populate immediately with any images already in the tree (e.g. from project load)
+        self._repopulate_segmentation_selector()
+
+    def _repopulate_segmentation_selector(self):
+        """Rebuild the image list. Does not auto-select — user must explicitly pick an image."""
+        selector = self.c.view.segmentation_image_selector
+        selector.refresh_images(self.c.view.images_tab.image_tree_model)
+
+    def _on_segmentation_image_selected(self, uuid: str):
+        """Called when the user picks a different image in the segmentation selector."""
+        storage = self.c.view.images_tab.storage
+        img_data = storage.get_data(uuid)
+        if img_data is None:
+            return
+        channels = img_data["data"]
+        name = img_data["name"]
+
+        selector = self.c.view.segmentation_image_selector
+        selector.set_channels(channels)
+        channel = selector.current_channel()
+
+        # Update StarDist model
+        self.c.model_stardist.set_protein_image(channels, channel, name, uuid)
+
+        # Store blur target
+        self._seg_source_uuid = uuid
+        self._seg_source_channel = channel
+
+    def _on_segmentation_channel_selected(self, channel: str):
+        """Called when the user picks a different channel in the segmentation selector."""
+        uuid = self.c.view.segmentation_image_selector.current_uuid()
+        if not uuid:
+            return
+        storage = self.c.view.images_tab.storage
+        img_data = storage.get_data(uuid)
+        if img_data is None:
+            return
+
+        # Sync StarDist channel selector UI without re-triggering its signal
+        stardist_selector = self.c.view.stardist_groupbox.stardist_channel_selector
+        stardist_selector.blockSignals(True)
+        stardist_selector.setCurrentText(channel)
+        stardist_selector.blockSignals(False)
+        self.c.model_stardist.set_channel(channel)
+
+        # Update ImageStorage so the badge delegate reads the correct channel,
+        # then emit cell_image_set to repaint badges and refresh the groupbox title.
+        name = img_data["name"]
+        ImageStorage().add_data("seg_source_uuid", {"value": uuid, "channel": channel})
+        self.c.model_stardist.cell_image_set.emit(name, channel)
+
+        # Update blur target
+        self._seg_source_channel = channel
+
+    # ------------------------------------------------------------------
+    # CellLayerAlignment image/channel selectors
+    # ------------------------------------------------------------------
+
+    def _setup_cell_layer_alignment_selector_connections(self):
+        """Repopulate CellLayerAlignment image selectors when tree changes."""
+        tree_model = self.c.view.images_tab.image_tree_model
+        tree_model.rowsInserted.connect(lambda *_: self._repopulate_cell_alignment_selectors())
+        tree_model.rowsRemoved.connect(lambda *_: self._repopulate_cell_alignment_selectors())
+        self._repopulate_cell_alignment_selectors()
+
+    def _repopulate_cell_alignment_selectors(self):
+        """Rebuild both CellLayerAlignment image selector lists."""
+        cell_aln = self.c.view.cell_layer_alignment
+        tree = self.c.view.images_tab.image_tree_model
+        cell_aln.target_image_selector.refresh_images(tree)
+        cell_aln.unaligned_image_selector.refresh_images(tree)

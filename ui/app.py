@@ -541,12 +541,6 @@ class MainWindow(QMainWindow):
             self.images_tab.storage,
             transform_tab,
         )
-        self.images_tab.image_tree_view.tissue_target_selected.connect(
-            self.cell_layer_alignment.set_target_image
-        )
-        self.images_tab.image_tree_view.tissue_unaligned_selected.connect(
-            self.cell_layer_alignment.set_unaligned_image
-        )
         self.cell_layer_alignment.aligner.progress.connect(self.update_progress_bar)
 
         transform_scroll = QScrollArea()
@@ -576,6 +570,7 @@ class MainWindow(QMainWindow):
     def _setup_segmentation_tab(self):
         """Sets up the 'Segmentation' tab with Gaussian Blur and StarDist."""
         from ui.processing.gaussian_blur import GaussianBlur
+        from ui.processing.segmentation_image_selector import SegmentationImageSelector
         from ui.stardist.stardist_ui import StarDistUI
 
         segmentation_tab = QWidget()
@@ -583,11 +578,16 @@ class MainWindow(QMainWindow):
         segmentation_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         segmentation_layout.setContentsMargins(4, 4, 4, 4)
 
+        # Shared image + channel selector
+        self.segmentation_image_selector = SegmentationImageSelector(segmentation_tab)
+        segmentation_layout.addWidget(self.segmentation_image_selector)
+
         # Gaussian Blur
         self.gaussian_blur = GaussianBlur(segmentation_tab, segmentation_layout)
 
         # StarDist
         self.stardist_groupbox = StarDistUI(segmentation_tab, segmentation_layout)
+        self.stardist_groupbox.hide_channel_selector_row()
 
         segmentation_scroll = QScrollArea()
         segmentation_scroll.setWidget(segmentation_tab)

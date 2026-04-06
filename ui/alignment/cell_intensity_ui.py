@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.project_naming import is_segmentation_name
+from ui.processing.segmentation_image_selector import SegmentationImageSelector
 
 
 _SLIDER_STEPS = [0.55, 0.70, 0.85, 1.00, 1.15, 1.30]
@@ -131,6 +132,7 @@ class CellIntensityUI(QWidget):
         self.main_layout = None
         self.components_widget = None
         self.cellintensity_components_vlayout = None
+        self.image_selector = None
         self.bead_data_layout = None
         self.bead_data = None
         self.bead_data_label = None
@@ -178,6 +180,11 @@ class CellIntensityUI(QWidget):
 
         self.components_widget = QWidget()
         self.cellintensity_components_vlayout = QVBoxLayout(self.components_widget)
+
+        # Image selector (no channel picker — channels are assigned per color code below)
+        self.image_selector = SegmentationImageSelector(self.cell_intensity_groupbox)
+        self.image_selector.hide_channel_selector()
+        self.cellintensity_components_vlayout.addWidget(self.image_selector)
 
         # bead data
         self.bead_data_layout = QHBoxLayout()

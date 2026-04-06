@@ -27,10 +27,7 @@ class BadgeStyle(Enum):
 
     VIEW = ("View", "#3b82f6", "#ffffff")
     REF = ("Ref", "#22c55e", "#ffffff")
-    SEG = ("Seg", "#f97316", "#ffffff")
     LABEL = ("Label", "#a855f7", "#ffffff")
-    T_REF = ("T.Ref", "#14b8a6", "#ffffff")
-    T_MOV = ("T.Mov", "#14b8a6", "#ffffff")
 
     def __init__(self, label: str, bg: str, fg: str):
         self.label = label
@@ -42,20 +39,14 @@ class BadgeStyle(Enum):
 _BADGE_ORDER: list[BadgeStyle] = [
     BadgeStyle.VIEW,
     BadgeStyle.REF,
-    BadgeStyle.SEG,
     BadgeStyle.LABEL,
-    BadgeStyle.T_REF,
-    BadgeStyle.T_MOV,
 ]
 
 # Maps ImageStorage key → BadgeStyle for UUID-level role checks
 _STORAGE_ROLE_MAP: list[tuple[str, BadgeStyle]] = [
     ("canvas_uuid", BadgeStyle.VIEW),
     ("reference_uuid", BadgeStyle.REF),
-    ("seg_source_uuid", BadgeStyle.SEG),
     ("seg_label_uuid", BadgeStyle.LABEL),
-    ("tissue_target_uuid", BadgeStyle.T_REF),
-    ("tissue_unaligned_uuid", BadgeStyle.T_MOV),
 ]
 
 
@@ -70,10 +61,7 @@ def _resolve_stored_channel(
     if storage_key == "reference_uuid":
         ref_ch = storage.get_data("reference_channel")
         return ref_ch["value"] if ref_ch else None
-    if storage_key == "seg_source_uuid":
-        ch = entry.get("channel")
-        return ch if isinstance(ch, str) else None
-    if storage_key in ("tissue_target_uuid", "tissue_unaligned_uuid", "seg_label_uuid"):
+    if storage_key == "seg_label_uuid":
         ch = entry.get("channel")
         return f"Channel {ch + 1}" if isinstance(ch, int) else None
     if storage_key == "canvas_uuid":

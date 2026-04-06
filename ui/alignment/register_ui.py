@@ -13,6 +13,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ui.processing.segmentation_image_selector import SegmentationImageSelector
+
 
 class RegisterUI(QWidget):
     errorSignal = pyqtSignal(str)
@@ -30,6 +32,18 @@ class RegisterUI(QWidget):
         self.register_components_vlayout = QVBoxLayout()
         self.register_components_vlayout.setSpacing(0)
         self.register_components_vlayout.setContentsMargins(0, 0, 0, 0)
+
+        # Moving image selector
+        self.moving_label = QLabel("Moving Image:")
+        self.register_components_vlayout.addWidget(self.moving_label)
+        self.image_selector = SegmentationImageSelector(self.register_groupbox)
+        self.register_components_vlayout.addWidget(self.image_selector)
+
+        # Reference image selector
+        self.reference_label = QLabel("Reference Image:")
+        self.register_components_vlayout.addWidget(self.reference_label)
+        self.reference_selector = SegmentationImageSelector(self.register_groupbox)
+        self.register_components_vlayout.addWidget(self.reference_selector)
 
         # ALIGNMENT LAYER
         self.alignment_layer_layout = QHBoxLayout()

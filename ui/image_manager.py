@@ -383,8 +383,6 @@ class ImageTreeWidget(QTreeView):
     Tree view widget for displaying images.
     """
 
-    tissue_target_selected = pyqtSignal(UUID, bool, int)
-    tissue_unaligned_selected = pyqtSignal(UUID, bool, int)
     protein_data = pyqtSignal(UUID, int)
     segmentation_label = pyqtSignal(UUID, int)
     generation_source_selected = pyqtSignal(object, object)
@@ -499,20 +497,12 @@ class ImageTreeWidget(QTreeView):
             image_data = storage_item.get("data", {}) if storage_item else {}
             set_reference = QAction("Reference")
 
-            set_tissue_target_image = QAction("Tissue Target Image")
-            set_tissue_unaligned_image = QAction("Tissue Unaligned Image")
             set_stardist_label = QAction("Set as Segmentation Label")
 
             save_as_tiff = QAction("Save as TIF")
 
             set_reference.triggered.connect(
                 lambda: self.show_on_reference_canvas(item_uuid, channel)
-            )
-            set_tissue_target_image.triggered.connect(
-                lambda: self.set_as_tissue_target(item_uuid, is_leaf, channel)
-            )
-            set_tissue_unaligned_image.triggered.connect(
-                lambda: self.set_as_tissue_unaligned(item_uuid, is_leaf, channel)
             )
             set_stardist_label.triggered.connect(
                 lambda: self.set_as_segmentation_label(item_uuid, channel)
@@ -542,10 +532,6 @@ class ImageTreeWidget(QTreeView):
 
                 set_menu.addAction(set_stardist_label)
 
-                tissue_menu = set_menu.addMenu("Tissue")
-                tissue_menu.addAction(set_tissue_target_image)
-                tissue_menu.addAction(set_tissue_unaligned_image)
-
                 set_default_channel = QMenu("Set Default Channel as", self)
                 channel_group = QActionGroup(self)
                 channel_group.setExclusive(True)
@@ -574,14 +560,9 @@ class ImageTreeWidget(QTreeView):
                 menu.addMenu(set_default_channel)
             else:
                 set_reference.setText("Set as Reference")
-                set_tissue_target_image.setText("Set as Tissue Target Image")
-                set_tissue_unaligned_image.setText("Set as Tissue Unaligned Image")
                 menu.addAction(set_reference)
                 menu.addAction(set_stardist_label)
 
-                tissue_menu = menu.addMenu("Tissue")
-                tissue_menu.addAction(set_tissue_target_image)
-                tissue_menu.addAction(set_tissue_unaligned_image)
                 if not is_root:
                     if "tif" in export_formats:
                         menu.addAction(save_as_tiff)
@@ -874,20 +855,6 @@ class ImageTreeWidget(QTreeView):
                     png_data = self._normalize_to_uint8(np.asarray(png_data))
                 Image.fromarray(png_data).save(file_path)
 
-    def set_as_tissue_target(self, i_uuid: UUID, is_leaf: bool, channel: int):
-        """Set the selected image as the tissue target image for alignment"""
-        self.storage.add_data(
-            "tissue_target_uuid", {"value": i_uuid, "channel": channel}
-        )
-        self.tissue_target_selected.emit(i_uuid, is_leaf, channel)
-
-    def set_as_tissue_unaligned(self, i_uuid: UUID, is_leaf: bool, channel: int):
-        """Set the selected image as the tissue unaligned image for alignment"""
-        self.storage.add_data(
-            "tissue_unaligned_uuid", {"value": i_uuid, "channel": channel}
-        )
-        self.tissue_unaligned_selected.emit(i_uuid, is_leaf, channel)
-
     def set_as_segmentation_label(self, i_uuid: UUID, channel: int):
         """Set the selected image as the StarDist label image for alignment"""
         self.storage.add_data("seg_label_uuid", {"value": i_uuid, "channel": channel})
@@ -930,14 +897,11 @@ class ImageTreeWidget(QTreeView):
             self._model_canvas.update_channel,
             self._model_reference_canvas.update_reference,
             self._model_reference_canvas.reference_channel_updated,
-            self._model_stardist.cell_image_set,
         ]
         deferred_signals = [
             self._model_stardist.stardist_done,
         ]
         self_signals = [
-            self.tissue_target_selected,
-            self.tissue_unaligned_selected,
             self.segmentation_label,
         ]
 
