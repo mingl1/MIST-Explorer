@@ -7,6 +7,10 @@ import logging
 import os
 import sys
 from pathlib import Path
+
+if sys.platform == "win32":
+    import ctypes
+    import ctypes.wintypes
 from typing import Optional
 
 # pylint: disable=no-name-in-module
@@ -38,6 +42,18 @@ from ui.toolbar.toolbar_ui import ToolBarUI
 from utils import resource_path
 
 logger = logging.getLogger(__name__)
+
+if sys.platform == "win32":
+    _WM_NCHITTEST = 0x0084
+    _HTLEFT = 10
+    _HTRIGHT = 11
+    _HTTOP = 12
+    _HTTOPLEFT = 13
+    _HTTOPRIGHT = 14
+    _HTBOTTOM = 15
+    _HTBOTTOMLEFT = 16
+    _HTBOTTOMRIGHT = 17
+    _RESIZE_BORDER_WIDTH = 8
 
 
 class _ResizeDragButton(QPushButton):
@@ -395,6 +411,49 @@ class MainWindow(QMainWindow):
                     self.drag_pos = QPoint()  # Reset dragPos
                     return False  # Allow the event to propagate
         return super().eventFilter(obj, event)
+
+    # pylint: disable=invalid-name
+    def nativeEvent(self, eventType, message):
+        """Handle Windows native hit-testing for frameless window resize from all edges."""
+        if sys.platform == "win32":
+            msg = ctypes.wintypes.MSG.from_address(int(message))
+            if msg.message == _WM_NCHITTEST and not self.isMaximized():
+                # Extract screen-space cursor position from lParam
+                x = msg.lParam & 0xFFFF
+                y = (msg.lParam >> 16) & 0xFFFF
+                # Sign extension for multi-monitor (negative coordinates)
+                if x >= 32768:
+                    x -= 65536
+                if y >= 32768:
+                    y -= 65536
+
+                pos = self.mapFromGlobal(QPoint(x, y))
+                w, h = self.width(), self.height()
+                bw = _RESIZE_BORDER_WIDTH
+
+                left = pos.x() < bw
+                right = pos.x() > w - bw
+                top = pos.y() < bw
+                bottom = pos.y() > h - bw
+
+                if top and left:
+                    return True, _HTTOPLEFT
+                if top and right:
+                    return True, _HTTOPRIGHT
+                if bottom and left:
+                    return True, _HTBOTTOMLEFT
+                if bottom and right:
+                    return True, _HTBOTTOMRIGHT
+                if left:
+                    return True, _HTLEFT
+                if right:
+                    return True, _HTRIGHT
+                if top:
+                    return True, _HTTOP
+                if bottom:
+                    return True, _HTBOTTOM
+
+        return super().nativeEvent(eventType, message)
 
     def _add_shortcuts(self):
         """Add keyboard shortcuts"""
