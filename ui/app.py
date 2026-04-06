@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import Optional
 
 # pylint: disable=no-name-in-module
-from PyQt6.QtCore import QCoreApplication, QEvent, QMetaObject, QPoint, Qt
-from PyQt6.QtGui import QIcon, QImageReader, QKeySequence, QShortcut
+from PyQt6.QtCore import QCoreApplication, QEvent, QMetaObject, QPoint, QPointF, QSize, Qt
+from PyQt6.QtGui import QIcon, QImageReader, QKeySequence, QMouseEvent, QShortcut
 from PyQt6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
@@ -40,6 +40,54 @@ from utils import resource_path
 logger = logging.getLogger(__name__)
 
 
+class _ResizeDragButton(QPushButton):
+    """Pill button that forwards mouse events to the SidebarHandle, reusing its drag-to-resize logic."""
+
+    def __init__(self, handle: "SidebarHandle"):
+        super().__init__(handle)
+        self._handle = handle
+        icon_path = Path(__file__).parent.parent / "left_right_indicator.svg"
+        self.setIcon(QIcon(str(icon_path)))
+        self.setIconSize(QSize(12, 12))
+        self.setFixedSize(14, 40)
+        self.setCursor(Qt.CursorShape.SizeHorCursor)
+        self.setToolTip("Drag to resize sidebar")
+        self.setStyleSheet(
+            """
+            QPushButton {
+                background: #c0c0c0;
+                border: none;
+                border-radius: 4px;
+            }
+            QPushButton:hover { background: #a0a0a0; }
+        """
+        )
+
+    def _forward(self, event, method_name):
+        pos = QPointF(self.mapTo(self._handle, event.position().toPoint()))
+        new_ev = QMouseEvent(
+            event.type(),
+            pos,
+            event.globalPosition(),
+            event.button(),
+            event.buttons(),
+            event.modifiers(),
+        )
+        getattr(self._handle, method_name)(new_ev)
+
+    def mousePressEvent(self, event):
+        mw = self._handle.window()
+        if hasattr(mw, "side_panel") and not mw.side_panel.isVisible():
+            mw.toggle_side_panel()
+        self._forward(event, "mousePressEvent")
+
+    def mouseMoveEvent(self, event):
+        self._forward(event, "mouseMoveEvent")
+
+    def mouseReleaseEvent(self, event):
+        self._forward(event, "mouseReleaseEvent")
+
+
 class SidebarHandle(QSplitterHandle):
     """Custom splitter handle: visible 16px strip with a collapse/expand pill button."""
 
@@ -65,13 +113,27 @@ class SidebarHandle(QSplitterHandle):
         """
         )
 
+        self._resize_btn = _ResizeDragButton(handle=self)
+
+        self._container = QWidget(self)
+        self._container.setStyleSheet("background: transparent;")
+        self._container.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+        layout = QVBoxLayout(self._container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        layout.addWidget(self._btn)
+        layout.addWidget(self._resize_btn)
+        self._container.adjustSize()
+
     def set_collapsed(self, collapsed: bool):
         self._btn.setText("›" if collapsed else "‹")
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        bw, bh = self._btn.width(), self._btn.height()
-        self._btn.move((self.width() - bw) // 2, (self.height() - bh) // 2)
+        self._container.adjustSize()
+        x = (self.width() - self._container.width()) // 2
+        y = (self.height() - self._container.height()) // 2
+        self._container.move(x, y)
 
 
 class CollapsibleSplitter(QSplitter):
@@ -644,8 +706,8 @@ class MainWindow(QMainWindow):
         self.splitter.addWidget(self.side_panel_container)
         self.splitter.addWidget(self.canvas)
 
-        # Allow dragging the splitter to fully collapse the sidebar
-        self.splitter.setCollapsible(0, True)
+        self.splitter.setCollapsible(0, False)
+        self.splitter.setCollapsible(1, False)
 
         # Set stretch factors so canvas takes available space
         self.splitter.setStretchFactor(1, 1)

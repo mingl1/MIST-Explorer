@@ -1,14 +1,28 @@
 """
 Reference graphics view module.
 """
+
 import logging
+
 import pyqtgraph as pg
+
 # pylint: disable=no-name-in-module, missing-final-newline, fixme
 from PyQt6.QtCore import QPoint, QPointF, QRectF, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import (QBrush, QColor, QDragEnterEvent, QDragMoveEvent,
-                         QDropEvent, QPen, QPixmap)
-from PyQt6.QtWidgets import (QGraphicsPixmapItem, QGraphicsRectItem,
-                             QGraphicsView, QSizeGrip)
+from PyQt6.QtGui import (
+    QBrush,
+    QColor,
+    QDragEnterEvent,
+    QDragMoveEvent,
+    QDropEvent,
+    QPen,
+    QPixmap,
+)
+from PyQt6.QtWidgets import (
+    QGraphicsPixmapItem,
+    QGraphicsRectItem,
+    QGraphicsView,
+    QSizeGrip,
+)
 
 import utils
 from ui.canvas.items import ArrowItem
@@ -55,7 +69,7 @@ class ReferenceGraphicsViewUI(QGraphicsView):
 
     def init_ui(self):
         """Initialize the UI"""
-        self.setMinimumSize(QSize(50, 50))
+        self.setMinimumSize(QSize(0, 0))
         # self.setMaximumSize(QSize(300, 300))
         self.resize(300, 300)
         self.setScene(pg.GraphicsScene())
@@ -64,25 +78,28 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         self.setStyleSheet("QGraphicsView { border: 1px solid black; }")
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setMouseTracking(True)
-        
+
         # Add size grip for visual handle only - we'll override its behavior
         self.size_grip = QSizeGrip(self)
         self.size_grip.setStyleSheet("""
             QSizeGrip {
-                background-color: rgba(128, 128, 128, 150);
-                width: 16px;
-                height: 16px;
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+            stop:0.5 transparent, 
+            stop:0.5 #2196F3); /* Universal Action Blue */                
+            width: 16px;
+            height: 16px;
             }
         """)
+        self.size_grip.setCursor(Qt.CursorShape.SizeFDiagCursor)
         # Install event filter to intercept size grip events
         self.size_grip.installEventFilter(self)
-        
+
         # self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         # self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
 
     def eventFilter(self, obj, event):
         """Filter events from the size grip to handle resize manually"""
-        if hasattr(self, 'size_grip') and obj == self.size_grip:
+        if hasattr(self, "size_grip") and obj == self.size_grip:
             if event.type() == event.Type.MouseButtonPress:
                 self._resizing = True
                 self._resize_start_pos = event.globalPosition().toPoint()
@@ -95,12 +112,7 @@ class ReferenceGraphicsViewUI(QGraphicsView):
                 delta = event.globalPosition().toPoint() - self._resize_start_pos
                 new_width = max(50, self._initial_size.width() + delta.x())
                 new_height = max(50, self._initial_size.height() + delta.y())
-                
-                if new_width < self._hide_threshold or new_height < self._hide_threshold:
-                    self.hide()
-                    self._resizing = False
-                    return True
-                
+
                 # Manually resize without affecting parent layout
                 self.setFixedSize(new_width, new_height)
                 return True
@@ -237,6 +249,7 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         self.setSceneRect(item_rect)
         self.fitInView(self.pixmap_item, Qt.AspectRatioMode.KeepAspectRatio)
         self.centerOn(self.pixmap_item)
+        self.zoom = 1  # Reset zoom level when centering
 
     def display(self, pixmap: QPixmap, channel_index: int = 1):
         """Display the given pixmap"""
@@ -288,17 +301,18 @@ class ReferenceGraphicsViewUI(QGraphicsView):
     def resizeEvent(self, event):
         """Handle resize event"""
         super().resizeEvent(event)
-        
+
         # Position the size grip in the bottom-right corner
         grip_size = self.size_grip.sizeHint()
         self.size_grip.move(
-            self.width() - grip_size.width(),
-            self.height() - grip_size.height()
+            self.width() - grip_size.width(), self.height() - grip_size.height()
         )
-        
+
         # Re-fit image and reposition arrows when resized
         if not self.is_empty():
-            self.fitInView(self.pixmap_item.boundingRect(), Qt.AspectRatioMode.KeepAspectRatio)
+            self.fitInView(
+                self.pixmap_item.boundingRect(), Qt.AspectRatioMode.KeepAspectRatio
+            )
         self.position_arrows()
 
     def get_scene(self):

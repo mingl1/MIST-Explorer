@@ -1,17 +1,36 @@
 "Image graphics view module."
+
 import logging
 import typing
 
 import numpy as np
 import pyqtgraph as pg
 import tifffile
-from PyQt6.QtCore import QPoint, QPointF, QRect, QRectF, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import (QBrush, QColor, QCursor, QDragEnterEvent,
-                         QDragMoveEvent, QIcon, QImage, QMouseEvent, QPainter,
-                         QPen, QPixmap)
-from PyQt6.QtWidgets import (QFileDialog, QGraphicsPixmapItem,
-                             QGraphicsRectItem, QGraphicsView, QHBoxLayout,
-                             QLabel, QPushButton, QToolTip, QWidget)
+from PyQt6.QtCore import QPointF, QRect, QRectF, QSize, Qt, pyqtSignal
+from PyQt6.QtGui import (
+    QBrush,
+    QColor,
+    QCursor,
+    QDragEnterEvent,
+    QDragMoveEvent,
+    QIcon,
+    QImage,
+    QMouseEvent,
+    QPainter,
+    QPen,
+    QPixmap,
+)
+from PyQt6.QtWidgets import (
+    QFileDialog,
+    QGraphicsPixmapItem,
+    QGraphicsRectItem,
+    QGraphicsView,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QToolTip,
+    QWidget,
+)
 
 from ui.canvas.items import CropRectItem, ResizableRect
 from ui.lassos.CircleLasso import CircleLasso
@@ -70,7 +89,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.crop_start_pos = None
         self.active_crop_rect = None
         self.is_resizing = False
-        
+
         # Move ROI state
         self.moving_lasso = None
         self.last_mouse_pos = None
@@ -86,8 +105,7 @@ class ImageGraphicsViewUI(QGraphicsView):
 
         # self.get_scene().addItem(self.view_pixmap_item)
         self.view_mode = False
-        
-        
+
         # Attributes initialized
         self.floating_container = None
         self.rect_button = None
@@ -338,7 +356,9 @@ class ImageGraphicsViewUI(QGraphicsView):
 
     def is_empty(self) -> bool:
         """Check if canvas is empty."""
-        has_pixmap = self.pixmap_item is not None and not self.pixmap_item.pixmap().isNull()
+        has_pixmap = (
+            self.pixmap_item is not None and not self.pixmap_item.pixmap().isNull()
+        )
         has_view_layers = len(self.view_pixmaps) > 0
         return not (has_pixmap or has_view_layers)
 
@@ -413,8 +433,9 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.centerOn(pixmap_item)
 
     def _center_image(self):
-        pixmap_item = \
+        pixmap_item = (
             self.pixmap_item if self.pixmap_item.isVisible() else self.view_pixmaps[0]
+        )
         item_rect = pixmap_item.boundingRect()
         item_rect = QRectF(
             item_rect.x() - item_rect.width() // 2,
@@ -425,6 +446,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.setSceneRect(item_rect)
         self.fitInView(pixmap_item, Qt.AspectRatioMode.KeepAspectRatio)
         self.centerOn(pixmap_item)
+        self.zoom = 1  # Reset zoom level when centering
         # if self.reference_view:
         #     self.reference_view.__centerImage()
 
@@ -634,7 +656,9 @@ class ImageGraphicsViewUI(QGraphicsView):
                             None,
                             existing_colors=self._get_existing_roi_colors(),
                         )
-                        self.polygon_colors.append(self.current_polygon.color.getRgb()[:3])
+                        self.polygon_colors.append(
+                            self.current_polygon.color.getRgb()[:3]
+                        )
                         self.get_scene().addItem(self.current_polygon)
                         self.setMouseTracking(True)
 
@@ -654,9 +678,9 @@ class ImageGraphicsViewUI(QGraphicsView):
 
                 if self.begin_crop:
                     self.rubber_bands.append(self.rubber_band)
-                    assert (
-                        self.rubber_band is not None
-                    ), "Rubber band should be initialized"
+                    assert self.rubber_band is not None, (
+                        "Rubber band should be initialized"
+                    )
                     self.rubber_band_colors.append(self.rubber_band.color)
 
         if not self.is_resizing and not self.select:
@@ -802,7 +826,7 @@ class ImageGraphicsViewUI(QGraphicsView):
             r = QRectF(left, top, width, height)
             r = QRectF(left, top, width, height)
             self.active_crop_rect.setRect(r)
-            
+
         # Handle moving lasso
         if self.moving_lasso and self.last_mouse_pos:
             old_scene = self.mapToScene(self.last_mouse_pos)
@@ -834,34 +858,39 @@ class ImageGraphicsViewUI(QGraphicsView):
         # # Handle pixel info display
         # Determine reference item for coordinates and bounds
         reference_item = self.pixmap_item
-        has_main_pixmap = self.pixmap_item is not None and not self.pixmap_item.pixmap().isNull()
-        
+        has_main_pixmap = (
+            self.pixmap_item is not None and not self.pixmap_item.pixmap().isNull()
+        )
+
         # If main pixmap is invalid but we have view layers, use the first view layer as reference
         if not has_main_pixmap and self.view_pixmaps:
             reference_item = self.view_pixmaps[0]
 
         if reference_item:
             scene_pos = self.mapToScene(event.pos())
-            
+
             # Map scene position to image coordinates relative to the reference item
             # QGraphicsItem.mapFromScene works for both QGraphicsPixmapItem and pg.ImageItem
             image_pos = reference_item.mapFromScene(scene_pos)
 
             x = int(image_pos.x())
             y = int(image_pos.y())
-            
+
             # Determine dimensions of the reference item
             width = 0
             height = 0
-            
-            if isinstance(reference_item, QGraphicsPixmapItem) and not reference_item.pixmap().isNull():
+
+            if (
+                isinstance(reference_item, QGraphicsPixmapItem)
+                and not reference_item.pixmap().isNull()
+            ):
                 pixmap = reference_item.pixmap()
                 width = pixmap.width()
                 height = pixmap.height()
             elif isinstance(reference_item, pg.ImageItem):
                 # pg.ImageItem stores image data in .image
                 if reference_item.image is not None:
-                    # Shape is usually (h, w) or (w, h) depending on axis order, 
+                    # Shape is usually (h, w) or (w, h) depending on axis order,
                     # but ImageItem exposes width() and height() methods usually
                     width = reference_item.width()
                     height = reference_item.height()
@@ -882,18 +911,32 @@ class ImageGraphicsViewUI(QGraphicsView):
                     layers = [f"{layer}: {value}\n" for layer, value in layers]
                     combined_layers = "".join(layers)[:-1]
                     QToolTip.showText(
-                        global_pos, combined_layers, self, self.rect(), TOOLTIP_PERSIST_MS
+                        global_pos,
+                        combined_layers,
+                        self,
+                        self.rect(),
+                        TOOLTIP_PERSIST_MS,
                     )
                 else:
                     # Fast path: read intensity directly from model data
                     raw_intensity_str = None
                     try:
                         from controller import Controller
+
                         ctrl = Controller.get()
-                        if self == self.enc.canvas and ctrl.model_canvas.image_wrapper is not None and ctrl.model_canvas.image_wrapper.data.size > 0:
+                        if (
+                            self == self.enc.canvas
+                            and ctrl.model_canvas.image_wrapper is not None
+                            and ctrl.model_canvas.image_wrapper.data.size > 0
+                        ):
                             val = ctrl.model_canvas.image_wrapper.data[y, x]
                             raw_intensity_str = f"Intensity: {val}"
-                        elif hasattr(self.enc, "small_view") and self == self.enc.small_view and ctrl.model_reference_canvas.image_wrapper is not None and ctrl.model_reference_canvas.image_wrapper.data.size > 0:
+                        elif (
+                            hasattr(self.enc, "small_view")
+                            and self == self.enc.small_view
+                            and ctrl.model_reference_canvas.image_wrapper is not None
+                            and ctrl.model_reference_canvas.image_wrapper.data.size > 0
+                        ):
                             val = ctrl.model_reference_canvas.image_wrapper.data[y, x]
                             raw_intensity_str = f"Intensity: {val}"
                     except Exception:
@@ -905,7 +948,11 @@ class ImageGraphicsViewUI(QGraphicsView):
                         img.fill(Qt.GlobalColor.black)
                         painter = QPainter(img)
                         scene = self.get_scene()
-                        scene.render(painter, QRectF(0, 0, 1, 1), QRectF(scene_pos.x(), scene_pos.y(), 1, 1))
+                        scene.render(
+                            painter,
+                            QRectF(0, 0, 1, 1),
+                            QRectF(scene_pos.x(), scene_pos.y(), 1, 1),
+                        )
                         painter.end()
                         color = QColor(img.pixel(0, 0))
                         r, g, b = color.red(), color.green(), color.blue()
@@ -958,7 +1005,9 @@ class ImageGraphicsViewUI(QGraphicsView):
             origin = self._roi_origin_scene
             w = abs(cur.x() - origin.x())
             h = abs(cur.y() - origin.y())
-            self.rubber_band.setPos(min(cur.x(), origin.x()), min(cur.y(), origin.y()), finish=False)
+            self.rubber_band.setPos(
+                min(cur.x(), origin.x()), min(cur.y(), origin.y()), finish=False
+            )
             self.rubber_band.setSize((w, h), update=True, finish=False)
 
         if (
@@ -970,12 +1019,18 @@ class ImageGraphicsViewUI(QGraphicsView):
             origin = self._roi_origin_scene
             if self.select == "circle":
                 half = max(abs(cur.x() - origin.x()), abs(cur.y() - origin.y()))
-                self.rubber_bands[-1].setPos(origin.x() - half, origin.y() - half, finish=False)
-                self.rubber_bands[-1].setSize((half * 2, half * 2), update=True, finish=False)
+                self.rubber_bands[-1].setPos(
+                    origin.x() - half, origin.y() - half, finish=False
+                )
+                self.rubber_bands[-1].setSize(
+                    (half * 2, half * 2), update=True, finish=False
+                )
             else:
                 w = abs(cur.x() - origin.x())
                 h = abs(cur.y() - origin.y())
-                self.rubber_bands[-1].setPos(min(cur.x(), origin.x()), min(cur.y(), origin.y()), finish=False)
+                self.rubber_bands[-1].setPos(
+                    min(cur.x(), origin.x()), min(cur.y(), origin.y()), finish=False
+                )
                 self.rubber_bands[-1].setSize((w, h), update=True, finish=False)
 
     # pylint: disable=invalid-name
@@ -1003,11 +1058,13 @@ class ImageGraphicsViewUI(QGraphicsView):
 
             # pylint: disable=too-many-function-args
             self.active_crop_rect = ResizableRect(
-                self.initial_crop_rect.x(), self.initial_crop_rect.y(),
-                self.initial_crop_rect.width(), self.initial_crop_rect.height(),
+                self.initial_crop_rect.x(),
+                self.initial_crop_rect.y(),
+                self.initial_crop_rect.width(),
+                self.initial_crop_rect.height(),
             )
             self.active_crop_rect.setZValue(10)
-            
+
             self.is_resizing = False
 
             self.get_scene().addItem(self.active_crop_rect)
@@ -1081,7 +1138,7 @@ class ImageGraphicsViewUI(QGraphicsView):
             # Ensure it's in the scene
             if self.pixel_highlight.scene() != self.get_scene():
                 self.get_scene().addItem(self.pixel_highlight)
-            
+
             self.pixel_highlight.setRect(scene_rect)
             self.pixel_highlight.show()
         else:
@@ -1111,7 +1168,9 @@ class ImageGraphicsViewUI(QGraphicsView):
         pos = roi.pos()
         size = roi.size()
         tl = self.pixmap_item.mapFromScene(QPointF(pos.x(), pos.y()))
-        br = self.pixmap_item.mapFromScene(QPointF(pos.x() + size.x(), pos.y() + size.y()))
+        br = self.pixmap_item.mapFromScene(
+            QPointF(pos.x() + size.x(), pos.y() + size.y())
+        )
         return (tl.x(), tl.y(), br.x(), br.y())
 
     def update_roi_from_lasso(self, rubberband):
