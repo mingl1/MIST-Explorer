@@ -1,6 +1,7 @@
 """
 Cell layer alignment UI module.
 """
+
 # pylint: disable=no-name-in-module
 from PyQt6.QtCore import QCoreApplication, Qt, pyqtSignal, pyqtSlot
 from PyQt6.QtWidgets import (
@@ -25,6 +26,7 @@ class CellLayerAlignmentUI(QWidget):
     """
     UI for managing cell layer alignment parameters.
     """
+
     errorSignal = pyqtSignal(str)
     alignmentCompleteSignal = pyqtSignal(object, str)
     loadOnCanvasSignal = pyqtSignal(dict, bool, str)
@@ -100,13 +102,13 @@ class CellLayerAlignmentUI(QWidget):
 
     def _setup_image_layouts(self):
         """Setup image selectors for target and moving images."""
-        self._target_groupbox = QGroupBox("Target Image", self)
+        self._target_groupbox = QGroupBox("Reference Image", self)
         target_layout = QVBoxLayout(self._target_groupbox)
         target_layout.setContentsMargins(4, 4, 4, 4)
         self.target_image_selector = SegmentationImageSelector(self)
         target_layout.addWidget(self.target_image_selector)
 
-        self._unaligned_groupbox = QGroupBox("Moving Image", self)
+        self._unaligned_groupbox = QGroupBox("By this Image", self)
         unaligned_layout = QVBoxLayout(self._unaligned_groupbox)
         unaligned_layout.setContentsMargins(4, 4, 4, 4)
         self.unaligned_image_selector = SegmentationImageSelector(self)
@@ -140,10 +142,14 @@ class CellLayerAlignmentUI(QWidget):
         self.checkbox_layout.setContentsMargins(0, 0, 0, 0)
         self.need_centering = QCheckBox("Skip Centering Images")
         self.need_centering.setChecked(True)
-        self.need_centering.setToolTip("Check this to center the images before alignment.")
+        self.need_centering.setToolTip(
+            "Check this to center the images before alignment."
+        )
         self.need_gradient_descent = QCheckBox("Skip Gradient Descent")
         self.need_gradient_descent.setChecked(False)
-        self.need_gradient_descent.setToolTip("Check this to skip the gradient descent step.")
+        self.need_gradient_descent.setToolTip(
+            "Check this to skip the gradient descent step."
+        )
         self.checkbox_layout.addWidget(self.need_centering)
         self.checkbox_layout.addWidget(self.need_gradient_descent)
 
@@ -191,7 +197,9 @@ class CellLayerAlignmentUI(QWidget):
         self.aligner.snapshot.connect(self._handle_snapshot)
 
         self.target_image_selector.image_changed.connect(self._on_target_image_changed)
-        self.unaligned_image_selector.image_changed.connect(self._on_unaligned_image_changed)
+        self.unaligned_image_selector.image_changed.connect(
+            self._on_unaligned_image_changed
+        )
 
         self.aligner.error.connect(self.errorSignal)
 
@@ -217,7 +225,7 @@ class CellLayerAlignmentUI(QWidget):
         snapshot_dialog.exec()
 
     def _on_target_image_changed(self, uuid: str):
-        """Called when user picks a different target image in the selector."""
+        """Called when user picks a different reference image in the selector."""
         item = self.storage.get_data(uuid)
         if item is None:
             return
@@ -241,13 +249,15 @@ class CellLayerAlignmentUI(QWidget):
     def _retranslate_ui(self):
         """Retranslate UI components."""
         _translate = QCoreApplication.translate
-        self.alignment_groupbox.setTitle(_translate("MainWindow", "Registeration"))
+        self.alignment_groupbox.setTitle(
+            _translate("MainWindow", "Register and Replace Selected Reference Channel")
+        )
         self.register_button.setText(_translate("MainWindow", "Register Images"))
         self.manually_align_button.setText(_translate("MainWindow", "Manually Align"))
 
     # pylint: disable=unused-argument
     def set_target_image(self, item_uuid, is_leaf, channel):
-        """Set the target image for alignment (called by context menu)."""
+        """Set the Reference image for alignment (called by context menu)."""
         item = self.storage.get_data(item_uuid)
         assert item is not None, f"No data found for UUID: {item_uuid}"
         obj, name = item["data"], item["name"]
@@ -271,12 +281,16 @@ class CellLayerAlignmentUI(QWidget):
         self.unaligned_name = name
         self.unaligned_image_selector.set_selected_uuid_silent(item_uuid)
         self.unaligned_image_selector.set_channels(obj)
-        self.unaligned_image_selector.set_current_channel_silent(f"Channel {channel + 1}")
+        self.unaligned_image_selector.set_current_channel_silent(
+            f"Channel {channel + 1}"
+        )
         self._check_can_register()
 
     def _check_can_register(self):
         """Check if both images are loaded and enable/disable register button"""
-        can_register = self.target_image is not None and self.unaligned_image is not None
+        can_register = (
+            self.target_image is not None and self.unaligned_image is not None
+        )
         self.register_button.setEnabled(can_register)
         self.manually_align_button.setEnabled(can_register)
 
