@@ -49,7 +49,7 @@ from core.image_utils import (
 
 # Local/project imports
 from core.metadata_utils import parse_metadata
-from core.project_naming import SEGMENTATION_BASE_NAME, is_segmentation_name
+from core.project_naming import SEGMENTATION_BASE_NAME, is_segmentation_channel, is_segmentation_name
 from core.Worker import Worker
 
 logger = logging.getLogger("core.canvas")
@@ -311,6 +311,7 @@ class ImageWrapper:
         self.data = data.copy()
         self.contrast_min = 0
         self.contrast_max = 255
+        self.is_virtual_segmentation = False
         # Keyed by render_size (pixels). Populated lazily by create_thumbnail;
         # intentionally NOT copied so that a new wrapper always gets a fresh cache.
         self._thumb_cache: dict[int, np.ndarray] = {}
@@ -320,6 +321,7 @@ class ImageWrapper:
         new_obj = ImageWrapper(data=arr, name=self.name, cmap=self.cmap)
         new_obj.contrast_min = self.contrast_min
         new_obj.contrast_max = self.contrast_max
+        new_obj.is_virtual_segmentation = self.is_virtual_segmentation
         return new_obj
 
     def __copy__(self):
@@ -331,6 +333,7 @@ class ImageWrapper:
         new_obj = ImageWrapper(new_data, name=self.name, cmap=self.cmap)
         new_obj.contrast_min = self.contrast_min
         new_obj.contrast_max = self.contrast_max
+        new_obj.is_virtual_segmentation = self.is_virtual_segmentation
         return new_obj
 
     def get_uint8_data(self):
@@ -354,7 +357,7 @@ class ImageWrapper:
         return self.__repr__()
 
     def __bool__(self):
-        return self.data.any()
+        return bool(self.data.any())
 
 
 # Be able to reset to first version, contrast, crop
@@ -373,6 +376,8 @@ class BaseGraphicsView(QWidget):
         self.setMinimumSize(QSize(300, 300))
         self.reset_pixmap = None
         self.reset_pixmap_item = None
+        self._worker_queue = []
+        self._current_worker = None
 
         self.working_channels: dict[str, ImageWrapper] = {}
         self.display_channels: dict[str, QPixmap] = {}
@@ -395,6 +400,16 @@ class BaseGraphicsView(QWidget):
 
     def set_uuid(self, uuid):
         self.uuid = uuid
+
+    def _process_next_worker(self):
+        """Processes the next worker in the queue if no worker is currently running."""
+        if self._current_worker is not None and self._current_worker.isRunning():
+            return
+        if not self._worker_queue:
+            self._current_worker = None
+            return
+        self._current_worker = self._worker_queue.pop(0)
+        self._current_worker.start()
 
     @property
     def is_layered(self):
@@ -883,10 +898,15 @@ class ReferenceGraphicsView(BaseGraphicsView):
             )
         else:
             self.reference_worker = Worker(self._process_new_file, i, False)
-        self.reference_worker.start()
+
         self.reference_worker.signal.connect(self.set_pixmap)
         self.reference_worker.finished.connect(self.reference_worker.quit)
         self.reference_worker.finished.connect(self.reference_worker.deleteLater)
+        self.reference_worker.finished.connect(self._process_next_worker)
+
+        self._worker_queue.append(self.reference_worker)
+        if self._current_worker is None or not self._current_worker.isRunning():
+            self._process_next_worker()
 
     def set_uuid(self, uuid):
         """Set UUID for the reference image."""
@@ -921,6 +941,8 @@ class ImageGraphicsView(BaseGraphicsView):
     crop_signal = pyqtSignal(bool)
     update_channel = pyqtSignal(int)
     uuid_changed = pyqtSignal(str)
+    overlay_build_started = pyqtSignal()
+    overlay_build_finished = pyqtSignal()
 
     def __init__(self, controller: "Controller"):
         super().__init__()
@@ -935,6 +957,7 @@ class ImageGraphicsView(BaseGraphicsView):
         self._stardist_overlay_rgb = None
         self.stardist_source_channel = None
         self.stardist_virtual_channel = None
+        self._overlay_worker = None
         self._blur_layer = ""
         self._blur_source_uuid = None
         self.corrected_layer = None
@@ -983,7 +1006,7 @@ class ImageGraphicsView(BaseGraphicsView):
             return "gray" if fallback_cmap == "label_image" else fallback_cmap
 
         if (
-            is_segmentation_name(getattr(wrapper, "name", ""))
+            is_segmentation_channel(wrapper)
             and wrapper.cmap == "label_image"
         ):
             resolved_cmap = self._resolve_stardist_virtual_cmap(fallback_cmap)
@@ -1020,7 +1043,7 @@ class ImageGraphicsView(BaseGraphicsView):
     def _restore_stardist_state_from_channels(self):
         self.clear_stardist_overlay()
         for channel_key, wrapper in self.working_channels.items():
-            if is_segmentation_name(getattr(wrapper, "name", "")):
+            if is_segmentation_channel(wrapper):
                 self.stardist_virtual_channel = channel_key
                 self.segmentation_labels = wrapper.data.copy()
                 break
@@ -1044,16 +1067,52 @@ class ImageGraphicsView(BaseGraphicsView):
                 return
 
     def set_stardist_overlay_enabled(self, enabled: bool):
-        self.stardist_overlay_enabled = (
-            bool(enabled) and self.segmentation_labels is not None
-        )
-        if not self.stardist_overlay_enabled:
-            self._stardist_overlay_rgb = None
+        if not enabled or self.segmentation_labels is None:
+            # Disable path: fast, run inline (keep cache so re-enable is instant)
+            self.stardist_overlay_enabled = False
+            self.update_image()
+            return
+
+        if self._stardist_overlay_rgb is not None:
+            # Cache already built: fast path
+            self.stardist_overlay_enabled = True
+            self.update_image()
+            return
+
+        # Slow path: build overlay on a background thread
+        self._start_overlay_build()
+
+    def _start_overlay_build(self):
+        if self._overlay_worker is not None and self._overlay_worker.isRunning():
+            return
+        self.overlay_build_started.emit()
+        self.update_progress.emit(0, "Building segmentation overlay")
+        labels = self.segmentation_labels
+        self._overlay_worker = Worker(self._build_stardist_overlay, labels)
+        self._overlay_worker.signal.connect(self._on_overlay_built)
+        self._overlay_worker.error.connect(self._on_overlay_error)
+        self._overlay_worker.start()
+
+    @pyqtSlot(object)
+    def _on_overlay_built(self, overlay_rgb):
+        self._overlay_worker = None
+        self._stardist_overlay_rgb = overlay_rgb
+        self.stardist_overlay_enabled = True
+        self.update_progress.emit(100, "Overlay ready")
+        self.overlay_build_finished.emit()
         self.update_image()
+
+    @pyqtSlot(str)
+    def _on_overlay_error(self, error_msg):
+        self._overlay_worker = None
+        logger.error("Overlay build failed: %s", error_msg)
+        self.stardist_overlay_enabled = False
+        self.update_progress.emit(100, "Overlay failed")
+        self.overlay_build_finished.emit()
 
     def remove_virtual_stardist_channel(self, channel_key: str) -> bool:
         wrapper = self.working_channels.get(channel_key)
-        if wrapper is None or not is_segmentation_name(getattr(wrapper, "name", "")):
+        if wrapper is None or not is_segmentation_channel(wrapper):
             return False
 
         self.working_channels.pop(channel_key, None)
@@ -1110,7 +1169,7 @@ class ImageGraphicsView(BaseGraphicsView):
     ):
         if self.stardist_virtual_channel is None:
             for channel_key, wrapper in self.working_channels.items():
-                if is_segmentation_name(getattr(wrapper, "name", "")):
+                if is_segmentation_channel(wrapper):
                     self.stardist_virtual_channel = channel_key
                     break
             if self.stardist_virtual_channel is None:
@@ -1118,6 +1177,7 @@ class ImageGraphicsView(BaseGraphicsView):
 
         channel_key = self.stardist_virtual_channel
         wrapper = ImageWrapper(labels, name=label_name, cmap="label_image")
+        wrapper.is_virtual_segmentation = True
         wrapper.contrast_min = 0
         wrapper.contrast_max = 255
         self.working_channels[channel_key] = wrapper
@@ -1421,7 +1481,12 @@ class ImageGraphicsView(BaseGraphicsView):
         self.image_worker.signal.connect(self.set_pixmap)
         self.image_worker.error.connect(self.on_error)
         self.image_worker.finished.connect(self.image_worker.quit)
-        self.image_worker.start()
+        self.image_worker.finished.connect(self.image_worker.deleteLater)
+        self.image_worker.finished.connect(self._process_next_worker)
+
+        self._worker_queue.append(self.image_worker)
+        if self._current_worker is None or not self._current_worker.isRunning():
+            self._process_next_worker()
 
     def array_to_image(self, img: ImageWrapper, as_new_image, image_name=None):
         channel_name = "Channel 1"

@@ -138,6 +138,14 @@ class ImageGraphicsViewUI(QGraphicsView):
             rubber_band.show()
             rubber_band.setZValue(1)
 
+        # Show polygons when in view/analyze tabs
+        for polygon in self.polygons:
+            polygon.show()
+            polygon.setZValue(1)
+        if self.current_polygon is not None:
+            self.current_polygon.show()
+            self.current_polygon.setZValue(1)
+
     def show_images_tab_image(self):
         """Show the images tab image."""
         self.pixmap_item.show()
@@ -147,6 +155,12 @@ class ImageGraphicsViewUI(QGraphicsView):
         # Also hide rubberbands when switching to Extract tab
         for rubber_band in self.rubber_bands:
             rubber_band.hide()
+
+        # Hide polygons when switching to Extract tab
+        for polygon in self.polygons:
+            polygon.hide()
+        if self.current_polygon is not None:
+            self.current_polygon.hide()
 
     def get_scene(self):
         """Get the scene."""
@@ -556,6 +570,7 @@ class ImageGraphicsViewUI(QGraphicsView):
             return
         if self.current_polygon.complete():
             self.current_polygon.set_snap_point(None)
+            self.polygons.append(self.current_polygon)
             self.enc.analysis_tab.analyze_poly_region(
                 self.current_polygon, ("poly", self.current_polygon.im_points)
             )

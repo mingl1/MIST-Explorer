@@ -178,7 +178,47 @@ def test_crop_new_image_opens_on_active_channel(qapp, monkeypatch):
     assert view.image_worker.args[-1] == "Channel 2"
 
 
-def test_uuid_reload_restores_stardist_overlay_state(qapp):
+def test_uuid_reload_restores_stardist_overlay_state(qapp, monkeypatch):
+    # Patch Worker to run synchronously so overlay build completes inline.
+    class SyncWorker:
+        def __init__(self, fn, *args, **kwargs):
+            self._fn = fn
+            self._args = args
+            self._result = None
+            self._signal_cb = None
+            self._error_cb = None
+
+        class _CB:
+            def connect(self, cb):
+                pass
+
+        finished = _CB()
+        error = _CB()
+
+        @property
+        def signal(self):
+            return self
+
+        def connect(self, cb):
+            self._signal_cb = cb
+
+        def isRunning(self):
+            return False
+
+        def deleteLater(self):
+            pass
+
+        def start(self):
+            try:
+                result = self._fn(*self._args)
+                if self._signal_cb:
+                    self._signal_cb(result)
+            except Exception as exc:
+                if self._error_cb:
+                    self._error_cb(str(exc))
+
+    monkeypatch.setattr(canvas_module, "Worker", SyncWorker)
+
     view = _make_view()
     image_uuid = uuid.uuid4()
     view.storage.add_data(

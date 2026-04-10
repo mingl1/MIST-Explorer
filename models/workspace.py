@@ -13,6 +13,7 @@ class ImageMetadata:
     original_filename: str = ""
     contrast_settings: Dict[str, Tuple[int, int]] = field(default_factory=dict)
     channel_display_names: Dict[str, str] = field(default_factory=dict)
+    channel_cmaps: Dict[str, str] = field(default_factory=dict)
     default_channel: str = "Channel 1"
 
     def to_dict(self) -> dict:
@@ -23,6 +24,7 @@ class ImageMetadata:
             "original_filename": self.original_filename,
             "contrast_settings": self.contrast_settings,
             "channel_display_names": self.channel_display_names,
+            "channel_cmaps": self.channel_cmaps,
             "default_channel": self.default_channel,
         }
 
@@ -35,6 +37,7 @@ class ImageMetadata:
             original_filename=data.get("original_filename", ""),
             contrast_settings=data.get("contrast_settings", {}),
             channel_display_names=data.get("channel_display_names", {}),
+            channel_cmaps=data.get("channel_cmaps", {}),
             default_channel=data.get("default_channel", "Channel 1"),
         )
 

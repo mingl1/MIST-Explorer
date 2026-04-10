@@ -24,7 +24,7 @@ from core import (
     StarDist,
 )
 from core.project_manager import ProjectManager
-from core.project_naming import is_segmentation_name, is_temp_project_name
+from core.project_naming import is_segmentation_channel, is_segmentation_name, is_temp_project_name
 from ui.alignment.alignment_preview_dialog import AlignmentPreviewDialog
 from ui.stardist.crop_experiment_dialog import CropExperimentDialog
 
@@ -212,6 +212,9 @@ class Controller:
         my_uuid = str(uuid.uuid4())
         self.view.images_tab.add_to_storage(my_uuid, storage_item)
         self.view.images_tab.add_item(my_uuid)
+        # Auto-save a path reference whenever the user uploads a real file
+        if os.path.isfile(file_name):
+            self.view.images_tab.save_all_images(copy_data=False)
         return my_uuid
 
     # add new image to storage
@@ -382,7 +385,7 @@ class SignalConnectionManager:
 
     def _resolve_stardist_channel_key(self, channel_map: dict) -> str:
         for channel_key, wrapper in channel_map.items():
-            if is_segmentation_name(getattr(wrapper, "name", "")):
+            if is_segmentation_channel(wrapper):
                 return channel_key
         return self._next_available_channel_key(channel_map)
 
@@ -410,6 +413,16 @@ class SignalConnectionManager:
             wrapped,
         )
         return True
+
+    def _on_overlay_build_finished(self):
+        """If the overlay failed (still disabled after build), uncheck the button."""
+        if not self.c.model_canvas.stardist_overlay_enabled:
+            btn = self.c.view.stardist_groupbox.overlay_toggle_button
+            btn.blockSignals(True)
+            btn.setChecked(False)
+            btn.blockSignals(False)
+            # Manually sync button text since blockSignals prevented toggled from firing
+            btn.setText("Show Overlay")
 
     def _handle_stardist_done(
         self, stardist_wrapper: ImageWrapper, _success: bool, label_name: str
@@ -658,6 +671,15 @@ class SignalConnectionManager:
         )
         self.c.view.stardist_groupbox.overlay_toggle_button.toggled.connect(
             self.c.model_canvas.set_stardist_overlay_enabled
+        )
+        self.c.model_canvas.overlay_build_started.connect(
+            lambda: self.c.view.stardist_groupbox.overlay_toggle_button.setEnabled(False)
+        )
+        self.c.model_canvas.overlay_build_finished.connect(
+            lambda: self.c.view.stardist_groupbox.overlay_toggle_button.setEnabled(True)
+        )
+        self.c.model_canvas.overlay_build_finished.connect(
+            self._on_overlay_build_finished
         )
 
         # CellProfiler-like advanced settings
@@ -1084,6 +1106,16 @@ class SignalConnectionManager:
         self.c.model_cell_intensity.protein_distribution_ready.connect(
             self.c.view.cell_intensity_groupbox.show_protein_distribution
         )
+        self.c.view.cell_intensity_groupbox.thresholdApplied.connect(
+            self.c.model_cell_intensity.set_bead_per_protein_threshold
+        )
+
+        # Disable save/filtered-stats buttons during generation
+        self.c.view.cell_intensity_groupbox.generate_cell_data.connect(
+            lambda: self.c.view.cell_intensity_groupbox.set_processing_buttons_enabled(False)
+        )
+        self.c.model_cell_intensity.progress.connect(self._on_cell_intensity_progress)
+
         self.c.view.cell_intensity_groupbox.set_generation_enabled(False)
 
         # Image selector
@@ -1094,6 +1126,11 @@ class SignalConnectionManager:
         tree_model.rowsInserted.connect(lambda *_: self._repopulate_generation_selector())
         tree_model.rowsRemoved.connect(lambda *_: self._repopulate_generation_selector())
         self._repopulate_generation_selector()
+
+    def _on_cell_intensity_progress(self, value: int, msg: str):
+        """Re-enable save/filtered-stats buttons when generation completes."""
+        if value >= 100:
+            self.c.view.cell_intensity_groupbox.set_processing_buttons_enabled(True)
 
     def _repopulate_generation_selector(self):
         """Rebuild the Generation tab image selector list."""

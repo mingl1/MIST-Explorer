@@ -16,6 +16,7 @@ if TYPE_CHECKING:
                                        create_preprocessing_matrix,
                                        extract_complete_transformation,
                                        morph_open, register_combination)
+    from .dataframe_utils import METADATA_COLUMNS, get_marker_columns
     from .registeration import Register, TileMap
     from .stardist import StarDist
     from .Worker import Worker
@@ -39,6 +40,8 @@ _LAZY_IMPORTS = {
     "TileMap": ("core.registeration", "TileMap"),
     "Worker": ("core.Worker", "Worker"),
     "StarDist": ("core.stardist", "StarDist"),
+    "METADATA_COLUMNS": ("core.dataframe_utils", "METADATA_COLUMNS"),
+    "get_marker_columns": ("core.dataframe_utils", "get_marker_columns"),
 }
 
 __all__ = [
@@ -60,6 +63,8 @@ __all__ = [
     "TileMap",
     "Worker",
     "StarDist",
+    "METADATA_COLUMNS",
+    "get_marker_columns",
 ]
 
 

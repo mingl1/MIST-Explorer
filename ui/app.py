@@ -14,15 +14,15 @@ from PyQt6.QtCore import (QCoreApplication, QEvent, QMetaObject, QPoint,
                           QPointF, QSize, Qt)
 from PyQt6.QtGui import (QIcon, QImageReader, QKeySequence, QMouseEvent,
                          QShortcut)
-from PyQt6.QtWidgets import (QGroupBox, QHBoxLayout, QLabel, QMainWindow,
-                             QProgressBar, QPushButton, QScrollArea,
-                             QSizePolicy, QSplitter, QSplitterHandle,
-                             QStackedWidget, QStatusBar, QTabWidget,
-                             QVBoxLayout, QWidget)
+from PyQt6.QtWidgets import (QFileDialog, QGroupBox, QHBoxLayout, QLabel,
+                             QMainWindow, QMessageBox, QProgressBar,
+                             QPushButton, QScrollArea, QSizePolicy, QSplitter,
+                             QSplitterHandle, QStackedWidget, QStatusBar,
+                             QTabWidget, QVBoxLayout, QWidget)
 
 from core import MetaData
 from core.project_manager import ProjectManager
-from core.project_naming import is_segmentation_name
+from core.project_naming import is_segmentation_channel, is_segmentation_name
 from ui.toolbar.menubar_ui import MenuBarUI
 from ui.toolbar.toolbar_ui import ToolBarUI
 from utils import resource_path
@@ -329,7 +329,8 @@ class MainWindow(QMainWindow):
                     display_name = image_meta.channel_display_names.get(
                         channel_name, channel_name
                     )
-                    channel_cmap = (
+                    stored_cmap = image_meta.channel_cmaps.get(channel_name)
+                    channel_cmap = stored_cmap or (
                         "label_image" if is_segmentation_name(display_name) else "gray"
                     )
                     wrapper = ImageWrapper(
@@ -339,6 +340,8 @@ class MainWindow(QMainWindow):
                     )
                     wrapper.contrast_min = contrast[0]
                     wrapper.contrast_max = contrast[1]
+                    if channel_cmap == "label_image":
+                        wrapper.is_virtual_segmentation = True
                     image_data[channel_name] = wrapper
 
             if image_data:
@@ -358,9 +361,54 @@ class MainWindow(QMainWindow):
         if self.current_project_path:
             ProjectManager.open_project_folder(self.current_project_path)
 
+    def _prompt_save_unsaved_created(self) -> bool:
+        """Prompt the user to save unsaved created images if any exist.
+
+        Returns True to proceed (save or discard), False if the user cancelled.
+        """
+        if self.images_tab is None or not self.images_tab.has_unsaved_created_images():
+            return True
+        if not self.images_tab._can_save_project():
+            # Temp project or no project path — skip silently
+            return True
+        reply = QMessageBox.question(
+            self,
+            "Unsaved Work",
+            "You have unsaved images created in this session (e.g. crops).\n\n"
+            "Save them to the project before exiting?",
+            QMessageBox.StandardButton.Save
+            | QMessageBox.StandardButton.Discard
+            | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Save,
+        )
+        if reply == QMessageBox.StandardButton.Cancel:
+            return False
+        if reply == QMessageBox.StandardButton.Save:
+            self.images_tab.save_created_images_to_project()
+        return True
+
+    def closeEvent(self, event):  # type: ignore
+        """Prompt to save unsaved created images before closing."""
+        if self._prompt_save_unsaved_created():
+            event.accept()
+        else:
+            event.ignore()
+
+    def save_all_images_to_folder(self):
+        """Open a folder picker and export all workspace images as TIFFs there."""
+        if self.images_tab is None:
+            return
+        folder = QFileDialog.getExistingDirectory(
+            self, "Select Folder to Save All Images"
+        )
+        if folder:
+            self.images_tab.save_all_images_to(folder)
+
     def switch_project(self):
         """Cleanly restart the application to return to the project launcher."""
         logger.info("Switching project. Restarting application...")
+        if not self._prompt_save_unsaved_created():
+            return
         os.execl(sys.executable, sys.executable, *sys.argv)
 
     # pylint: disable=invalid-name
@@ -394,9 +442,9 @@ class MainWindow(QMainWindow):
 
         # Can add more shortcuts by adding tuple in form: (key_press_string, function)
         shortcuts = [
-            ("Ctrl+R", self.select),
-            ("Ctrl+C", self.circle_select),
-            ("Ctrl+P", self.poly_select),
+            ("R", self.select),
+            ("C", self.circle_select),
+            ("L", self.poly_select),
         ]
 
         for key_sequence, slot in shortcuts:
@@ -732,13 +780,8 @@ class MainWindow(QMainWindow):
         # Start with Images tab
         self.stacked_widget.setCurrentIndex(0)
 
-        # Modular save coordinator
+        # Modular save coordinator (kept for internal use)
         self._save_handlers = [self.images_tab.save_all_images]
-
-    def _on_save_project(self, copy_data: bool):
-        """Call all registered save handlers."""
-        for handler in self._save_handlers:
-            handler(copy_data)
 
     def _retranslate_ui(self):
         """Set UI text and translations"""

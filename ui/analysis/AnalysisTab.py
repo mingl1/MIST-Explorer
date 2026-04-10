@@ -42,6 +42,7 @@ from PyQt6.QtWidgets import (
 
 logger = logging.getLogger(__name__)
 
+from core.dataframe_utils import get_marker_columns
 from ui.analysis.graphing.DistributionViewer import DistributionViewer
 from ui.analysis.graphing.PieChartCanvas import PieChartCanvas
 from ui.analysis.graphing.SpatialHeatmapUpdated import HeatmapWindow
@@ -510,21 +511,25 @@ class ROIAnalysisView(QWidget):
         controls_layout = QHBoxLayout()
 
         # Add protein selection
-        self.multiComboBox = MultiComboBox()
-        self.multiComboBox.addItem("Select All")
-        self.multiComboBox.addItem("Deselect All")
+        multiComboBox = MultiComboBox()
 
         data = self.enc.view_tab.get_df()
-        self.columns = data.columns[2:-1]
-        self.multiComboBox.addItems(list(self.columns))
+        self.columns = get_marker_columns(data)
+        multiComboBox.addItems(list(self.columns))
 
         for i in range(len(self.columns)):
-            self.multiComboBox.model().item(i + 2).setCheckState(Qt.CheckState.Checked)
+            multiComboBox.model().item(i).setCheckState(Qt.CheckState.Checked)
 
         # Add buttons
+        select_all_button = QPushButton("Select All")
+        select_all_button.clicked.connect(multiComboBox.selectAll)
+        
+        deselect_all_button = QPushButton("Deselect All")
+        deselect_all_button.clicked.connect(multiComboBox.deselectAll)
+
         apply_button = QPushButton("Apply")
         apply_button.clicked.connect(
-            lambda: self.handleComboBoxChanged(self.multiComboBox.get_checked_items())
+            lambda: self.handleComboBoxChanged(multiComboBox.get_checked_items())
         )
 
         delete_button = QPushButton("Delete")
@@ -548,7 +553,14 @@ class ROIAnalysisView(QWidget):
 
         # Create combo and apply layout
         combo_apply_layout = QVBoxLayout()
-        combo_apply_layout.addWidget(self.multiComboBox)
+        combo_apply_layout.addWidget(multiComboBox)
+        
+        # New: Horizontal layout for select all/deselect all buttons
+        select_buttons_layout = QHBoxLayout()
+        select_buttons_layout.addWidget(select_all_button)
+        select_buttons_layout.addWidget(deselect_all_button)
+        
+        combo_apply_layout.addLayout(select_buttons_layout)
         combo_apply_layout.addWidget(apply_button)
 
         # Add all layouts to main controls layout
@@ -605,30 +617,39 @@ class ROIAnalysisView(QWidget):
         elif self.regions[self.current_view_index][0] == "poly":
             data = self.get_poly_data(region[1])
         assert data is not None, "Shape selection not implemeneted in analysis tab"
+
+        # Capture current state for the lambdas
+        current_data = data
+        current_columns = list(self.columns)
+
         # Create and add graphs
-        box_plot = self.create_box_plot(data)
+        box_plot = self.create_box_plot(current_data, current_columns)
         self.add_graph_to_current_view(box_plot)
 
         graph_generators = [
-            lambda: ZScoreHeatmapWindow(self.get_z_heatmap_data(data)),
-            lambda: HeatmapWindow(data[self.columns]),
-            lambda: PieChartCanvas(data[self.columns]),
-            lambda: DistributionViewer(data[self.columns]),
+            lambda d=current_data, c=current_columns: ZScoreHeatmapWindow(
+                self.get_z_heatmap_data(d, c)
+            ),
+            lambda d=current_data, c=current_columns: HeatmapWindow(
+                self.get_z_heatmap_data(d, c)
+            ),
+            lambda d=current_data, c=current_columns: PieChartCanvas(d[c]),
+            lambda d=current_data, c=current_columns: DistributionViewer(d[c]),
         ]
 
         for generator in graph_generators:
             self.add_graph_to_current_view(generator)
 
-    def get_z_heatmap_data(self, data):
-        t = [c for c in self.columns if c not in ("Global X", "Global Y")]
+    def get_z_heatmap_data(self, data, columns):
+        t = [c for c in columns if c not in ("Global X", "Global Y")]
         t = ["Global X", "Global Y"] + t
         return data[t]
 
-    def create_box_plot(self, data):
+    def create_box_plot(self, data, columns):
         """Create a box plot widget"""
         result_widget = QWidget()
         layout = QVBoxLayout(result_widget)
-        filtered_data = data.loc[:, self.columns]
+        filtered_data = data.loc[:, columns]
         filtered_data = filtered_data.melt(var_name="Protein", value_name="Expression")
 
         fig, ax = plt.subplots(figsize=(12, 8))
@@ -736,6 +757,22 @@ class ROIAnalysisView(QWidget):
 
         # Update roi
         self.navigate_to_roi(self.current_view_index)
+
+        # Refresh the detail page if it is currently visible
+        try:
+            if (
+                hasattr(self, "view_graph_interfaces")
+                and self.current_view_index in self.view_graph_interfaces
+            ):
+                interface = self.view_graph_interfaces[self.current_view_index]
+                stacked_widget = interface["stacked_widget"]
+                detail_page = interface["icon_detail_page"]
+
+                if stacked_widget.currentWidget() == detail_page:
+                    # Refresh the detail page with the current graph index
+                    detail_page.set_icon_index(self.current_graph_index)
+        except Exception as e:
+            logger.error(f"Error refreshing graph display: {e}")
 
     def show_icon_detail_page(self, index):
         logger.debug(
@@ -999,53 +1036,44 @@ class MultiComboBox(QComboBox):
 
     def onItemStateChanged(self):
         """
-        The function `onItemStateChanged` updates displayed text and checks all items except "Deselect
-        All" when "Select All" is checked, and deselects all items when "Deselect All" is checked.
+        The function `onItemStateChanged` updates displayed text when item states change.
         """
-        # Update the displayed text
         self.updateText()
 
-        items = self.get_checked_items2()
+    def selectAll(self):
+        """
+        Checks all items in the model.
+        """
+        for i in range(self.model().rowCount()):
+            item = self.model().item(i)
+            item.setCheckState(Qt.CheckState.Checked)
+        self.updateText()
 
-        if "Select All" in items and "Deselect All" not in items:
-            for i in range(self.model().rowCount()):
-                item = self.model().item(i)
-                if item.text() != "Deselect All":
-                    item.setCheckState(Qt.CheckState.Checked)
-
-        if "Deselect All" in items:
-            for i in range(self.model().rowCount()):
-                item = self.model().item(i)
-                item.setCheckState(Qt.CheckState.Unchecked)
-
-        # self.updateText()   # Emit the custom si"Deselect All"gnal with the list of checked items
-        # self.itemsCheckedChanged.emit()
+    def deselectAll(self):
+        """
+        Unchecks all items in the model.
+        """
+        for i in range(self.model().rowCount()):
+            item = self.model().item(i)
+            item.setCheckState(Qt.CheckState.Unchecked)
+        self.updateText()
 
     def get_checked_items(self):
         """
-        This function retrieves checked items from a model, excluding "Select All" and "Deselect All"
-        items.
-        :return: The function `get_checked_items` returns a list of items that are checked in the model,
-        excluding the items "Select All" and "Deselect All".
-        """
-        items = [
-            self.model().item(i).text()
-            for i in range(self.model().rowCount())
-            if self.model().item(i).checkState() == Qt.CheckState.Checked
-        ]
-
-        return [item for item in items if item not in ["Select All", "Deselect All"]]
-
-    # stupid
-    def get_checked_items2(self):
-        """
-        Started as a result of some backwards compatability issue, not sure if this is still needed....
+        This function retrieves checked items from a model.
+        :return: The function `get_checked_items` returns a list of items that are checked in the model.
         """
         return [
             self.model().item(i).text()
             for i in range(self.model().rowCount())
             if self.model().item(i).checkState() == Qt.CheckState.Checked
         ]
+
+    def get_checked_items2(self):
+        """
+        Return all checked items.
+        """
+        return self.get_checked_items()
 
     from PyQt6.QtWidgets import (
         QLabel,
@@ -1145,7 +1173,6 @@ class GraphsList(QWidget):
 
                 button.clicked.connect(lambda _, idx=index: navigate_to_page(idx))
                 layout.addWidget(button)
-
 
 
 class RegenerateOnCloseWindow(QWidget):

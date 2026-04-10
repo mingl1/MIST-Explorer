@@ -6,6 +6,8 @@ logger = logging.getLogger(__name__)
 
 import numpy as np
 import pandas as pd
+
+from core.dataframe_utils import METADATA_COLUMNS, get_marker_columns
 import qtrangeslider
 import tifffile as tiff
 from PyQt6.QtCore import QByteArray, Qt, QTimer, pyqtSignal
@@ -259,16 +261,15 @@ def collapse_duplicate_cell_ids(df):
         return df
 
     coordinate_cols = [col for col in ("Global X", "Global Y") if col in df.columns]
-    protected_cols = {"CellID", *coordinate_cols}
     numeric_cols = [
         col
         for col in df.columns
-        if col not in protected_cols and pd.api.types.is_numeric_dtype(df[col])
+        if col not in METADATA_COLUMNS and pd.api.types.is_numeric_dtype(df[col])
     ]
     other_cols = [
         col
         for col in df.columns
-        if col not in protected_cols and col not in numeric_cols
+        if col not in METADATA_COLUMNS and col not in numeric_cols
     ]
 
     agg_map = {col: "first" for col in coordinate_cols}
@@ -596,9 +597,7 @@ class ImageOverlay(QWidget):
         self.progress.emit(70, "Preparing layers...")
 
         # Get protein names (assuming they are all columns after the first few)
-        protein_columns = self.loaded_df.columns.drop(
-            ["Global X", "Global Y", "CellID"], errors="ignore"
-        )
+        protein_columns = get_marker_columns(self.loaded_df)
         protein_names = [col for col in protein_columns if col in self.df.columns]
 
         # Prepare layer structure, but don't generate images yet (on-demand is fast now)
@@ -1055,6 +1054,11 @@ class ImageOverlay(QWidget):
         # ── Title bar ──
         title_bar = QWidget()
         title_bar.setObjectName("layerTitleBar")
+        title_bar.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+        title_bar.setStyleSheet(
+            "QWidget#layerTitleBar { background: transparent; }"
+            "QWidget#layerTitleBar:hover { background: rgba(255,255,255,0.06); }"
+        )
         title_bar_layout = QHBoxLayout(title_bar)
         title_bar_layout.setContentsMargins(8, 3, 4, 3)
         title_bar_layout.setSpacing(4)
@@ -1065,7 +1069,7 @@ class ImageOverlay(QWidget):
         name_label.setStyleSheet(
             "QPushButton { font-weight: bold; font-size: 11px; color: #aaa;"
             " background: transparent; border: none; text-align: left; padding: 0; }"
-            " QPushButton:hover { color: #ddd; }"
+            " QPushButton:hover { color: #fff; }"
         )
         title_bar_layout.addWidget(name_label, stretch=1)
 

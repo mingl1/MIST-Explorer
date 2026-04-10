@@ -18,6 +18,7 @@ from PyQt6.QtCore import QItemSelection, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QActionGroup
 from PyQt6.QtWidgets import (
     QFileDialog,
+    QInputDialog,
     QMenu,
     QMessageBox,
     QTreeView,
@@ -30,7 +31,7 @@ from core.canvas import ReferenceGraphicsView
 from core.project_manager import ProjectManager
 from core.project_naming import (
     SEGMENTATION_BASE_NAME,
-    is_segmentation_name,
+    is_segmentation_channel,
     is_temp_project_name,
 )
 from models.image_list_model import ImageTreeItem, ImageTreeModel
@@ -68,6 +69,7 @@ class ImageManager(QWidget):
         self.current_project_path: Optional[Path] = None
         self.current_project_name: Optional[str] = None
         self.current_project_is_temp: bool = False
+        self._unsaved_created: set = set()  # UUIDs (str) of in-session created images
 
         # Connect deletion signal to backend cleanup
         self.image_tree_view.item_deleted.connect(self._handle_item_deletion)
@@ -143,12 +145,14 @@ class ImageManager(QWidget):
 
         contrast_settings = {}
         channel_display_names = {}
+        channel_cmaps = {}
         for channel_name, wrapper in item_data.items():
             contrast_settings[channel_name] = (
                 wrapper.contrast_min,
                 wrapper.contrast_max,
             )
             channel_display_names[channel_name] = wrapper.name or channel_name
+            channel_cmaps[channel_name] = wrapper.cmap or "gray"
 
         ProjectManager.save_image_reference(
             project_path=self.current_project_path,
@@ -158,6 +162,7 @@ class ImageManager(QWidget):
             original_filename=original_filename,
             contrast_settings=contrast_settings,
             channel_display_names=channel_display_names,
+            channel_cmaps=channel_cmaps,
         )
 
     def set_model_canvas(self, model):
@@ -227,7 +232,7 @@ class ImageManager(QWidget):
 
     def _channel_display_text(self, channel: str, wrapper):
         display_name = getattr(wrapper, "name", "") or channel
-        if is_segmentation_name(display_name):
+        if is_segmentation_channel(wrapper):
             if (
                 display_name == SEGMENTATION_BASE_NAME
                 and self.current_project_name
@@ -369,13 +374,69 @@ class ImageManager(QWidget):
                 main_item.appendRow(channel_item)
 
     def add_to_storage(self, item_uuid, obj):
-        """Add data to storage."""
+        """Add data to storage, tracking whether this is an uploaded or created image."""
         logger.debug(f"adding {item_uuid} to storage")
         self.storage.add_data(item_uuid, obj)
+        original_filename = obj.get("original_filename", "")
+        if not original_filename or not os.path.isfile(original_filename):
+            self._unsaved_created.add(str(item_uuid))
 
     def _handle_item_deletion(self, item_uuid: UUID):
         """Handle backend cleanup when an item is deleted."""
         self.storage.remove_data(item_uuid)
+        self._unsaved_created.discard(str(item_uuid))
+
+    def has_unsaved_created_images(self) -> bool:
+        """Return True if any in-session created images have not been saved or exported."""
+        return bool(self._unsaved_created)
+
+    def save_created_images_to_project(self):
+        """Save only in-session created images (no real source file) to the project folder."""
+        if not self._can_save_project():
+            return
+        for item_uuid_str in list(self._unsaved_created):
+            item = self.storage.get_data(item_uuid_str)
+            if item is None:
+                self._unsaved_created.discard(item_uuid_str)
+                continue
+            self._save_image_to_project(item_uuid_str, item)
+            self._unsaved_created.discard(item_uuid_str)
+
+    def save_all_images_to(self, folder: str):
+        """Export every workspace image as a TIFF to folder and update project references."""
+        if not folder:
+            return
+        model = self.image_tree_model
+        for i in range(model.rowCount()):
+            tree_item = model.item(i)
+            if tree_item is None:
+                continue
+            item_uuid = tree_item.data(Qt.ItemDataRole.UserRole)
+            if item_uuid is None:
+                continue
+            item = self.storage.get_data(item_uuid)
+            if item is None:
+                continue
+            name = os.path.splitext(item.get("name", f"Image_{item_uuid}"))[0]
+            channel_dict = item.get("data", {})
+            arrays = [
+                ch.data
+                for _, ch in sorted(channel_dict.items())
+                if not is_segmentation_channel(ch)
+            ]
+            if not arrays:
+                continue
+            file_path = os.path.join(folder, f"{name}.tif")
+            stacked = np.stack(arrays, axis=0)
+            tifffile.imwrite(
+                file_path,
+                stacked,
+                photometric="minisblack",
+                imagej=ProjectManager.imagej_compatible_dtype(stacked.dtype),
+            )
+            item["original_filename"] = file_path
+            self._unsaved_created.discard(str(item_uuid))
+            self._save_image_reference(str(item_uuid), item)
 
 
 class ImageTreeWidget(QTreeView):
@@ -563,6 +624,17 @@ class ImageTreeWidget(QTreeView):
                 menu.addAction(set_reference)
                 menu.addAction(set_stardist_label)
 
+                # Rename action for segmentation channels
+                wrapper = image_data.get(channel_name)
+                if wrapper and is_segmentation_channel(wrapper):
+                    rename_action = QAction("Rename", self)
+                    rename_action.triggered.connect(
+                        lambda _, uid=item_uuid, ch=channel_name, w=wrapper: (
+                            self._rename_segmentation_channel(uid, ch, w)
+                        )
+                    )
+                    menu.addAction(rename_action)
+
                 if not is_root:
                     if "tif" in export_formats:
                         menu.addAction(save_as_tiff)
@@ -577,6 +649,47 @@ class ImageTreeWidget(QTreeView):
                 if "png" in export_formats:
                     menu.addAction(save_as_png)
             menu.exec(event.globalPos())
+
+    def _rename_segmentation_channel(self, item_uuid, channel_key, wrapper):
+        """Allow the user to rename a segmentation channel via dialog."""
+        current_name = wrapper.name or channel_key
+        new_name, ok = QInputDialog.getText(
+            self, "Rename Channel", "New channel name:", text=current_name
+        )
+        if not ok or not new_name.strip():
+            return
+        new_name = new_name.strip()
+
+        # Update the wrapper name in storage
+        wrapper.name = new_name
+
+        # Update canvas working_channels if this is the active image
+        if self.model_canvas and str(self.model_canvas.uuid) == str(item_uuid):
+            canvas_wrapper = self.model_canvas.working_channels.get(channel_key)
+            if canvas_wrapper is not None:
+                canvas_wrapper.name = new_name
+            reset_wrapper = self.model_canvas.reset_working_channels.get(channel_key)
+            if reset_wrapper is not None:
+                reset_wrapper.name = new_name
+
+        # Refresh tree display
+        model = self.model()
+        if isinstance(model, ImageTreeModel):
+            for row in range(model.rowCount()):
+                item = model.item(row)
+                if item and item.data(Qt.ItemDataRole.UserRole) == item_uuid:
+                    storage_entry = self.storage.get_data(item_uuid)
+                    if storage_entry:
+                        self._sync_channel_children(
+                            item, item_uuid, storage_entry.get("data", {})
+                        )
+                    break
+
+        # Persist to project
+        if self.current_project_path:
+            storage_item = self.storage.get_data(item_uuid)
+            if storage_item:
+                self._save_image_reference(item_uuid, storage_item)
 
     def set_for_stardist(self, item):
         """Set the image for stardist model."""
@@ -745,6 +858,19 @@ class ImageTreeWidget(QTreeView):
             return ["tif", "png"]
         return []
 
+    def _mark_export_saved(self, item_uuid, item: dict, file_path: str):
+        """Update storage and notify parent ImageManager after a canonical export.
+
+        A canonical export is a full-image TIF or a segmentation label TIF.
+        Updates original_filename in storage so the image is treated as path-backed.
+        """
+        item["original_filename"] = file_path
+        manager = self.parent()
+        if isinstance(manager, ImageManager):
+            manager._unsaved_created.discard(str(item_uuid))
+            if manager._can_save_project():
+                manager._save_image_reference(str(item_uuid), item)
+
     @staticmethod
     def _normalize_to_uint8(image_data: np.ndarray) -> np.ndarray:
         array = np.asarray(image_data)
@@ -796,11 +922,22 @@ class ImageTreeWidget(QTreeView):
                             channel_array.dtype
                         ),
                     )
+                    # Segmentation label export counts as a canonical save
+                    exported_wrapper = channel_dict.get(single_channel)
+                    if exported_wrapper is not None and is_segmentation_channel(
+                        exported_wrapper
+                    ):
+                        self._mark_export_saved(item_uuid, item, file_path)
+                    else:
+                        # Regular single-channel: just remove from unsaved set
+                        manager = self.parent()
+                        if isinstance(manager, ImageManager):
+                            manager._unsaved_created.discard(str(item_uuid))
                 else:
                     arrays = [
                         channel_obj.data
                         for _, channel_obj in sorted(channel_dict.items())
-                        if not is_segmentation_name(getattr(channel_obj, "name", ""))
+                        if not is_segmentation_channel(channel_obj)
                     ]
                     if not arrays:
                         return
@@ -811,6 +948,8 @@ class ImageTreeWidget(QTreeView):
                         photometric="minisblack",
                         imagej=ProjectManager.imagej_compatible_dtype(stacked.dtype),
                     )
+                    # Full-image export: mark saved and update original_filename
+                    self._mark_export_saved(item_uuid, item, file_path)
         elif file_type == "png":
             folder_path = QFileDialog.getExistingDirectory(
                 self, "Select Folder to Save PNG"
@@ -937,7 +1076,7 @@ class ImageTreeWidget(QTreeView):
             wrapper = image_data.get(channel_key)
             if wrapper is None:
                 continue
-            if is_segmentation_name(getattr(wrapper, "name", "")):
+            if is_segmentation_channel(wrapper):
                 return self._get_channel_idx(channel_key)
         return None
 

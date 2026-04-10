@@ -27,13 +27,9 @@ class MenuBarUI(QMenuBar):
 
         self.menuFile.addSeparator()
 
-        self.save_action = QAction("Save", self.menuFile)
-        self.save_action.triggered.connect(lambda: parent._on_save_project(False))
-        self.menuFile.addAction(self.save_action)
-
-        self.save_with_data_action = QAction("Save with Data", self.menuFile)
-        self.save_with_data_action.triggered.connect(lambda: parent._on_save_project(True))
-        self.menuFile.addAction(self.save_with_data_action)
+        self.save_all_to_action = QAction("Save all images to...", self.menuFile)
+        self.save_all_to_action.triggered.connect(parent.save_all_images_to_folder)
+        self.menuFile.addAction(self.save_all_to_action)
 
         self.menuFile.addSeparator()
 

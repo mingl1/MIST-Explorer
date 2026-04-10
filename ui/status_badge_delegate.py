@@ -14,7 +14,7 @@ from PyQt6.QtGui import QColor, QPainter, QPainterPath
 from PyQt6.QtWidgets import QStyledItemDelegate, QStyleOptionViewItem
 
 from core import ImageStorage
-from core.project_naming import is_segmentation_name
+from core.project_naming import is_segmentation_channel
 
 _BADGE_HEIGHT = 14
 _BADGE_PADDING_X = 6
@@ -101,9 +101,7 @@ class StatusBadgeDelegate(QStyledItemDelegate):
             img = storage.get_data(uuid_str)
             if img and channel_name:
                 wrapper = img.get("data", {}).get(channel_name)
-                if wrapper is not None and is_segmentation_name(
-                    getattr(wrapper, "name", "")
-                ):
+                if wrapper is not None and is_segmentation_channel(wrapper):
                     badges.add(BadgeStyle.LABEL)
 
         return frozenset(badges)

@@ -156,6 +156,8 @@ import matplotlib.pyplot as plt
 from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
+from core.dataframe_utils import get_marker_columns
+
 
 class PieChartCanvas(FigureCanvas):
     def __init__(self, df, parent=None):
@@ -173,7 +175,7 @@ class PieChartCanvas(FigureCanvas):
         df = self.df
 
         # Process data
-        df = df[df.columns[3:]]  # Exclude irrelevant columns
+        df = df[get_marker_columns(df)]
         if len(self.df) == 0:
             return
         dominant_counts = df.idxmax(axis=1).value_counts()

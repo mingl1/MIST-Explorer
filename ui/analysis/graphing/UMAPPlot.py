@@ -367,12 +367,6 @@ class UMAPControls(QWidget):
         input_row.addWidget(self.btn_select_input)
         data_layout.addLayout(input_row)
 
-        self.feature_list = QListWidget()
-        self.feature_list.setMinimumHeight(200)
-        self.populate_features(all_features)
-        data_layout.addWidget(self.feature_list)
-        self.feature_list.itemChanged.connect(self.emit_apply_data)
-
         btn_row = QHBoxLayout()
         btn_all = QPushButton(Locale.get("BTN_ALL"))
         btn_all.clicked.connect(self.select_all)
@@ -381,6 +375,12 @@ class UMAPControls(QWidget):
         btn_row.addWidget(btn_all)
         btn_row.addWidget(btn_none)
         data_layout.addLayout(btn_row)
+
+        self.feature_list = QListWidget()
+        self.feature_list.setMinimumHeight(200)
+        self.populate_features(all_features)
+        data_layout.addWidget(self.feature_list)
+        self.feature_list.itemChanged.connect(self.emit_apply_data)
 
         data_group.setLayout(data_layout)
         layout.addWidget(data_group)
@@ -1028,6 +1028,10 @@ class SegmentationView(QWidget):
 
         r_layout.addWidget(QLabel(Locale.get("SEG_CLUSTER_FILTER")))
 
+        self.cluster_list = QListWidget()
+        self.cluster_list.itemChanged.connect(self.on_item_changed)
+        r_layout.addWidget(self.cluster_list)
+
         btn_row = QHBoxLayout()
         self.btn_all = QPushButton(Locale.get("BTN_ALL"))
         self.btn_all.clicked.connect(self.select_all)
@@ -1036,10 +1040,6 @@ class SegmentationView(QWidget):
         btn_row.addWidget(self.btn_all)
         btn_row.addWidget(self.btn_none)
         r_layout.addLayout(btn_row)
-
-        self.cluster_list = QListWidget()
-        self.cluster_list.itemChanged.connect(self.on_item_changed)
-        r_layout.addWidget(self.cluster_list)
         self.splitter.addWidget(right_w)
         self.splitter.setStretchFactor(0, 4)
         main_layout.addWidget(self.splitter)

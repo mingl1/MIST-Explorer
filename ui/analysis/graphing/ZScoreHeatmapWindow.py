@@ -13,24 +13,18 @@ from scipy.cluster.hierarchy import linkage
 
 logger = logging.getLogger(__name__)
 
-# implement 1
-
 
 class ZScoreHeatmapWindow(QMainWindow):
-    def __init__(self, data, parent=None):
+    def __init__(self, data, region=None, parent=None):
         super().__init__(parent)
 
         font = {"size": 8}
-
         matplotlib.rc("font", **font)
         matplotlib.rcParams["figure.figsize"] = [3, 3]
 
-        filtered_data = data
+        filtered_data = data.copy()
 
-        # Extract proteins and calculate centroids
-        protein_columns = filtered_data.columns[
-            2:
-        ]  # Assuming proteins start at the 4th column
+        protein_columns = filtered_data.columns[2:]
         proteins = protein_columns
         logger.debug(proteins)
 
@@ -63,15 +57,31 @@ class ZScoreHeatmapWindow(QMainWindow):
         num_simulations = 1000
         random_distances = {pair: [] for pair in combinations(proteins, 2)}
 
-        for _ in range(num_simulations):
-            # Randomly shuffle the cell coordinates
-            shuffled_x = np.random.permutation(filtered_data["Global X"].values)
-            shuffled_y = np.random.permutation(filtered_data["Global Y"].values)
+        # Extract base arrays once for faster shuffling in the loop
+        orig_x = filtered_data["Global X"].values
+        orig_y = filtered_data["Global Y"].values
+        orig_coords = filtered_data[["Global X", "Global Y"]].values
 
-            # Update centroids with shuffled locations
+        # monte carlo simulation to generate random distributions
+        print(f"Running {num_simulations} simulations...")
+        for i in range(num_simulations):
             shuffled_data = filtered_data.copy()
+
+            # --- original ---
+            shuffled_x = orig_x.copy()
+            shuffled_y = orig_y.copy()
+            np.random.shuffle(shuffled_x)
+            np.random.shuffle(shuffled_y)
+
             shuffled_data["Global X"] = shuffled_x
             shuffled_data["Global Y"] = shuffled_y
+
+            # --- together ---
+            # shuffled_coords = orig_coords.copy()
+            # np.random.shuffle(shuffled_coords)
+            #
+            # shuffled_data["Global X"] = shuffled_coords[:, 0]
+            # shuffled_data["Global Y"] = shuffled_coords[:, 1]
 
             # Recalculate centroids with shuffled data
             shuffled_centroids = calculate_weighted_centroids(shuffled_data, proteins)
@@ -79,7 +89,7 @@ class ZScoreHeatmapWindow(QMainWindow):
             # Calculate distances with shuffled centroids
             dist = calculate_pairwise_distances(shuffled_centroids)
 
-            # Store distances in random_distances
+            # Store distances
             for pair in random_distances:
                 try:
                     random_distances[pair].append(dist[pair])
@@ -94,71 +104,64 @@ class ZScoreHeatmapWindow(QMainWindow):
                 mean_random_dist = np.mean(random_dist)
                 std_random_dist = np.std(random_dist)
 
-                # Handle the case where standard deviation is zero to avoid NaNs
                 if std_random_dist == 0:
-                    z_scores[(protein1, protein2)] = (
-                        0  # Set to neutral z-score for self-pairs
-                    )
+                    z_scores[(protein1, protein2)] = 0
                 else:
                     z_scores[(protein1, protein2)] = (
                         observed_distance - mean_random_dist
                     ) / std_random_dist
 
-        # Create z-score matrix for heatmap, filling diagonal with neutral z-score
+        # Create z-score matrix for heatmap
         z_score_matrix = pd.DataFrame(index=proteins, columns=proteins)
 
         for (protein1, protein2), z in z_scores.items():
             z_score_matrix.loc[protein1, protein2] = z
-            z_score_matrix.loc[protein2, protein1] = z  # Ensure symmetry
+            z_score_matrix.loc[protein2, protein1] = z
 
         np.fill_diagonal(z_score_matrix.values, 0)
 
-        # self.setWindowTitle("Clustered Z-Score Heatmap")
-        # self.resize(1200, 800)
-
-        # Central widget
+        # Central widget and Layout
         central_widget = QWidget(self)
         self.setCentralWidget(central_widget)
-
-        # Layout for the central widget
         layout = QVBoxLayout(central_widget)
 
-        # Create the Matplotlib figure and canvas for displaying
         self.figure = plt.figure(figsize=(10, 10))
-        # plt.subplots_adjust(left=0, right=2, top=0.9, bottom=0.1)
-        # self.fig.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=0, hspace=0)
 
-        # Create and plot the clustermap, no ax passed
         row_linkage = linkage(
-            z_score_matrix.fillna(0), method="average", metric="euclidean"
-        )
-        col_linkage = linkage(
-            z_score_matrix.fillna(0).T, method="average", metric="euclidean"
+            z_score_matrix.fillna(0), method="average", metric="correlation"
         )
 
-        # Create the clustered heatmap
         g = sns.clustermap(
             z_score_matrix.astype(float),
             figsize=(6, 6),
             cmap="coolwarm",
             vmin=-5,
             vmax=5,
-            dendrogram_ratio=(0.1, 0.1),
+            dendrogram_ratio=(0.1, 0.1),  # Set top dendrogram space to 1%
+            cbar_pos=(0.02, 0.1, 0.01, 0.4),
             row_linkage=row_linkage,
-            col_linkage=col_linkage,
+            col_linkage=row_linkage,
             xticklabels=True,
             yticklabels=True,
         )
 
-        # Set the title
-        g.fig.suptitle("Clustered Z-Score Heatmap")
+        # Hide the top (column) tree
+        g.ax_row_dendrogram.set_visible(False)
 
-        # Transfer the clustermap figure to our main figure to embed in PyQt
+        g.fig.suptitle("Clustered Z-Score Heatmap", y=0.98)
+        g.fig.subplots_adjust(top=0.90, left=0.2, right=0.8)
+
+        hm_pos = g.ax_heatmap.get_position()
+        cbar_width = 0.02
+        cbar_height = 0.4
+        hm_center_y = hm_pos.y0 + (hm_pos.height / 2)
+        cbar_bottom = hm_center_y - (cbar_height / 2)
+        g.ax_cbar.set_position([0.05, cbar_bottom, cbar_width, cbar_height])
+
         plt.setp(g.ax_heatmap.get_yticklabels(), fontsize=6)
         plt.setp(g.ax_heatmap.get_xticklabels(), fontsize=6)
         self.figure = g.fig
 
-        # Create a canvas to embed the Matplotlib figure into the PyQt6 application
         canvas = FigureCanvas(self.figure)
         layout.addWidget(canvas)
 
@@ -166,14 +169,18 @@ class ZScoreHeatmapWindow(QMainWindow):
 def main():
     app = QApplication(sys.argv)
 
-    # Load your dataset (replace with actual file path and region)
     file_path = r"/Users/clark/Downloads/cell_data_8_8_Full_Dataset_Biopsy.xlsx"
-    data = pd.read_excel(file_path)
-    # Filter out columns with the title "N/A"
+
+    try:
+        data = pd.read_excel(file_path)
+    except FileNotFoundError:
+        print("Data file not found. Ensure the path is correct.")
+        sys.exit(1)
+
     data = data.loc[:, data.columns != "N/A"]
 
-    # Create and show the main window
     window = ZScoreHeatmapWindow(data, region=(1400, 2100, 1600, 3600))
+    window.resize(800, 800)
     window.show()
 
     sys.exit(app.exec())

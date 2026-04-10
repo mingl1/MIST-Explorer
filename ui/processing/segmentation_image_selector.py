@@ -1,7 +1,7 @@
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QWidget
 
-from core.project_naming import is_segmentation_name
+from core.project_naming import is_segmentation_channel
 
 
 class SegmentationImageSelector(QWidget):
@@ -83,7 +83,7 @@ class SegmentationImageSelector(QWidget):
 
         non_seg = [
             k for k, w in channels.items()
-            if not is_segmentation_name(getattr(w, "name", ""))
+            if not is_segmentation_channel(w)
         ]
         non_seg.sort(key=lambda x: int(x.replace("Channel ", "")))
         self.channel_combo.addItems(non_seg)

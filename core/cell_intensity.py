@@ -13,7 +13,7 @@ from core import ImageWrapper
 from core.canvas import ImageStorage
 from core.project_naming import (
     default_project_prefixed_filename,
-    is_segmentation_name,
+    is_segmentation_channel,
 )
 
 logger = logging.getLogger(__name__)
@@ -82,6 +82,7 @@ class CellIntensity(QThread):
         self.project_name = None
         self.is_temp_project = False
         self._cancel_requested = False
+        self._filter_num_proteins = 0
 
     def load_protein_signal_array_from_storage(self, uuid, channel):
         if uuid is None:
@@ -97,7 +98,7 @@ class CellIntensity(QThread):
         data = item.get("data", None)
         assert data is not None, "data not found in storage item"
         wrapper = data[c]
-        if is_segmentation_name(getattr(wrapper, "name", "")):
+        if is_segmentation_channel(wrapper):
             raise ValueError(
                 f"{c} is a virtual StarDist channel and cannot be used for generation."
             )
@@ -479,6 +480,10 @@ class CellIntensity(QThread):
                     cell_centroids=cell_centroids,
                     protein_headers=protein_headers,
                 )
+                # Drop columns for unmapped color code combinations
+                na_cols = [c for c in curr_cell_data.columns if c == "N/A" or str(c).startswith("N/A_")]
+                if na_cols:
+                    curr_cell_data = curr_cell_data.drop(columns=na_cols)
                 # and finally save everything
                 if self.df_cell_data is None:
                     first_channel_num = channel_num
@@ -512,6 +517,10 @@ class CellIntensity(QThread):
 
     def save_cell_data(self):
         logger.info("saving cell data")
+        if self.df_cell_data is None:
+            self.critical_error("Cannot save. No cell data available")
+            return
+
         suggested_name = default_project_prefixed_filename(
             "cell_data.csv",
             self.project_name,
@@ -520,10 +529,23 @@ class CellIntensity(QThread):
         file_name, _ = QFileDialog.getSaveFileName(
             None, "Save Cell Data File", suggested_name, "*.csv;;*.xlsx;; All Files(*)"
         )
-        if self.df_cell_data is not None:
-            self.df_cell_data.to_csv(file_name, index=False)
+        if not file_name:
+            return
+
+        passing_ids = self._get_passing_cell_ids()
+        if passing_ids is not None:
+            df_to_save = self.df_cell_data[
+                self.df_cell_data["CellID"].isin(passing_ids)
+            ]
+            logger.info(
+                "Threshold filter applied: %d / %d cells pass (threshold=%.2f)",
+                len(df_to_save), len(self.df_cell_data),
+                self.params["bead_per_protein_threshold"],
+            )
         else:
-            self.critical_error("Cannot save. No cell data available")
+            df_to_save = self.df_cell_data
+
+        df_to_save.to_csv(file_name, index=False)
 
     def get_adjusted_median_intensity(self, bead_x, bead_y, bead_median_threshold=5000):
         """
@@ -676,6 +698,41 @@ class CellIntensity(QThread):
 
     def set_radius_bg(self, value):
         self.params["radius_bg"] = value
+
+    def set_bead_per_protein_threshold(self, threshold: float, num_proteins: int):
+        """Store the threshold and num_proteins for save-time filtering."""
+        self.params["bead_per_protein_threshold"] = threshold
+        self._filter_num_proteins = num_proteins
+
+    def _get_passing_cell_ids(self):
+        """Return the set of cell IDs that pass the bead/protein threshold.
+
+        Returns None if threshold is 0.0 or data is unavailable (no filtering).
+        """
+        threshold = self.params["bead_per_protein_threshold"]
+        num_proteins = self._filter_num_proteins
+        if threshold <= 0.0 or num_proteins <= 0:
+            return None
+        if self.bead_data is None or self.segmentation_labels.size == 0:
+            return None
+
+        coords = self.bead_data[:, 0:2].astype(int)
+        x_limit = self.segmentation_labels.shape[1]
+        y_limit = self.segmentation_labels.shape[0]
+        in_bounds = (
+            (coords[:, 0] >= 0) & (coords[:, 0] < x_limit)
+            & (coords[:, 1] >= 0) & (coords[:, 1] < y_limit)
+        )
+        coords = coords[in_bounds]
+        cell_ids = self.segmentation_labels[coords[:, 1], coords[:, 0]]
+
+        in_cell_mask = cell_ids > 0
+        cell_ids_in_cells = cell_ids[in_cell_mask]
+        unique_cells, bead_counts = np.unique(cell_ids_in_cells, return_counts=True)
+
+        ratios = bead_counts / num_proteins
+        passing_mask = ratios >= threshold
+        return set(unique_cells[passing_mask].tolist())
 
     def blur_and_set_protein_layer(self, blur_percentage=1):
         """
