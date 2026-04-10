@@ -63,6 +63,24 @@ class ImageGraphicsViewUI(QGraphicsView):
     sigRangeChanged = pyqtSignal(object)  # placeholder for pyqtgraph compatibility
     sigTransformChanged = pyqtSignal()  # placeholder for pyqtgraph compatibility
 
+    @property
+    def select(self):
+        """Get the current selection mode"""
+        return getattr(self, "_select", False)
+
+    @select.setter
+    def select(self, value):
+        """Set the current selection mode and update cursor/drag mode"""
+        self._select = value
+        if value:
+            # Disable drag-panning and show crosshair cursor when in selection mode
+            self.setDragMode(QGraphicsView.DragMode.NoDrag)
+            self.viewport().setCursor(Qt.CursorShape.CrossCursor)
+        else:
+            # Re-enable drag-panning and revert cursor when not in selection mode
+            self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+            self.viewport().unsetCursor()
+
     # pylint: disable=too-many-instance-attributes
     def __init__(self, parent, enc: "MainWindow", show_buttons=True):
         super().__init__(parent)
@@ -77,7 +95,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.begin_crop = False
         self.origin = None
         self.crop_cursor = QCursor(Qt.CursorShape.CrossCursor)
-        self.select = False
+        self._select = False
         self.zoom = 1
         self.polygons = []
         self.current_polygon = None
@@ -865,10 +883,12 @@ class ImageGraphicsViewUI(QGraphicsView):
             if snap_target is not None:
                 self.current_polygon.set_temp_point(snap_target)
                 self.current_polygon.set_snap_point(snap_target)
+                self.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
             else:
                 polygon_pos = self.pixmap_item.mapToScene(image_pos)
                 self.current_polygon.set_temp_point(polygon_pos)
                 self.current_polygon.set_snap_point(None)
+                self.viewport().setCursor(Qt.CursorShape.CrossCursor)
 
         # # Handle pixel info display
         # Determine reference item for coordinates and bounds
