@@ -20,7 +20,7 @@ dependencies = [
     "pyqt6==6.9.1",
     "pyqt6-qt6==6.9.1",
     "pyqt6-sip==13.10.2",
-    "pyqtgraph==0.13.7",
+    "pyqtgraph==0.14.0",
     "pystackreg==0.2.8",
     "qtrangeslider==0.1.5",
     "scanpy[leiden]==1.11.5",
