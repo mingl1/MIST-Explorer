@@ -159,6 +159,9 @@ class CellIntensityUI(QWidget):
         self.save_button = None
         self.filtered_stats_button = None
         self.filter_status_label = None
+        self.channel_progress_label = None
+        self._channels_total = 0
+        self._channels_done = 0
 
         self.setup_ui(parent, containing_layout)
 
@@ -242,8 +245,9 @@ class CellIntensityUI(QWidget):
         self.cancel_button = QPushButton(self.cell_intensity_groupbox)
         self.cellintensity_components_vlayout.addWidget(self.cancel_button)
 
-        # save button
+        # save button (disabled until a run completes)
         self.save_button = QPushButton(self.cell_intensity_groupbox)
+        self.save_button.setEnabled(False)
         self.cellintensity_components_vlayout.addWidget(self.save_button)
 
         # filtered bead stats button
@@ -256,6 +260,11 @@ class CellIntensityUI(QWidget):
         self.filter_status_label.setVisible(False)
         self.cellintensity_components_vlayout.addWidget(self.filter_status_label)
 
+        # channel progress label (shown while running)
+        self.channel_progress_label = QLabel()
+        self.channel_progress_label.setVisible(False)
+        self.cellintensity_components_vlayout.addWidget(self.channel_progress_label)
+
         self.main_layout.addWidget(self.components_widget)
 
         if containing_layout is not None:
@@ -266,11 +275,26 @@ class CellIntensityUI(QWidget):
     def _handle_generate_cell_data(self):
         if self.bead_data_file is not None:
             self.filter_status_label.setVisible(False)
+            self._start_run(len(self.channel_to_color_code))
             self.emitBeadData.emit(self.bead_data_file)
             self.emitColorCodes.emit(self.channel_to_color_code)
             self.generate_cell_data.emit()
         else:
             self.errorSignal.emit("Please load bead data first.")
+
+    def _start_run(self, total_channels: int):
+        self._channels_total = total_channels
+        self._channels_done = 0
+        self.save_button.setEnabled(False)
+        self.channel_progress_label.setText(f"0 / {total_channels} channels processed")
+        self.channel_progress_label.setVisible(True)
+
+    def on_channel_done(self, done: int, total: int):
+        self._channels_done = done
+        self._channels_total = total
+        self.channel_progress_label.setText(f"{done} / {total} channels processed")
+        if done >= total:
+            self.save_button.setEnabled(True)
 
     def add_channel_row(self):
         """Add a new row for channel color code mapping."""
@@ -373,8 +397,7 @@ class CellIntensityUI(QWidget):
         self.run_button.setEnabled(bool(enabled))
 
     def set_processing_buttons_enabled(self, enabled: bool):
-        """Enable/disable save and filtered stats buttons during generation."""
-        self.save_button.setEnabled(bool(enabled))
+        """Enable/disable filtered stats button during generation. Save is controlled by on_channel_done."""
         self.filtered_stats_button.setEnabled(bool(enabled))
 
     def show_protein_distribution(self, payload: object):

@@ -1115,6 +1115,9 @@ class SignalConnectionManager:
             lambda: self.c.view.cell_intensity_groupbox.set_processing_buttons_enabled(False)
         )
         self.c.model_cell_intensity.progress.connect(self._on_cell_intensity_progress)
+        self.c.model_cell_intensity.channel_done.connect(
+            self.c.view.cell_intensity_groupbox.on_channel_done
+        )
 
         self.c.view.cell_intensity_groupbox.set_generation_enabled(False)
 

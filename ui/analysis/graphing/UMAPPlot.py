@@ -559,18 +559,22 @@ class PlotView(QWidget):
         self.ax.axis("off")
         self.current_adata = None
         self.current_key = None
+        self.current_hide_hidden = False
 
     def refresh_theme(self):
         """Called when theme toggles"""
         apply_matplotlib_theme(self.figure, self.ax)
         if self.current_adata and self.current_key:
-            self.update_plot(self.current_adata, self.current_key)
+            self.update_plot(
+                self.current_adata, self.current_key, self.current_hide_hidden
+            )
         else:
             self.canvas.draw()
 
-    def update_plot(self, adata, color_key):
+    def update_plot(self, adata, color_key, hide_hidden=False):
         self.current_adata = adata
         self.current_key = color_key
+        self.current_hide_hidden = hide_hidden
 
         self.figure.clear()
         apply_matplotlib_theme(self.figure)
@@ -579,8 +583,9 @@ class PlotView(QWidget):
 
         c = ThemeManager.get_current()
         try:
+            adata_plot = adata[adata.obs[color_key].notna()] if hide_hidden else adata
             sc.pl.umap(
-                adata,
+                adata_plot,
                 color=color_key,
                 ax=self.ax,
                 show=False,
@@ -588,6 +593,9 @@ class PlotView(QWidget):
                 legend_loc="on data",
                 frameon=False,
             )
+            for text_obj in list(self.ax.texts):
+                if text_obj.get_text() in ("NA", "NaN", "nan"):
+                    text_obj.remove()
             for text_obj in self.ax.texts:
                 text_obj.set_fontfamily("monospace")
                 text_obj.set_fontsize(10)
@@ -834,14 +842,16 @@ class RankedGenesView(QWidget):
 
         self.adata = None
         self.key = None
+        self.hide_hidden = False
 
     def refresh_theme(self):
         # Simply regenerating plots picks up the current theme
         self.on_update()
 
-    def set_data(self, adata, key):
+    def set_data(self, adata, key, hide_hidden=False):
         self.adata = adata
         self.key = key
+        self.hide_hidden = hide_hidden
 
         if self.adata and self.key and self.key in self.adata.obs:
             cats = self.adata.obs[self.key].cat.categories
@@ -928,15 +938,20 @@ class RankedGenesView(QWidget):
 
                 is_categorical = color_key == self.key
 
-                x = self.adata.obsm["X_umap"][:, 0]
-                y = self.adata.obsm["X_umap"][:, 1]
+                visible_mask = (
+                    self.adata.obs[self.key].notna()
+                    if self.hide_hidden
+                    else slice(None)
+                )
+                x = self.adata.obsm["X_umap"][:, 0][visible_mask]
+                y = self.adata.obsm["X_umap"][:, 1][visible_mask]
 
                 ax.set_title(color_key)
                 ax.axis("off")
                 ax.set_aspect("equal", "box")
 
                 if is_categorical:
-                    cats = self.adata.obs[color_key]
+                    cats = self.adata.obs[color_key][visible_mask]
                     cat_colors = self.adata.uns.get(f"{color_key}_colors")
                     if cat_colors is None:
                         import matplotlib.colors as mcolors
@@ -954,7 +969,10 @@ class RankedGenesView(QWidget):
                         ]
 
                     color_map_dict = dict(zip(cats.cat.categories, cat_colors))
-                    c_values = cats.map(color_map_dict).tolist()
+                    c_values = [
+                        color_map_dict.get(v, "#cccccc") if pd.notna(v) else "#cccccc"
+                        for v in cats
+                    ]
                     ax.scatter(x, y, c=c_values, s=5, alpha=0.8, edgecolors="none")
 
                     for cat in cats.cat.categories:
@@ -966,7 +984,7 @@ class RankedGenesView(QWidget):
                 else:
                     c_values = sc.get.obs_df(self.adata, keys=[color_key])[
                         color_key
-                    ].values
+                    ].values[visible_mask]
                     sort_idx = np.argsort(c_values)
                     ax.scatter(
                         x[sort_idx],
@@ -1073,6 +1091,13 @@ class SegmentationView(QWidget):
         btn_row.addWidget(self.btn_all)
         btn_row.addWidget(self.btn_none)
         r_layout.addLayout(btn_row)
+
+        self.chk_hide_hidden = QCheckBox("HIDE FILTERED ON UMAP")
+        self.chk_hide_hidden.stateChanged.connect(
+            lambda: self.cluster_state_changed.emit(*self.get_state())
+        )
+        r_layout.addWidget(self.chk_hide_hidden)
+
         self.splitter.addWidget(right_w)
         self.splitter.setStretchFactor(0, 4)
         main_layout.addWidget(self.splitter)
@@ -1352,8 +1377,9 @@ class UMAPVisualizer(QMainWindow):
             view_colors = [color_map[cat] for cat in unique_new_labels]
             adata.uns[f"{view_key}_colors"] = np.array(view_colors)
 
-        self.plot_view.update_plot(adata, view_key)
-        self.ranked_genes_view.set_data(adata, view_key)
+        hide_hidden = self.seg_view.chk_hide_hidden.isChecked()
+        self.plot_view.update_plot(adata, view_key, hide_hidden)
+        self.ranked_genes_view.set_data(adata, view_key, hide_hidden)
 
         selected_features = self.controls.get_selected_features()
         self.heatmap_view.update_heatmap(adata, view_key, selected_features)

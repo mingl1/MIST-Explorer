@@ -61,6 +61,7 @@ class CellIntensity(QThread):
     progress = pyqtSignal(int, str)
     filtered_stats_ready = pyqtSignal(float)
     protein_distribution_ready = pyqtSignal(object)
+    channel_done = pyqtSignal(int, int)  # (channels_done, channels_total)
 
     def __init__(self):
         super().__init__()
@@ -184,6 +185,8 @@ class CellIntensity(QThread):
     def run(self):
         # need the aligned and segmented cell image, bead_data, and color_code
         first_channel_num = None
+        channels_total = len(self.channel_to_color_code)
+        channels_done = 0
 
         for channel, color_code in self.channel_to_color_code.items():
             self.color_code = color_code
@@ -495,6 +498,8 @@ class CellIntensity(QThread):
                         first_channel_num=first_channel_num,
                         channel_num=channel_num,
                     )
+            channels_done += 1
+            self.channel_done.emit(channels_done, channels_total)
         self.progress.emit(100, "Cell Data is Generated")
 
     def cancel(self):
