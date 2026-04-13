@@ -3,10 +3,17 @@ class PythonSyntaxHighlighter(QSyntaxHighlighter):
         super().__init__(document)
 
         self.highlighting_rules = []
+        self._build_rules()
+
+    def _build_rules(self):
+        from ui.theme import ThemeManager
+        tc = ThemeManager.instance().get_current()
+
+        self.highlighting_rules = []
 
         # Keywords
         keyword_format = QTextCharFormat()
-        keyword_format.setForeground(QColor(120, 120, 250))
+        keyword_format.setForeground(QColor(tc["syntax_keyword"]))
         keyword_format.setFontWeight(QFont.Weight.Bold)
         keywords = [
             r"\bimport\b",
@@ -40,13 +47,13 @@ class PythonSyntaxHighlighter(QSyntaxHighlighter):
 
         # Functions
         function_format = QTextCharFormat()
-        function_format.setForeground(QColor(40, 170, 40))
+        function_format.setForeground(QColor(tc["syntax_function"]))
         function_regex = QRegularExpression(r"\b[A-Za-z0-9_]+(?=\()")
         self.highlighting_rules.append((function_regex, function_format))
 
         # String literals
         string_format = QTextCharFormat()
-        string_format.setForeground(QColor(220, 120, 70))
+        string_format.setForeground(QColor(tc["syntax_string"]))
         string_regex1 = QRegularExpression(r'"[^"\\]*(\\.[^"\\]*)*"')
         string_regex2 = QRegularExpression(r"'[^'\\]*(\\.[^'\\]*)*'")
         self.highlighting_rules.append((string_regex1, string_format))
@@ -54,7 +61,7 @@ class PythonSyntaxHighlighter(QSyntaxHighlighter):
 
         # Comments
         comment_format = QTextCharFormat()
-        comment_format.setForeground(QColor(120, 120, 120))
+        comment_format.setForeground(QColor(tc["syntax_comment"]))
         comment_format.setFontItalic(True)
         comment_regex = QRegularExpression(r"#[^\n]*")
         self.highlighting_rules.append((comment_regex, comment_format))

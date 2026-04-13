@@ -75,20 +75,22 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         self.setScene(pg.GraphicsScene())
         self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
         self.setRenderHint(self.renderHints() | self.renderHints().Antialiasing)
-        self.setStyleSheet("QGraphicsView { border: 1px solid black; }")
+        from ui.theme import ThemeManager
+        tc = ThemeManager.instance().get_current()
+        self.setStyleSheet(f"QGraphicsView {{ border: 1px solid {tc['border']}; }}")
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setMouseTracking(True)
 
         # Add size grip for visual handle only - we'll override its behavior
         self.size_grip = QSizeGrip(self)
-        self.size_grip.setStyleSheet("""
-            QSizeGrip {
+        self.size_grip.setStyleSheet(f"""
+            QSizeGrip {{
             background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-            stop:0.5 transparent, 
-            stop:0.5 #2196F3); /* Universal Action Blue */                
+            stop:0.5 transparent,
+            stop:0.5 {tc["size_grip_color"]});
             width: 16px;
             height: 16px;
-            }
+            }}
         """)
         self.size_grip.setCursor(Qt.CursorShape.SizeFDiagCursor)
         # Install event filter to intercept size grip events

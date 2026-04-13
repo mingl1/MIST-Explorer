@@ -1,9 +1,8 @@
-import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import QEvent, Qt, QTimer
 from PyQt6.QtWidgets import (
     QGridLayout,
     QGroupBox,
@@ -12,14 +11,13 @@ from PyQt6.QtWidgets import (
     QMainWindow,
     QScrollArea,
     QSpinBox,
+    QSplitter,
     QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 from core.dataframe_utils import get_marker_columns
-
-sns.set_style("whitegrid")
 
 
 def calculate_weighted_centroids(data, proteins, signal_threshold, custom_thresholds):
@@ -66,9 +64,6 @@ class HeatmapWindow(QMainWindow):
         if custom_thresholds is None:
             custom_thresholds = {}
 
-        font = {"size": 8}
-        matplotlib.rc("font", **font)
-
         # Optional ROI filtering
         self._data = data
         if all(v is not None for v in (x_min, y_min, x_max, y_max)):
@@ -83,6 +78,7 @@ class HeatmapWindow(QMainWindow):
 
         # Track which per-protein spinboxes the user has manually edited
         self._manually_edited = set()
+        self._grid_cols = 0  # tracks current column count; 0 forces initial layout
 
         # Debounce timer for live updates
         self._debounce = QTimer(self)
@@ -123,11 +119,13 @@ class HeatmapWindow(QMainWindow):
         self._protein_group.setVisible(False)
         grid = QGridLayout(self._protein_group)
         grid.setContentsMargins(4, 4, 4, 4)
+        grid.setHorizontalSpacing(4)
+        grid.setVerticalSpacing(4)
 
+        # Build widgets once; _relayout_protein_grid() places them
         self._protein_spins = {}
-        cols = 2  # two protein-threshold pairs per row
-        for idx, protein in enumerate(self._proteins):
-            row, col = divmod(idx, cols)
+        self._protein_labels = {}
+        for protein in self._proteins:
             label = QLabel(protein)
             spin = QSpinBox()
             spin.setRange(0, 50000)
@@ -140,21 +138,27 @@ class HeatmapWindow(QMainWindow):
                 lambda _v, p=protein: self._on_protein_threshold_changed(p)
             )
             self._protein_spins[protein] = spin
-            grid.addWidget(label, row, col * 2)
-            grid.addWidget(spin, row, col * 2 + 1)
+            self._protein_labels[protein] = label
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(self._protein_group)
-        scroll.setMaximumHeight(160)
         self._scroll_area = scroll
         scroll.setVisible(False)
-        main_layout.addWidget(scroll)
+        scroll.viewport().installEventFilter(self)
 
         # Matplotlib figure + canvas
-        self.figure, self.ax = plt.subplots(figsize=(12, 10))
+        self.figure, self.ax = plt.subplots(figsize=(8, 6), constrained_layout=True)
         self._canvas = FigureCanvas(self.figure)
-        main_layout.addWidget(self._canvas, stretch=1)
+
+        # Splitter lets the user drag to resize the threshold list vs the heatmap
+        self._splitter = QSplitter(Qt.Orientation.Vertical)
+        self._splitter.addWidget(scroll)
+        self._splitter.addWidget(self._canvas)
+        self._splitter.setStretchFactor(0, 0)
+        self._splitter.setStretchFactor(1, 1)
+        self._splitter.setSizes([0, 1])  # start collapsed
+        main_layout.addWidget(self._splitter, stretch=1)
 
         # Initial draw
         self._update_heatmap()
@@ -174,11 +178,51 @@ class HeatmapWindow(QMainWindow):
         self._manually_edited.add(protein)
         self._debounce.start()
 
+    _PROTEIN_PANEL_DEFAULT_HEIGHT = 160
+
     def _toggle_protein_section(self, checked):
-        self._protein_group.setVisible(checked)
-        self._scroll_area.setVisible(checked)
         arrow = Qt.ArrowType.DownArrow if checked else Qt.ArrowType.RightArrow
         self._toggle_btn.setArrowType(arrow)
+        self._scroll_area.setVisible(checked)
+        if checked:
+            total = self._splitter.height()
+            panel = min(self._PROTEIN_PANEL_DEFAULT_HEIGHT, total // 2)
+            self._splitter.setSizes([panel, total - panel])
+            self._relayout_protein_grid()
+        else:
+            self._splitter.setSizes([0, self._splitter.height()])
+
+    # --- Responsive protein grid ---
+
+    _PAIR_MIN_WIDTH = 200  # px; minimum width allocated per label+spinbox pair
+
+    def eventFilter(self, obj, event):
+        if obj is self._scroll_area.viewport() and event.type() == QEvent.Type.Resize:
+            self._relayout_protein_grid()
+        return super().eventFilter(obj, event)
+
+    def _relayout_protein_grid(self):
+        vp_w = self._scroll_area.viewport().width()
+        cols = max(1, vp_w // self._PAIR_MIN_WIDTH) if vp_w > 0 else 2
+        if cols == self._grid_cols:
+            return
+        self._grid_cols = cols
+
+        grid = self._protein_group.layout()
+        while grid.count():
+            grid.takeAt(0)
+        for c in range(grid.columnCount()):
+            grid.setColumnStretch(c, 0)
+
+        # Layout per row: [label | spin | <stretch> | label | spin | <stretch> | ...]
+        # Every 3rd column is a stretch spacer so label↔spin stay tight.
+        for c in range(cols):
+            grid.setColumnStretch(c * 3 + 2, 1)
+
+        for idx, protein in enumerate(self._proteins):
+            row, col = divmod(idx, cols)
+            grid.addWidget(self._protein_labels[protein], row, col * 3)
+            grid.addWidget(self._protein_spins[protein], row, col * 3 + 1)
 
     # --- Heatmap computation + render ---
 
@@ -194,7 +238,6 @@ class HeatmapWindow(QMainWindow):
             self._data, self._proteins, signal_threshold, custom_thresholds
         )
         distances = compute_distance_matrix(centroids, self._proteins)
-
         # Normalize
         if np.all(np.isnan(distances)):
             distances_normalized = np.full_like(distances, np.nan)
@@ -224,20 +267,15 @@ class HeatmapWindow(QMainWindow):
         self.ax.set_xticklabels(
             self.ax.get_xticklabels(),
             rotation=90,
-            fontsize=12,
-            fontweight="bold",
-            fontname="Arial",
+            fontsize=10,
         )
         self.ax.set_yticklabels(
             self.ax.get_yticklabels(),
-            fontsize=12,
-            fontweight="bold",
-            fontname="Arial",
+            fontsize=10,
         )
         self.ax.set_title(
             "Normalized Protein Spatial Distance Heatmap",
-            fontsize=14,
-            weight="bold",
+            fontsize=13,
         )
-        self.figure.tight_layout()
+        # apply_matplotlib_theme(self.figure, self.ax)
         self._canvas.draw_idle()

@@ -144,6 +144,10 @@ def launch_main_window(app: QApplication, project_path: Path, cli_args=None):
 
     from controller import Controller
     from ui import app as ui_app
+    from ui.theme import ThemeManager
+
+    # Initialize app-wide theme (no-op if already done)
+    ThemeManager.init(app)
 
     loading_dialog.update_progress(100, "Done")
     app.processEvents()
@@ -170,6 +174,12 @@ if __name__ == "__main__":
 
     loading_dialog.update_progress(5, "Initializing...")
     __app.processEvents()
+
+    loading_dialog.update_progress(8, "Applying theme...")
+    __app.processEvents()
+
+    from ui.theme import ThemeManager
+    ThemeManager.init(__app)
 
     loading_dialog.update_progress(10, "Loading project manager...")
     __app.processEvents()

@@ -150,11 +150,11 @@
 #     sys.exit(app.exec())
 
 import sys
-import pandas as pd
-import numpy as np
+
 import matplotlib.pyplot as plt
-from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
+import pandas as pd
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
 
 from core.dataframe_utils import get_marker_columns
 
@@ -197,7 +197,13 @@ class PieChartCanvas(FigureCanvas):
                     i_start = i
                 count += 1
 
-        final_labels[i_start - 2 + count // 2] = f"Others < 2%"
+        least_idx = i_start - 2 + count // 2
+        if (
+            least_idx > 0
+            and least_idx < len(final_labels)
+            and final_labels[least_idx] == ""
+        ):
+            final_labels[least_idx] = "Others < 2%"
 
         # Plot the donut chart
         self.ax.clear()

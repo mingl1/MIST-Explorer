@@ -145,9 +145,6 @@ class ZScoreHeatmapWindow(QMainWindow):
             yticklabels=True,
         )
 
-        # Hide the top (column) tree
-        g.ax_row_dendrogram.set_visible(False)
-
         g.fig.suptitle("Clustered Z-Score Heatmap", y=0.98)
         g.fig.subplots_adjust(top=0.90, left=0.2, right=0.8)
 

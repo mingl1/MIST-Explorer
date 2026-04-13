@@ -38,7 +38,7 @@ class Locale:
         "PLOT_PROJECTION": "Color by: {}",
         "SEG_STATUS_OFF": "Status: Not Loaded",
         "SEG_CLUSTER_FILTER": "Filter by Cluster",
-        "SEG_ACTIVE_COUNT": "Selected Cells: {}",
+        "SEG_ACTIVE_COUNT": "Selected Clusters: {}",
         "HM_WAITING": "Select genes to generate heatmap...",
         "HM_VOID": "No cells in current selection",
         # --- Alerts ---

@@ -42,14 +42,19 @@ class _ResizeDragButton(QPushButton):
         self.setFixedSize(14, 40)
         self.setCursor(Qt.CursorShape.SizeHorCursor)
         self.setToolTip("Drag to resize sidebar")
+        self._apply_theme()
+
+    def _apply_theme(self):
+        from ui.theme import ThemeManager
+        c = ThemeManager.instance().get_current()
         self.setStyleSheet(
-            """
-            QPushButton {
-                background: #c0c0c0;
+            f"""
+            QPushButton {{
+                background: {c["handle_bg"]};
                 border: none;
                 border-radius: 4px;
-            }
-            QPushButton:hover { background: #a0a0a0; }
+            }}
+            QPushButton:hover {{ background: {c["handle_hover"]}; }}
         """
         )
 
@@ -90,18 +95,7 @@ class SidebarHandle(QSplitterHandle):
         self._btn.setFixedSize(14, 40)
         self._btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._btn.setToolTip("Collapse/expand sidebar")
-        self._btn.setStyleSheet(
-            """
-            QPushButton {
-                background: #c0c0c0;
-                border: none;
-                border-radius: 4px;
-                font-size: 11px;
-                color: #333;
-            }
-            QPushButton:hover { background: #a0a0a0; }
-        """
-        )
+        self._apply_btn_theme()
 
         self._resize_btn = _ResizeDragButton(handle=self)
 
@@ -116,6 +110,22 @@ class SidebarHandle(QSplitterHandle):
         layout.addWidget(self._btn)
         layout.addWidget(self._resize_btn)
         self._container.adjustSize()
+
+    def _apply_btn_theme(self):
+        from ui.theme import ThemeManager
+        c = ThemeManager.instance().get_current()
+        self._btn.setStyleSheet(
+            f"""
+            QPushButton {{
+                background: {c["handle_bg"]};
+                border: none;
+                border-radius: 4px;
+                font-size: 11px;
+                color: {c["handle_text"]};
+            }}
+            QPushButton:hover {{ background: {c["handle_hover"]}; }}
+        """
+        )
 
     def set_collapsed(self, collapsed: bool):
         self._btn.setText("›" if collapsed else "‹")
@@ -731,21 +741,10 @@ class MainWindow(QMainWindow):
 
         self.statusbar.addPermanentWidget(container)
 
-        # Style the progress bar
-        progress_bar_style = """
-            QProgressBar {
-                border: 2px solid grey;
-                border-radius: 2px;
-                text-align: right;
-                height: 5px;
-                margin-right: 30px;
-            }
-            QProgressBar::chunk {
-                background-color: green;
-                width: 20px;
-            }
-        """
-        self.progress_bar.setStyleSheet(progress_bar_style)
+        # Progress bar height/margin — colors come from the global theme QSS
+        self.progress_bar.setStyleSheet(
+            "QProgressBar { height: 5px; margin-right: 30px; }"
+        )
 
     def _setup_layout(self):
         """Setup the final layout structure"""
@@ -782,6 +781,20 @@ class MainWindow(QMainWindow):
 
         # Modular save coordinator (kept for internal use)
         self._save_handlers = [self.images_tab.save_all_images]
+
+        # Theme change: refresh non-QSS elements
+        from ui.theme import ThemeManager
+        ThemeManager.instance().theme_changed.connect(self._on_theme_changed)
+
+    def _on_theme_changed(self, mode: str):
+        """Refresh elements that the global QSS cannot reach."""
+        from ui.theme import ThemeManager
+        c = ThemeManager.instance().get_current()
+        # Sidebar handle buttons
+        handle = self.splitter.handle(1) if self.splitter.count() > 1 else None
+        if handle and hasattr(handle, "_apply_btn_theme"):
+            handle._apply_btn_theme()
+            handle._resize_btn._apply_theme()
 
     def _retranslate_ui(self):
         """Set UI text and translations"""

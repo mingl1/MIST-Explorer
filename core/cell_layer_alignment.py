@@ -39,8 +39,7 @@ class CellLayerAligner(QThread):
         rotate_by=90,
         coarse_scale=1 / 16.0,
         fine_scale=0.5,
-        unaligned_space=(1, 1),
-        target_space=(1, 1),
+        scale=(1.0, 1.0),
     ):
         super().__init__()
         self.target_image = np.zeros(0).astype(np.uint16)
@@ -52,8 +51,7 @@ class CellLayerAligner(QThread):
         self.unaligned_channel = "Channel 1"
         self.unaligned_uuid = ""
         self.debug = False  # Set to True for debugging, downloads debug images
-        self.unaligned_spacing = unaligned_space
-        self.target_spacing = target_space
+        self.scale = scale
         self.need_gradient_descent = True  # Use ITK for coarse alignment
         self.stackreg_type = "affine"
         # ITK metadata to be captured
@@ -78,11 +76,8 @@ class CellLayerAligner(QThread):
         self.unaligned_channel = channel_name
         self.unaligned_uuid = uuid
 
-    def set_unaligned_spacing(self, spacing):
-        self.unaligned_spacing = spacing
-
-    def set_target_spacing(self, spacing):
-        self.target_spacing = spacing
+    def set_scale(self, scale):
+        self.scale = scale
 
     def skip_coarse_alignment(self, skip: bool):
         """
@@ -163,22 +158,18 @@ class CellLayerAligner(QThread):
         initial_metadata = {
             "unaligned_shape": self.unaligned_image.shape,
             "target_shape": self.target_image.shape,
-            "unaligned_spacing": self.unaligned_spacing,
-            "target_spacing": self.target_spacing,
+            "scale": self.scale,
         }
         try:
-            if self.target_spacing != self.unaligned_spacing:
-                logger.info("Resampling unaligned image to match target spacing")
-                moving = sitk.GetImageFromArray(self.unaligned_image)
-                moving.SetSpacing(self.unaligned_spacing)
-                fixed = sitk.GetImageFromArray(self.target_image)
-                fixed.SetSpacing(self.target_spacing)
-                resample = sitk.ResampleImageFilter()
-                resample.SetReferenceImage(fixed)
-                resample.SetInterpolator(sitk.sitkLinear)
-                resample.SetTransform(sitk.Transform())
-                resampled = resample.Execute(moving)
-                self.unaligned_image = sitk.GetArrayFromImage(resampled)
+            x_scale, y_scale = self.scale
+            if x_scale != 1.0 or y_scale != 1.0:
+                logger.info("Scaling unaligned image by (x=%.3f, y=%.3f)", x_scale, y_scale)
+                h, w = self.unaligned_image.shape[:2]
+                scaled_w = max(1, int(w * x_scale))
+                scaled_h = max(1, int(h * y_scale))
+                self.unaligned_image = cv2.resize(
+                    self.unaligned_image, (scaled_w, scaled_h), interpolation=cv2.INTER_LINEAR
+                )
                 initial_metadata["unaligned_shape"] = self.unaligned_image.shape
 
             # Prepare images for coarse alignment

@@ -59,10 +59,6 @@ class CellLayerAlignmentUI(QWidget):
         self.target_image_selector = None
         self._unaligned_groupbox = None
         self.unaligned_image_selector = None
-        self.target_spacing_row = None
-        self.target_spacing_label = None
-        self.target_spacing_x = None
-        self.target_spacing_y = None
         self.unaligned_spacing_row = None
         self.unaligned_spacing_label = None
         self.unaligned_spacing_x = None
@@ -88,7 +84,6 @@ class CellLayerAlignmentUI(QWidget):
         self._setup_buttons()
 
         self.main_layout.addWidget(self._target_groupbox)
-        self.main_layout.addLayout(self.target_spacing_row)
         self.main_layout.addWidget(self._unaligned_groupbox)
         self.main_layout.addLayout(self.unaligned_spacing_row)
         self.main_layout.addLayout(self.checkbox_layout)
@@ -102,32 +97,22 @@ class CellLayerAlignmentUI(QWidget):
 
     def _setup_image_layouts(self):
         """Setup image selectors for target and moving images."""
-        self._target_groupbox = QGroupBox("Reference Image", self)
+        self._target_groupbox = QGroupBox("Protein Array Image", self)
         target_layout = QVBoxLayout(self._target_groupbox)
         target_layout.setContentsMargins(4, 4, 4, 4)
         self.target_image_selector = SegmentationImageSelector(self)
         target_layout.addWidget(self.target_image_selector)
 
-        self._unaligned_groupbox = QGroupBox("By this Image", self)
+        self._unaligned_groupbox = QGroupBox("Aligned by this Image", self)
         unaligned_layout = QVBoxLayout(self._unaligned_groupbox)
         unaligned_layout.setContentsMargins(4, 4, 4, 4)
         self.unaligned_image_selector = SegmentationImageSelector(self)
         unaligned_layout.addWidget(self.unaligned_image_selector)
 
     def _setup_spacing_layouts(self):
-        """Setup layouts for spacing input."""
-        self.target_spacing_row = QHBoxLayout()
-        self.target_spacing_label = QLabel("Spacing (x, y) um/px:")
-        self.target_spacing_x = QLineEdit("1.0")
-        self.target_spacing_y = QLineEdit("1.0")
-        self.target_spacing_row.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        self.target_spacing_row.addWidget(self.target_spacing_label)
-        self.target_spacing_row.addWidget(self.target_spacing_x)
-        self.target_spacing_row.addWidget(QLabel(","))
-        self.target_spacing_row.addWidget(self.target_spacing_y)
-
+        """Setup layouts for scaling factor input."""
         self.unaligned_spacing_row = QHBoxLayout()
-        self.unaligned_spacing_label = QLabel("Spacing (x, y) um/px:")
+        self.unaligned_spacing_label = QLabel("Scaling Factor (x, y):")
         self.unaligned_spacing_x = QLineEdit("1.0")
         self.unaligned_spacing_y = QLineEdit("1.0")
         self.unaligned_spacing_row.setAlignment(Qt.AlignmentFlag.AlignLeft)
@@ -174,20 +159,22 @@ class CellLayerAlignmentUI(QWidget):
 
     def _get_button_style(self):
         """Return stylesheet for registration buttons."""
-        return """
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
+        from ui.theme import ThemeManager
+        c = ThemeManager.instance().get_current()
+        return f"""
+            QPushButton {{
+                background-color: {c["success"]};
+                color: {c["text_on_accent"]};
                 font-weight: bold;
                 border-radius: 4px;
-            }
-            QPushButton:disabled {
-                background-color: #cccccc;
-                color: #666666;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
+            }}
+            QPushButton:disabled {{
+                background-color: {c["bg_tertiary"]};
+                color: {c["text_secondary"]};
+            }}
+            QPushButton:hover {{
+                background-color: {c["success_hover"]};
+            }}
         """
 
     def _setup_connections(self):
@@ -308,20 +295,14 @@ class CellLayerAlignmentUI(QWidget):
         self.manually_align_button.setEnabled(False)
 
         try:
-            target_spacing = (
-                float(self.target_spacing_x.text().strip()),
-                float(self.target_spacing_y.text().strip()),
-            )
-            self.aligner.set_target_spacing(target_spacing)
-
-            unaligned_spacing = (
+            scale = (
                 float(self.unaligned_spacing_x.text().strip()),
                 float(self.unaligned_spacing_y.text().strip()),
             )
-            self.aligner.set_unaligned_spacing(unaligned_spacing)
+            self.aligner.set_scale(scale)
         except ValueError:
             self._handle_error(
-                "Invalid spacing values. Please enter numeric values for x and y."
+                "Invalid scale values. Please enter numeric values for x and y."
             )
             return
 

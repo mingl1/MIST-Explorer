@@ -179,21 +179,23 @@ class ROIAnalysisView(QWidget):
         self.poly_button = QPushButton()
 
         # Set button sizes and styles
+        from ui.theme import ThemeManager
+        tc = ThemeManager.instance().get_current()
         for button in [self.rect_button, self.circle_button, self.poly_button]:
             button.setFixedSize(40, 40)
             button.setStyleSheet(
-                """
-                QPushButton {
-                    background-color: rgba(255, 255, 255, 0.8);
-                    border: 1px solid #ccc;
+                f"""
+                QPushButton {{
+                    background-color: {tc["bg_hover"]};
+                    border: 1px solid {tc["border"]};
                     border-radius: 5px;
-                }
-                QPushButton:hover {
-                    background-color: rgba(255, 255, 255, 0.9);
-                }
-                QPushButton:pressed {
-                    background-color: rgba(200, 200, 200, 0.9);
-                }
+                }}
+                QPushButton:hover {{
+                    background-color: {tc["bg_pressed"]};
+                }}
+                QPushButton:pressed {{
+                    background-color: {tc["accent_dim"]};
+                }}
             """
             )
 

@@ -222,7 +222,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.setObjectName("canvas")
         self.setAcceptDrops(True)
         self.setScene(pg.GraphicsScene())
-        self.get_scene().setBackgroundBrush(QBrush(QColor("black")))  # black background
+        self.get_scene().setBackgroundBrush(QBrush(QColor("black")))
         self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
         self.setRenderHint(self.renderHints() | self.renderHints().Antialiasing)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
@@ -239,6 +239,9 @@ class ImageGraphicsViewUI(QGraphicsView):
 
     def create_floating_buttons(self):
         """Create floating selection buttons that appear over the canvas"""
+        from ui.theme import ThemeManager
+        tc = ThemeManager.instance().get_current()
+
         # Create a container widget for the buttons
         self.floating_container = QWidget(self)
 
@@ -251,7 +254,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         # Add label
         label = QLabel("Select region of interest:", self.floating_container)
         label.setStyleSheet(
-            "QLabel { color: white; padding: 5px; border-radius: 3px; }"
+            f"QLabel {{ color: {tc['text_primary']}; padding: 5px; border-radius: 3px; }}"
         )
         button_layout.addWidget(label)
 
@@ -264,18 +267,18 @@ class ImageGraphicsViewUI(QGraphicsView):
         for button in [self.rect_button, self.circle_button, self.poly_button]:
             button.setFixedSize(40, 40)
             button.setStyleSheet(
-                """
-                QPushButton {
-                    background-color: rgba(255, 255, 255, 0.1);
-                    border: 1px solid #ccc;
+                f"""
+                QPushButton {{
+                    background-color: {tc["bg_hover"]};
+                    border: 1px solid {tc["border"]};
                     border-radius: 5px;
-                }
-                QPushButton:hover {
-                    background-color: rgba(255, 255, 255, 0.2);
-                }
-                QPushButton:pressed {
-                    background-color: rgba(200, 200, 200, 0.2);
-                }
+                }}
+                QPushButton:hover {{
+                    background-color: {tc["bg_pressed"]};
+                }}
+                QPushButton:pressed {{
+                    background-color: {tc["accent_dim"]};
+                }}
             """
             )
 
@@ -965,7 +968,17 @@ class ImageGraphicsViewUI(QGraphicsView):
                             and ctrl.model_canvas.image_wrapper.data.size > 0
                         ):
                             val = ctrl.model_canvas.image_wrapper.data[y, x]
-                            raw_intensity_str = f"Intensity: {val}"
+                            seg_labels = ctrl.model_canvas.segmentation_labels
+                            if (
+                                ctrl.model_canvas.stardist_overlay_enabled
+                                and seg_labels is not None
+                                and 0 <= y < seg_labels.shape[0]
+                                and 0 <= x < seg_labels.shape[1]
+                            ):
+                                cell_id = seg_labels[y, x]
+                                raw_intensity_str = f"CellID: {cell_id}\nIntensity: {val}"
+                            else:
+                                raw_intensity_str = f"Intensity: {val}"
                         elif (
                             hasattr(self.enc, "small_view")
                             and self == self.enc.small_view

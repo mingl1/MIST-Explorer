@@ -23,16 +23,32 @@ _FONT_SIZE = 7
 
 
 class BadgeStyle(Enum):
-    """Visual style for each role badge: (display label, background hex, foreground hex)."""
+    """Visual style for each role badge: (display label, bg_key, fg_key)."""
 
-    VIEW = ("View", "#3b82f6", "#ffffff")
-    REF = ("Ref", "#22c55e", "#ffffff")
-    LABEL = ("Label", "#a855f7", "#ffffff")
+    VIEW = ("View", "badge_view_bg", "badge_fg")
+    REF = ("Ref", "badge_ref_bg", "badge_fg")
+    LABEL = ("Label", "badge_label_bg", "badge_fg")
 
-    def __init__(self, label: str, bg: str, fg: str):
+    def __init__(self, label: str, bg_key: str, fg_key: str):
         self.label = label
-        self.bg = bg
-        self.fg = fg
+        self._bg_key = bg_key
+        self._fg_key = fg_key
+
+    @property
+    def bg(self) -> str:
+        try:
+            from ui.theme import ThemeManager
+            return ThemeManager.instance().get(self._bg_key)
+        except RuntimeError:
+            return {"badge_view_bg": "#3b82f6", "badge_ref_bg": "#22c55e", "badge_label_bg": "#a855f7"}[self._bg_key]
+
+    @property
+    def fg(self) -> str:
+        try:
+            from ui.theme import ThemeManager
+            return ThemeManager.instance().get(self._fg_key)
+        except RuntimeError:
+            return "#ffffff"
 
 
 # Stable left-to-right display order for badges

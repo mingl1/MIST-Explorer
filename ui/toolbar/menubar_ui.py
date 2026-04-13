@@ -1,5 +1,5 @@
 import sys
-from PyQt6.QtGui import QAction
+from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import QMainWindow, QMenuBar, QPushButton, QWidget, QHBoxLayout
 
 
@@ -50,6 +50,13 @@ class MenuBarUI(QMenuBar):
         view_log_action.triggered.connect(parent.show_log_dialog)
         self.menuView.addAction(view_log_action)
 
+        self.menuView.addSeparator()
+
+        toggle_theme_action = QAction("Toggle Theme", self.menuView)
+        toggle_theme_action.setShortcut(QKeySequence("Ctrl+Shift+T"))
+        toggle_theme_action.triggered.connect(self._toggle_theme)
+        self.menuView.addAction(toggle_theme_action)
+
         if sys.platform == "win32":
             # Window controls
             self.controls_widget = QWidget()
@@ -74,3 +81,7 @@ class MenuBarUI(QMenuBar):
             self.controls_layout.addWidget(self.close_button)
 
             self.setCornerWidget(self.controls_widget)
+
+    def _toggle_theme(self):
+        from ui.theme import ThemeManager
+        ThemeManager.instance().toggle()

@@ -35,16 +35,21 @@ class ProjectCard(QWidget):
         layout.setContentsMargins(8, 4, 8, 4)
         layout.setSpacing(10)
 
+        from ui.theme import ThemeManager
+        tc = ThemeManager.instance().get_current()
+
         icon_label = QLabel()
         icon_label.setFixedSize(32, 32)
         icon = QPixmap(32, 32)
-        icon.fill(QColor(100, 100, 100))
+        icon.fill(QColor(tc["bg_tertiary"]))
         icon_label.setPixmap(icon)
         layout.addWidget(icon_label)
 
         info_layout = QVBoxLayout()
         info_layout.setContentsMargins(0, 0, 0, 0)
         info_layout.setSpacing(2)
+
+        muted = f"color: {tc['text_secondary']};"
 
         name_label = QLabel(self.metadata.name)
         font = name_label.font()
@@ -57,14 +62,14 @@ class ProjectCard(QWidget):
         font = date_label.font()
         font.setPointSize(10)
         date_label.setFont(font)
-        date_label.setStyleSheet("color: dimgray;")
+        date_label.setStyleSheet(muted)
 
         image_count = len(self.metadata.images)
         count_label = QLabel(f"{image_count} image{'s' if image_count != 1 else ''}")
         font = count_label.font()
         font.setPointSize(10)
         count_label.setFont(font)
-        count_label.setStyleSheet("color: dimgray;")
+        count_label.setStyleSheet(muted)
 
         size_bytes = ProjectManager.get_folder_size(self.metadata.path)
         size_str = ProjectManager.format_size(size_bytes)
@@ -72,7 +77,7 @@ class ProjectCard(QWidget):
         font = size_label.font()
         font.setPointSize(10)
         size_label.setFont(font)
-        size_label.setStyleSheet("color: dimgray;")
+        size_label.setStyleSheet(muted)
 
         info_layout.addWidget(name_label)
         info_layout.addWidget(date_label)

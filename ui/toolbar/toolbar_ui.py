@@ -69,20 +69,22 @@ class ToolBarUI(QToolBar):
         self.tab_buttons[0].setChecked(True)
 
     def _tab_button_style(self):
-        return """
-            QToolButton {
+        from ui.theme import ThemeManager
+        c = ThemeManager.instance().get_current()
+        return f"""
+            QToolButton {{
                 padding: 8px 16px;
                 border: none;
                 background: transparent;
                 font-size: 12px;
-            }
-            QToolButton:hover {
-                background: rgba(0, 0, 0, 0.3);
-            }
-            QToolButton:checked {
-                border-bottom: 2px solid #007AFF;
+            }}
+            QToolButton:hover {{
+                background: {c["bg_hover"]};
+            }}
+            QToolButton:checked {{
+                border-bottom: 2px solid {c["tab_checked"]};
                 font-weight: Bold;
-            }
+            }}
         """
 
     @pyqtSlot(int)

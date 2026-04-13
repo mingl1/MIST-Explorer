@@ -720,6 +720,8 @@ class ImageOverlay(QWidget):
         )  # Disable horizontal scroll
 
         self.scroll_content = QWidget()
+        self.scroll_content.setAutoFillBackground(True)
+        self.scroll_content.setBackgroundRole(QPalette.ColorRole.Base)
         self.scroll_content.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
@@ -994,46 +996,27 @@ class ImageOverlay(QWidget):
 
     @staticmethod
     def _layer_theme() -> dict:
-        is_dark = (
-            QApplication.palette().color(QPalette.ColorRole.Window).lightness() < 128
-        )
-        if is_dark:
-            return {
-                "label": "#aaa",
-                "muted": "#888",
-                "accent": "#64b5f6",
-                "subtle": "#777",
-                "subtle_open": "#ddd",
-                "tint_none": "#999",
-            }
+        from ui.theme import ThemeManager
+        c = ThemeManager.instance().get_current()
         return {
-            "label": "#555",
-            "muted": "#888",
-            "accent": "#1976d2",
-            "subtle": "#999",
-            "subtle_open": "#333",
-            "tint_none": "#666",
+            "label": c["text_secondary"],
+            "muted": c["text_secondary"],
+            "accent": c["accent"],
+            "subtle": c["text_secondary"],
+            "subtle_open": c["text_primary"],
+            "tint_none": c["text_secondary"],
         }
 
     @staticmethod
     def make_svg_icon(svg_path: str, size: int = 22) -> QIcon:
-        palette = QApplication.palette()
-        is_dark = palette.color(QPalette.ColorRole.Window).lightness() < 128
-        color = "#ffffff" if is_dark else "#000000"
-        with open(svg_path, "r") as f:
-            svg_text = f.read()
-        svg_text = svg_text.replace("currentColor", color)
-        renderer = QSvgRenderer(QByteArray(svg_text.encode()))
-        pixmap = QPixmap(size, size)
-        pixmap.fill(Qt.GlobalColor.transparent)
-        painter = QPainter(pixmap)
-        renderer.render(painter)
-        painter.end()
-        return QIcon(pixmap)
+        from ui.theme import make_themed_icon
+        return make_themed_icon(svg_path, size)
 
     def add_layer_controls(self, c):
         idx = len(self.controls) - 1
         theme = self._layer_theme()
+        from ui.theme import ThemeManager
+        tc = ThemeManager.instance().get_current()
 
         # --- Icons (loaded once per call; small overhead) ---
         icon_eye_open = self.make_svg_icon(resource_path("assets/icons/eye_open.svg"))
@@ -1056,8 +1039,8 @@ class ImageOverlay(QWidget):
         title_bar.setObjectName("layerTitleBar")
         title_bar.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
         title_bar.setStyleSheet(
-            "QWidget#layerTitleBar { background: transparent; }"
-            "QWidget#layerTitleBar:hover { background: rgba(255,255,255,0.06); }"
+            f"QWidget#layerTitleBar {{ background: transparent; }}"
+            f"QWidget#layerTitleBar:hover {{ background: {tc['bg_pressed']}; }}"
         )
         title_bar_layout = QHBoxLayout(title_bar)
         title_bar_layout.setContentsMargins(8, 3, 4, 3)
@@ -1067,9 +1050,9 @@ class ImageOverlay(QWidget):
         name_label.setFlat(True)
         name_label.setCursor(Qt.CursorShape.PointingHandCursor)
         name_label.setStyleSheet(
-            "QPushButton { font-weight: bold; font-size: 11px; color: #aaa;"
-            " background: transparent; border: none; text-align: left; padding: 0; }"
-            " QPushButton:hover { color: #fff; }"
+            f"QPushButton {{ font-weight: bold; font-size: 11px; color: {tc['text_secondary']};"
+            f" background: transparent; border: none; text-align: left; padding: 0; }}"
+            f" QPushButton:hover {{ color: {tc['accent']}; }}"
         )
         title_bar_layout.addWidget(name_label, stretch=1)
 
@@ -1078,8 +1061,8 @@ class ImageOverlay(QWidget):
         tint_square.setToolTip("Set layer tint")
         tint_square.setFlat(True)
         tint_square.setStyleSheet(
-            "QPushButton { background: white; border: 1px solid #888; border-radius: 2px; } "
-            "QPushButton:hover { border-color: #555; }"
+            f"QPushButton {{ background: white; border: 1px solid {tc['border']}; border-radius: 2px; }} "
+            f"QPushButton:hover {{ border-color: {tc['accent_dim']}; }}"
         )
         title_bar_layout.addWidget(tint_square)
 
@@ -1091,7 +1074,7 @@ class ImageOverlay(QWidget):
         eye_btn.setToolTip("Hide layer")
         eye_btn.setFlat(True)
         eye_btn.setStyleSheet(
-            "QPushButton { background: transparent; border: none; margin-left: 4px; } QPushButton:hover { background: #f5c518; border-radius: 3px; }"
+            f"QPushButton {{ background: transparent; border: none; margin-left: 4px; }} QPushButton:hover {{ background: {tc['warning']}; border-radius: 3px; }}"
         )
         title_bar_layout.addWidget(eye_btn)
 
@@ -1100,7 +1083,7 @@ class ImageOverlay(QWidget):
         delete_btn.setToolTip("Delete layer")
         delete_btn.setFlat(True)
         delete_btn.setStyleSheet(
-            "QPushButton:hover { background: #e57373; color: white; border-radius: 3px; } QPushButton { font-size:18px; }"
+            f"QPushButton:hover {{ background: {tc['danger']}; color: {tc['text_on_accent']}; border-radius: 3px; }} QPushButton {{ font-size:18px; }}"
         )
         title_bar_layout.addWidget(delete_btn)
 
@@ -1120,6 +1103,35 @@ class ImageOverlay(QWidget):
         lbl_style = f"font-size: 10px; color: {theme['label']}; font-weight: 600;"
         muted_style = f"font-size: 10px; color: {theme['muted']};"
 
+        # Editable number fields: subtle bg + bottom accent on focus
+        _edit_style = (
+            f"QLineEdit {{"
+            f"  font-size: 10px; font-weight: 600;"
+            f"  color: {tc['accent']};"
+            f"  background: {tc['bg_hover']};"
+            f"  border: none; border-bottom: 1px solid {tc['border']};"
+            f"  border-radius: 0px; padding: 1px 2px;"
+            f"}}"
+            f"QLineEdit:focus {{"
+            f"  border-bottom: 2px solid {tc['accent']};"
+            f"  background: {tc['bg_pressed']};"
+            f"}}"
+        )
+        _edit_muted_style = (
+            f"QLineEdit {{"
+            f"  font-size: 10px; font-weight: 600;"
+            f"  color: {theme['muted']};"
+            f"  background: {tc['bg_hover']};"
+            f"  border: none; border-bottom: 1px solid {tc['border']};"
+            f"  border-radius: 0px; padding: 1px 2px;"
+            f"}}"
+            f"QLineEdit:focus {{"
+            f"  border-bottom: 2px solid {tc['accent']};"
+            f"  color: {tc['accent']};"
+            f"  background: {tc['bg_pressed']};"
+            f"}}"
+        )
+
         # Opacity row (grid row 0)
         opa_lbl = QLabel("Opacity")
         opa_lbl.setStyleSheet(lbl_style)
@@ -1127,12 +1139,10 @@ class ImageOverlay(QWidget):
         opacity_slider.setMaximum(100)
         opacity_slider.setValue(100)
         opa_val_edit = QLineEdit("100")
-        opa_val_edit.setFixedWidth(32)
+        opa_val_edit.setFixedWidth(36)
         opa_val_edit.setAlignment(Qt.AlignmentFlag.AlignRight)
-        opa_val_edit.setStyleSheet(
-            f"font-size: 10px; color: {theme['accent']}; font-weight: 600;"
-            " border: none; background: transparent;"
-        )
+        opa_val_edit.setToolTip("Click to type a value")
+        opa_val_edit.setStyleSheet(_edit_style)
         slider_grid.addWidget(opa_lbl, 0, 0)
         slider_grid.addWidget(opacity_slider, 0, 2)
         slider_grid.addWidget(opa_val_edit, 0, 3)
@@ -1142,9 +1152,10 @@ class ImageOverlay(QWidget):
         con_lbl.setStyleSheet(lbl_style)
         initial_contrast = self._default_contrast_for_image(c.image)
         con_lo_edit = QLineEdit(str(int(initial_contrast[0])))
-        con_lo_edit.setFixedWidth(32)
+        con_lo_edit.setFixedWidth(36)
         con_lo_edit.setAlignment(Qt.AlignmentFlag.AlignRight)
-        con_lo_edit.setStyleSheet(lbl_style + " border: none; background: transparent;")
+        con_lo_edit.setToolTip("Click to type a value")
+        con_lo_edit.setStyleSheet(_edit_style)
         contrast_slider = qtrangeslider.QDoubleRangeSlider(Qt.Orientation.Horizontal)
         contrast_slider.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
@@ -1154,8 +1165,9 @@ class ImageOverlay(QWidget):
         contrast_slider.setValue(initial_contrast)
         contrast_slider.blockSignals(False)
         con_hi_edit = QLineEdit(str(int(initial_contrast[1])))
-        con_hi_edit.setFixedWidth(32)
-        con_hi_edit.setStyleSheet(lbl_style + " border: none; background: transparent;")
+        con_hi_edit.setFixedWidth(36)
+        con_hi_edit.setToolTip("Click to type a value")
+        con_hi_edit.setStyleSheet(_edit_style)
         slider_grid.addWidget(con_lbl, 1, 0)
         slider_grid.addWidget(con_lo_edit, 1, 1)
         slider_grid.addWidget(contrast_slider, 1, 2)
@@ -1188,10 +1200,10 @@ class ImageOverlay(QWidget):
             f"font-size: 10px; color: {theme['muted']}; font-weight: 600;"
         )
         vis_lo_edit = QLineEdit("0.0")
-        vis_lo_edit.setFixedWidth(32)
+        vis_lo_edit.setFixedWidth(36)
         vis_lo_edit.setAlignment(Qt.AlignmentFlag.AlignRight)
-        vis_lo_edit.setStyleSheet(
-            f"font-size: 10px; color: {theme['muted']}; border: none; background: transparent;"
+        vis_lo_edit.setToolTip("Click to type a value")
+        vis_lo_edit.setStyleSheet(_edit_muted_style
         )
         vis_slider = qtrangeslider.QDoubleRangeSlider(Qt.Orientation.Horizontal)
         vis_slider.setSizePolicy(
@@ -1203,10 +1215,9 @@ class ImageOverlay(QWidget):
         vis_slider.setValue((0.0, 100.0))
         vis_slider.blockSignals(False)
         vis_hi_edit = QLineEdit("100.0")
-        vis_hi_edit.setFixedWidth(32)
-        vis_hi_edit.setStyleSheet(
-            f"font-size: 10px; color: {theme['muted']}; border: none; background: transparent;"
-        )
+        vis_hi_edit.setFixedWidth(36)
+        vis_hi_edit.setToolTip("Click to type a value")
+        vis_hi_edit.setStyleSheet(_edit_muted_style)
         vis_row.addWidget(vis_lbl)
         vis_row.addWidget(vis_lo_edit)
         vis_row.addWidget(vis_slider)
