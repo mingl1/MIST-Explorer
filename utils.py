@@ -10,6 +10,24 @@ from PyQt6.QtGui import QImage, QPixmap
 
 logger = logging.getLogger(__name__)
 
+_CV2_WARP_DTYPES = (np.uint8, np.uint16, np.int16, np.float32, np.float64)
+
+
+def to_cv2_friendly(arr: np.ndarray) -> np.ndarray:
+    """Return an array that cv2 warp/resize can consume directly.
+
+    Uses issubdtype rules rather than a hard-coded allowlist so new or unusual
+    numpy dtypes (np.int32, np.float16, bool, etc.) still work.
+    """
+    if arr.dtype in _CV2_WARP_DTYPES:
+        return arr
+    if np.issubdtype(arr.dtype, np.bool_):
+        return arr.astype(np.uint8, copy=False)
+    if np.issubdtype(arr.dtype, np.floating) or np.issubdtype(arr.dtype, np.integer):
+        return arr.astype(np.float32, copy=False)
+    return arr.astype(np.float32)
+
+
 # Import extracted functions from core.image_utils
 
 def numpy_to_qimage(array: np.ndarray) -> QImage:
@@ -292,20 +310,22 @@ def downsample(image: NDArray[np.float64], scale=0.5):
 def adjust_contrast(
     img: NDArray[np.float32] | NDArray[np.float64], min_percentile=2, max_percentile=98
 ):
-    """Adjust image contrast using percentile-based clipping for float images"""
-    # Calculate percentiles
+    """Adjust image contrast using percentile-based clipping for float images.
+
+    Returns float32 in [0.0, 1.0] — float64 is unnecessary precision for
+    downstream display / normalise-to-uint8 and doubles memory.
+    """
+    if img.dtype != np.float32:
+        img = img.astype(np.float32, copy=False)
     minval = np.percentile(img, min_percentile)
     maxval = np.percentile(img, max_percentile)
 
-    # Avoid division by zero
     if maxval - minval < 1e-12:
         return np.zeros_like(img)
 
-    # Clip and rescale to [0.0, 1.0]
     img_adjusted = np.clip(img, minval, maxval)
     img_adjusted = (img_adjusted - minval) / (maxval - minval)
-
-    return img_adjusted  # stays float64, values in [0.0, 1.0]
+    return img_adjusted
 
 
 from skimage.filters import threshold_otsu
@@ -322,31 +342,26 @@ def background_subtraction_with_histogram(image: np.ndarray) -> np.ndarray:
     https://www.nature.com/articles/s44303-025-00088-w#MOESM1
     """
 
-    # Ensure float64 for precision
     original_dtype = image.dtype
-    img = image.astype(np.float64)
+    img = image.astype(np.float32, copy=False)
 
-    # Step 1: Otsu's threshold
     otsu_thresh = threshold_otsu(img)
-    background_mask = img <= otsu_thresh  # background region
+    background_mask = img <= otsu_thresh
 
-    # Step 2: Histogram of background pixels
     background_pixels = img[background_mask]
     hist, bin_edges = np.histogram(background_pixels, bins=256, range=(0, img.max()))
 
-    # Step 3: Find peak of histogram
     peak_idx = np.argmax(hist)
     refined_threshold = bin_edges[peak_idx]
 
-    # Step 4: Subtract refined threshold
     result = img - refined_threshold
-    result[result < 0] = 0  # clip negatives
+    np.clip(result, 0, None, out=result)
 
-    # Convert back to original dtype if possible
-    if original_dtype == np.uint16:
-        result = result.astype(np.uint16)
-    elif original_dtype == np.uint8:
-        result = result.astype(np.uint8)
+    if np.issubdtype(original_dtype, np.integer):
+        info = np.iinfo(original_dtype)
+        result = np.clip(result, info.min, info.max).astype(original_dtype, copy=False)
+    elif np.issubdtype(original_dtype, np.floating):
+        result = result.astype(original_dtype, copy=False)
 
     return result, otsu_thresh, refined_threshold, hist, bin_edges
 
@@ -399,33 +414,33 @@ def remove_padding(padded_image, original_shape):
     return padded_image[pad_top:end_row, pad_left:end_col]
 
 
-def warp_image(img, transform_matrix) -> NDArray[np.uint8]:
-    """Inverse warp an image using the given transformation matrix."""
+def warp_image(img, transform_matrix) -> np.ndarray:
+    """Inverse warp an image using the given affine matrix.
+
+    Preserves the input dtype when cv2 supports it (uint8, uint16, int16,
+    float32, float64). Promotes other integer/float dtypes to float32, and
+    bool to uint8. No silent normalisation or uint8 conversion — callers
+    that need a specific output dtype should do the cast themselves.
+    """
     if transform_matrix is None:
         return img
 
-    # Ensure input is float64 for precision
-    if img.dtype not in [np.float32, np.float64]:
-        img_float = img.astype(np.float32)
-        img_float = img_float.astype(np.float64)
-        img_float = img_float / np.max(img_float)
-    else:
-        img_float = img.astype(np.float64) if img.dtype != np.float64 else img
-
-    def invert_affine_transform(M_2x3):
-        M_3x3 = np.vstack([M_2x3, [0, 0, 1]])
-        M_inv = np.linalg.inv(M_3x3)
-        return M_inv[:2, :]
-
     if transform_matrix.shape == (2, 3):
-        M_inv = invert_affine_transform(transform_matrix)
+        M_inv = np.linalg.inv(np.vstack([transform_matrix, [0, 0, 1]]))[:2, :]
     elif transform_matrix.shape == (3, 3):
         M_inv = np.linalg.inv(transform_matrix)[:2, :]
     else:
         raise ValueError("Transform matrix must be 2x3 or 3x3")
-    warped = cv2.warpAffine(img_float, M_inv, dsize=img_float.shape[::-1])
-    warped = to_uint8(warped)
-    return warped.astype(np.uint8)
+
+    original_dtype = img.dtype
+    src = to_cv2_friendly(img)
+    h, w = src.shape[:2]
+    warped = cv2.warpAffine(
+        src, M_inv, (w, h), flags=cv2.INTER_LINEAR, borderValue=0
+    )
+    if warped.dtype != original_dtype and original_dtype in _CV2_WARP_DTYPES:
+        warped = warped.astype(original_dtype, copy=False)
+    return warped
 
 
 # Memory monitoring utility

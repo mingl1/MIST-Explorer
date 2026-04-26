@@ -73,6 +73,7 @@ class ImageManager(QWidget):
 
         # Connect deletion signal to backend cleanup
         self.image_tree_view.item_deleted.connect(self._handle_item_deletion)
+        self.image_tree_model.itemChanged.connect(self._on_tree_item_renamed)
 
     def set_project_path(self, project_path: Path):
         """Set the current project path."""
@@ -92,6 +93,23 @@ class ImageManager(QWidget):
     def _can_save_project(self) -> bool:
         """Return True when project-backed saves are possible."""
         return bool(self.current_project_path) and not self.current_project_is_temp
+
+    def _on_tree_item_renamed(self, item):
+        print(f"[rename] itemChanged fired: text={item.text()!r} parent={item.parent()}")
+        if item.parent() is not None:
+            print(f"[rename] skipping — child item")
+            return
+        print(f"[rename] _can_save_project={self._can_save_project()} path={self.current_project_path} is_temp={self.current_project_is_temp}")
+        if not self._can_save_project():
+            print(f"[rename] skipping — cannot save project")
+            return
+        item_uuid = item.data(Qt.ItemDataRole.UserRole)
+        storage_item = self.storage.get_data(item_uuid)
+        print(f"[rename] uuid={item_uuid} storage_item_found={storage_item is not None}")
+        if storage_item:
+            print(f"[rename] calling _save_image_reference for uuid={item_uuid} name={storage_item.get('name')!r}")
+            self._save_image_reference(item_uuid, storage_item)
+            print(f"[rename] _save_image_reference done")
 
     def save_all_images(self, copy_data: bool = False):
         """Sync current in-memory images to disk.
@@ -379,12 +397,17 @@ class ImageManager(QWidget):
         self.storage.add_data(item_uuid, obj)
         original_filename = obj.get("original_filename", "")
         if not original_filename or not os.path.isfile(original_filename):
-            self._unsaved_created.add(str(item_uuid))
+            if self._can_save_project():
+                self._save_image_to_project(item_uuid, obj)
+            else:
+                self._unsaved_created.add(str(item_uuid))
 
     def _handle_item_deletion(self, item_uuid: UUID):
         """Handle backend cleanup when an item is deleted."""
         self.storage.remove_data(item_uuid)
         self._unsaved_created.discard(str(item_uuid))
+        if self._can_save_project():
+            ProjectManager.delete_image(self.current_project_path, str(item_uuid))
 
     def has_unsaved_created_images(self) -> bool:
         """Return True if any in-session created images have not been saved or exported."""
@@ -759,6 +782,9 @@ class ImageTreeWidget(QTreeView):
             self.model_canvas.add_to_canvas(
                 item_uuid, as_new_image=False, target_channel=target_channel
             )
+
+        if isinstance(manager, ImageManager) and manager._can_save_project():
+            manager._save_image_reference(str(item_uuid), image_entry)
 
     @staticmethod
     def _channel_sort_key(channel_key: str):

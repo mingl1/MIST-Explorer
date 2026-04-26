@@ -46,6 +46,25 @@ def create_lut(new_min, new_max):
     return lut
 
 
+def window_image_by_contrast(image: np.ndarray, contrast_min, contrast_max) -> np.ndarray:
+    """Apply toolbar contrast window to *image*, returning a uint16 result."""
+    image_uint8 = scale_adjust(image)
+    cmin = int(np.clip(int(contrast_min), 0, 255))
+    cmax = int(np.clip(int(contrast_max), 0, 255))
+    if cmax < cmin:
+        cmin, cmax = cmax, cmin
+    if cmin == cmax:
+        if cmax < 255:
+            cmax += 1
+        elif cmin > 0:
+            cmin -= 1
+        else:
+            return image_uint8.astype(np.uint16) * 257
+    lut = create_lut(cmin, cmax)
+    contrasted_uint8 = np.clip(cv2.LUT(image_uint8, lut), 0, 254, dtype=np.uint8)
+    return contrasted_uint8.astype(np.uint16) * 257
+
+
 def auto_contrast_helper(
         img,
         lower=1.0,

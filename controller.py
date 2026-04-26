@@ -434,6 +434,7 @@ class SignalConnectionManager:
             self.c.model_canvas.load_segmentation_labels(stardist_wrapper, label_name)
             self.c.model_cell_intensity.load_segmentation_labels(stardist_wrapper)
             self.c.view.stardist_groupbox.overlay_toggle_button.setChecked(False)
+            self._auto_save_image_to_project(str(current_uuid))
             return
 
         persisted = self._persist_stardist_result_to_source(
@@ -446,6 +447,16 @@ class SignalConnectionManager:
             )
             return
         self.c.view.stardist_groupbox.overlay_toggle_button.setChecked(False)
+        self._auto_save_image_to_project(str(source_uuid))
+
+    def _auto_save_image_to_project(self, item_uuid: str):
+        images_tab = self.c.view.images_tab
+        if not images_tab._can_save_project():
+            return
+        item = self.c.storage.get_data(item_uuid)
+        if item is None:
+            return
+        images_tab._save_image_to_project(item_uuid, item)
 
     def setup_all_connections(self):
         """Set up all signal-slot connections with full IntelliSense support"""
@@ -1028,6 +1039,7 @@ class SignalConnectionManager:
         tree_model = self.c.view.images_tab.image_tree_model
         tree_model.rowsInserted.connect(lambda *_: self._repopulate_register_selector())
         tree_model.rowsRemoved.connect(lambda *_: self._repopulate_register_selector())
+        tree_model.dataChanged.connect(lambda *_: self._repopulate_register_selector())
         self._repopulate_register_selector()
 
         # Results
@@ -1128,6 +1140,7 @@ class SignalConnectionManager:
         tree_model = self.c.view.images_tab.image_tree_model
         tree_model.rowsInserted.connect(lambda *_: self._repopulate_generation_selector())
         tree_model.rowsRemoved.connect(lambda *_: self._repopulate_generation_selector())
+        tree_model.dataChanged.connect(lambda *_: self._repopulate_generation_selector())
         self._repopulate_generation_selector()
 
     def _on_cell_intensity_progress(self, value: int, msg: str):
@@ -1229,6 +1242,7 @@ class SignalConnectionManager:
         tree_model = self.c.view.images_tab.image_tree_model
         tree_model.rowsInserted.connect(lambda *_: self._repopulate_segmentation_selector())
         tree_model.rowsRemoved.connect(lambda *_: self._repopulate_segmentation_selector())
+        tree_model.dataChanged.connect(lambda *_: self._repopulate_segmentation_selector())
         # Populate immediately with any images already in the tree (e.g. from project load)
         self._repopulate_segmentation_selector()
 
@@ -1292,6 +1306,7 @@ class SignalConnectionManager:
         tree_model = self.c.view.images_tab.image_tree_model
         tree_model.rowsInserted.connect(lambda *_: self._repopulate_cell_alignment_selectors())
         tree_model.rowsRemoved.connect(lambda *_: self._repopulate_cell_alignment_selectors())
+        tree_model.dataChanged.connect(lambda *_: self._repopulate_cell_alignment_selectors())
         self._repopulate_cell_alignment_selectors()
 
     def _repopulate_cell_alignment_selectors(self):

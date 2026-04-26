@@ -12,12 +12,14 @@ from pystackreg import StackReg
 from pystackreg.util import to_uint16
 from scipy.ndimage import binary_fill_holes, rotate, zoom
 
+from core.image_utils import window_image_by_contrast
 from utils import (
     adjust_contrast,
     background_subtraction_with_histogram,
     make_same_shape,
     match_histograms,
     remove_padding,
+    to_cv2_friendly,
     to_uint8,
     warp_image,
 )
@@ -62,19 +64,28 @@ class CellLayerAligner(QThread):
         self.coarse_scale = coarse_scale
         self.rotation_angles = [0]  # Default to no rotation
         self.fine_scale = fine_scale
+        self.target_reg_image = None
+        self.unaligned_reg_image = None
 
     def set_target_image(self, target_image, channel_name, uuid):
-        self.target_pyramid = []
         self.target_image = target_image
         self.original_target_shape = target_image.shape
         self.target_channel = channel_name
         self.target_uuid = uuid
 
     def set_unaligned_image(self, unaligned_image, channel_name, uuid):
-        self.unaligned_pyramid = []
         self.unaligned_image = unaligned_image
         self.unaligned_channel = channel_name
         self.unaligned_uuid = uuid
+
+    def set_registration_images(self, target_reg_image, unaligned_reg_image):
+        """Set pre-contrasted images used only for computing the transform.
+
+        Pass None for either argument to fall back to the original image.
+        The warp output always uses the originals.
+        """
+        self.target_reg_image = target_reg_image
+        self.unaligned_reg_image = unaligned_reg_image
 
     def set_scale(self, scale):
         self.scale = scale
@@ -172,10 +183,23 @@ class CellLayerAligner(QThread):
                 )
                 initial_metadata["unaligned_shape"] = self.unaligned_image.shape
 
+            # Resolve registration images (contrasted or original) after scale is applied
+            reg_target = self.target_reg_image if self.target_reg_image is not None else self.target_image
+            if self.unaligned_reg_image is not None:
+                if x_scale != 1.0 or y_scale != 1.0:
+                    reg_moving = cv2.resize(
+                        self.unaligned_reg_image, (scaled_w, scaled_h),
+                        interpolation=cv2.INTER_LINEAR,
+                    )
+                else:
+                    reg_moving = self.unaligned_reg_image
+            else:
+                reg_moving = self.unaligned_image
+
             # Prepare images for coarse alignment
             self.progress.emit(5, "Preparing images for coarse alignment")
             self.coarse_target, self.coarse_moving = self._prepare_images(
-                self.target_image, self.unaligned_image, self.coarse_scale
+                reg_target, reg_moving, self.coarse_scale
             )
             # self._emit_snapshot(
             #     "After coarse preprocessing",
@@ -198,13 +222,17 @@ class CellLayerAligner(QThread):
                 "matrix": coarse_transform,
             }
             logger.debug("Coarse transform:\n%s", coarse_transform)
+            # Coarse-scale preprocessed images no longer needed once the
+            # transform is extracted. Release before fine stage allocates.
+            self.coarse_target = None
+            self.coarse_moving = None
             # Prepare images for fine alignment
             self.progress.emit(50, "Preparing images for fine alignment")
             fine_transform = self._scale_transform_matrix(
                 coarse_transform[:2, :3].copy(), self.coarse_scale, self.fine_scale
             )
             fine_target, fine_unaligned = self._prepare_images(
-                self.target_image, self.unaligned_image, self.fine_scale
+                reg_target, reg_moving, self.fine_scale
             )
             fine_target_shape = (
                 np.array(self.target_image.shape) * self.fine_scale
@@ -212,9 +240,11 @@ class CellLayerAligner(QThread):
             logger.debug("Fine target shape: %s, fine_target: %s, fine_unaligned: %s",
                          fine_target_shape, fine_target.shape, fine_unaligned.shape)
             fine_moving = warp_image(fine_unaligned, fine_transform)
+            del fine_unaligned
             fine_moving = to_uint8(fine_moving)
             fine_moving = remove_padding(fine_moving, fine_target_shape)
             fine_target_image = remove_padding(fine_target, fine_target_shape)
+            del fine_target
             logger.debug("Fine target shape: %s, Fine moving shape: %s",
                          fine_target_image.shape, fine_moving.shape)
             # self._emit_snapshot("itk", itk_metadata, fine_moving, fine_target_image)
@@ -251,12 +281,16 @@ class CellLayerAligner(QThread):
                 gradient_metadata = {
                     "matrix": gradient_transform,
                 }
+                del gradient_aligned
                 # self._emit_snapshot(
                 #     "gradient descent",
                 #     gradient_metadata,
                 #     gradient_aligned,
                 #     fine_target_image,
                 # )
+            # Fine-stage buffers no longer needed — release before full-res warps.
+            del fine_moving, fine_target_image, aligned_preview
+
             # Apply final transformation
             self.progress.emit(80, "Applying final transformation")
             full_coarse_matrix = self._scale_transform_matrix(
@@ -265,28 +299,43 @@ class CellLayerAligner(QThread):
             full_refinement_transform = self._scale_transform_matrix(
                 refinement_transform[:2, :3], self.fine_scale, 1
             )
-            _, padded_moving = make_same_shape(
-                self.target_image, self.unaligned_image)
+            # Skip the pad/unpad round-trip when shapes already match — it's a
+            # full-resolution copy we don't need to make.
+            if self.target_image.shape == self.unaligned_image.shape:
+                padded_moving = self.unaligned_image
+            else:
+                _, padded_moving = make_same_shape(
+                    self.target_image, self.unaligned_image)
             intermediate_aligned = warp_image(
                 padded_moving, full_coarse_matrix)
-            intermediate_aligned = remove_padding(
-                intermediate_aligned, self.target_image.shape
-            )
+            del padded_moving
+            if intermediate_aligned.shape != self.target_image.shape:
+                intermediate_aligned = remove_padding(
+                    intermediate_aligned, self.target_image.shape
+                )
             final_aligned_image = warp_image(
                 intermediate_aligned, full_refinement_transform
             )
+            del intermediate_aligned
             if gradient_transform is not None:
                 # Apply gradient descent refinement if available
                 full_gradient_transform = self._scale_transform_matrix(
                     gradient_transform[:2, :3], self.fine_scale, 1
                 )
-                final_aligned_image = warp_image(
+                next_aligned = warp_image(
                     final_aligned_image, full_gradient_transform
                 )
-            # Convert result back to original dtype for storage
+                del final_aligned_image
+                final_aligned_image = next_aligned
+            # Convert result back to original dtype for storage. When dtypes
+            # already match, _convert_to_original_dtype returns the same array —
+            # reuse it as the signal payload so we don't hold two full-res
+            # arrays at emission time.
             result_data = self._convert_to_original_dtype(
                 final_aligned_image, self.unaligned_image.dtype
             )
+            if result_data is not final_aligned_image:
+                final_aligned_image = result_data
 
             result_payload = {
                 "uuid": self.target_uuid,
@@ -343,11 +392,8 @@ class CellLayerAligner(QThread):
         """
         Preprocess two images for coarse alignment.
         """
-        _cv2_supported = {np.uint8, np.uint16, np.int16, np.float32, np.float64}
-        if target_image.dtype not in _cv2_supported:
-            target_image = target_image.astype(np.float32)
-        if unaligned_image.dtype not in _cv2_supported:
-            unaligned_image = unaligned_image.astype(np.float32)
+        target_image = to_cv2_friendly(target_image)
+        unaligned_image = to_cv2_friendly(unaligned_image)
         coarse_target = cv2.resize(
             target_image,
             (0, 0),
@@ -373,10 +419,10 @@ class CellLayerAligner(QThread):
         target_histogram = np.histogram(coarse_target.flatten(), bins=256)[0]
         coarse_moving = match_histograms(coarse_moving, target_histogram)
         coarse_moving = np.clip(coarse_moving, 32, 255) - 32
-        coarse_target = adjust_contrast(
-            coarse_target.astype(np.float64), 2, 99)
-        coarse_moving = adjust_contrast(
-            coarse_moving.astype(np.float64), 2, 99)
+        # adjust_contrast internally promotes to float32 — skip the explicit
+        # float64 cast so we don't pay that memory twice.
+        coarse_target = adjust_contrast(coarse_target, 2, 99)
+        coarse_moving = adjust_contrast(coarse_moving, 2, 99)
         coarse_moving = cv2.normalize(
             coarse_moving, coarse_moving, 255, 0, cv2.NORM_MINMAX, cv2.CV_8U
         )
@@ -388,10 +434,20 @@ class CellLayerAligner(QThread):
             coarse_target, coarse_moving)
         return coarse_target, coarse_moving
 
+    @staticmethod
+    def _itk_worker_cap(per_job_bytes: int, upper: int) -> int:
+        """Cap concurrent ITK workers so the combined working set stays under
+        ~500 MB. Each worker holds a rotated copy plus two SITK float32 images.
+        """
+        budget = 512 * 1024 * 1024
+        estimate = per_job_bytes * 4 if per_job_bytes > 0 else 1
+        return int(np.clip(budget // estimate, 1, upper))
+
     def _itk_align(self, rotation_angles, fixed, moving):
         logger.info("Stage 1: Finding best angles...")
         angle_results = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+        workers = self._itk_worker_cap(fixed.nbytes, upper=6)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
             futures = [
                 executor.submit(register_combination, fixed, moving, angle, False)
                 for angle in rotation_angles
@@ -418,7 +474,8 @@ class CellLayerAligner(QThread):
 
         logger.info("Stage 2: Testing flip options for top 3 angles...")
         flip_results = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        flip_workers = self._itk_worker_cap(fixed.nbytes, upper=3)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=flip_workers) as executor:
             futures = [
                 executor.submit(register_combination, fixed, moving, angle, True)
                 for score, angle, _, params in top3_angles
@@ -443,8 +500,10 @@ class CellLayerAligner(QThread):
     def _alignment_stackreg(self, target_fine, unaligned_fine):
         """Enhanced StackReg alignment with better preprocessing"""
         try:
+            # _image_enhancement allocates fresh arrays (to_uint8, binary_fill_holes),
+            # so we don't need to pre-copy the inputs.
             target_enhanced, unaligned_enhanced = self._image_enhancement(
-                target_fine.copy(), unaligned_fine.copy()
+                target_fine, unaligned_fine
             )
             target_uint16 = to_uint16(target_enhanced)
             unaligned_uint16 = to_uint16(unaligned_enhanced)
@@ -485,18 +544,22 @@ class CellLayerAligner(QThread):
             scaled_matrix = s_to_inv @ matrix @ s_from
         return scaled_matrix
 
-    def _convert_to_original_dtype(self, img_float, original_dtype):
-        if np.issubdtype(original_dtype, np.uint16):
-            return to_uint16(img_float)
-        elif np.issubdtype(original_dtype, np.uint8):
-            return np.clip(img_float, 0, 255).astype(np.uint8)
-        elif np.issubdtype(original_dtype, np.integer):
-            max_val = np.iinfo(original_dtype).max
-            return np.clip(img_float, 0, max_val).astype(original_dtype)
-        elif np.issubdtype(original_dtype, np.floating):
-            return img_float.astype(original_dtype)
-        else:
-            return img_float
+    def _convert_to_original_dtype(self, img, original_dtype):
+        """Cast img back to original_dtype using np.issubdtype rules.
+
+        Returns img itself when dtype already matches — callers can rely on
+        ``is``-identity to detect that no new allocation happened.
+        """
+        if img.dtype == original_dtype:
+            return img
+        if np.issubdtype(original_dtype, np.floating):
+            return img.astype(original_dtype, copy=False)
+        if np.issubdtype(original_dtype, np.integer):
+            info = np.iinfo(original_dtype)
+            return np.clip(img, info.min, info.max).astype(original_dtype, copy=False)
+        if np.issubdtype(original_dtype, np.bool_):
+            return img.astype(bool, copy=False)
+        return img.astype(original_dtype, copy=False)
 
     def _fatal_error_message(self, msg):
         self.error.emit(msg)

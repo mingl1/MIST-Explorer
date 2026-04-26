@@ -36,6 +36,7 @@ from ui.canvas.items import CropRectItem, ResizableRect
 from ui.lassos.CircleLasso import CircleLasso
 from ui.lassos.PolyLasso import PolyLasso
 from ui.lassos.RectLasso import RectLasso
+from core.project_naming import is_segmentation_channel
 from utils import resource_path
 
 logger = logging.getLogger(__name__)
@@ -43,7 +44,7 @@ logger = logging.getLogger(__name__)
 if typing.TYPE_CHECKING:
     from ui.app import MainWindow
 
-TOOLTIP_PERSIST_MS = 120000
+TOOLTIP_PERSIST_MS = 0
 
 pg.setConfigOption("imageAxisOrder", "row-major")
 pg.setConfigOption("useOpenGL", True)
@@ -137,6 +138,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.initial_crop_rect = None
         self.np_channels = None
         self.pixel_highlight = None
+        self._last_tooltip_text = None
         self.setup_ui()
         self.get_scene().addItem(self.pixmap_item)
         self.pixmap_item.show()
@@ -240,6 +242,7 @@ class ImageGraphicsViewUI(QGraphicsView):
     def create_floating_buttons(self):
         """Create floating selection buttons that appear over the canvas"""
         from ui.theme import ThemeManager
+
         tc = ThemeManager.instance().get_current()
 
         # Create a container widget for the buttons
@@ -948,13 +951,7 @@ class ImageGraphicsViewUI(QGraphicsView):
                 if layers:
                     layers = [f"{layer}: {value}\n" for layer, value in layers]
                     combined_layers = "".join(layers)[:-1]
-                    QToolTip.showText(
-                        global_pos,
-                        combined_layers,
-                        self,
-                        self.rect(),
-                        TOOLTIP_PERSIST_MS,
-                    )
+                    self._show_tooltip(global_pos, combined_layers)
                 else:
                     # Fast path: read intensity directly from model data
                     raw_intensity_str = None
@@ -968,17 +965,22 @@ class ImageGraphicsViewUI(QGraphicsView):
                             and ctrl.model_canvas.image_wrapper.data.size > 0
                         ):
                             val = ctrl.model_canvas.image_wrapper.data[y, x]
-                            seg_labels = ctrl.model_canvas.segmentation_labels
-                            if (
-                                ctrl.model_canvas.stardist_overlay_enabled
-                                and seg_labels is not None
-                                and 0 <= y < seg_labels.shape[0]
-                                and 0 <= x < seg_labels.shape[1]
-                            ):
-                                cell_id = seg_labels[y, x]
-                                raw_intensity_str = f"CellID: {cell_id}\nIntensity: {val}"
+                            if is_segmentation_channel(ctrl.model_canvas.image_wrapper):
+                                raw_intensity_str = f"Cell ID: {val}"
                             else:
-                                raw_intensity_str = f"Intensity: {val}"
+                                seg_labels = ctrl.model_canvas.segmentation_labels
+                                if (
+                                    ctrl.model_canvas.stardist_overlay_enabled
+                                    and seg_labels is not None
+                                    and 0 <= y < seg_labels.shape[0]
+                                    and 0 <= x < seg_labels.shape[1]
+                                ):
+                                    cell_id = seg_labels[y, x]
+                                    raw_intensity_str = (
+                                        f"Cell ID: {cell_id}\nIntensity: {val}"
+                                    )
+                                else:
+                                    raw_intensity_str = f"Intensity: {val}"
                         elif (
                             hasattr(self.enc, "small_view")
                             and self == self.enc.small_view
@@ -1006,13 +1008,7 @@ class ImageGraphicsViewUI(QGraphicsView):
                         r, g, b = color.red(), color.green(), color.blue()
                         raw_intensity_str = f"R: {r}, G: {g}, B: {b}"
 
-                    QToolTip.showText(
-                        global_pos,
-                        raw_intensity_str,
-                        self,
-                        self.rect(),
-                        TOOLTIP_PERSIST_MS,
-                    )
+                    self._show_tooltip(global_pos, raw_intensity_str)
 
                 # Update position display in main window
                 if combined_layers:
@@ -1154,9 +1150,16 @@ class ImageGraphicsViewUI(QGraphicsView):
                     self._roi_origin_scene = None
                     return
 
+    def _show_tooltip(self, pos, text):
+        if text == self._last_tooltip_text:
+            QToolTip.hideText()
+        self._last_tooltip_text = text
+        QToolTip.showText(pos, text, self, self.rect(), TOOLTIP_PERSIST_MS)
+
     def leaveEvent(self, event):
         """Cancel ROI dragging when pointer leaves the view."""
         self._cancel_rubber_band_drag()
+        self._last_tooltip_text = None
         QToolTip.hideText()
         super().leaveEvent(event)
 

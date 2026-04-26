@@ -644,6 +644,19 @@ class CellIntensity(QThread):
             np.min(stardist.data),
         )
         self.segmentation_labels = np.asarray(stardist.data, dtype=np.int32)
+        self._remap_labels_spatially()
+
+    def _remap_labels_spatially(self):
+        """Remap cell labels so IDs increase from top-left to bottom-right (row-major)."""
+        regions = regionprops(self.segmentation_labels)
+        if not regions:
+            return
+        regions_sorted = sorted(regions, key=lambda r: (r.centroid[0], r.centroid[1]))
+        max_label = self.segmentation_labels.max()
+        remap = np.zeros(max_label + 1, dtype=np.int32)
+        for new_id, region in enumerate(regions_sorted, start=1):
+            remap[region.label] = new_id
+        self.segmentation_labels = remap[self.segmentation_labels]
 
     def get_filtered_bead_count(self, num_proteins: int):
         if self.bead_data is None or self.segmentation_labels.size == 0:

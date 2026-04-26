@@ -12,7 +12,7 @@ from stardist.models import StarDist2D
 
 from core import ImageStorage, ImageWrapper
 from core.cellprofiler_segmentation import identify_primary_objects
-from core.image_utils import create_lut, scale_adjust
+from core.image_utils import create_lut, scale_adjust, window_image_by_contrast
 from core.project_naming import SEGMENTATION_BASE_NAME, prefix_with_project_name
 from utils import resource_path
 
@@ -124,22 +124,7 @@ class StarDist(QThread):
         return None
 
     def _window_image_by_contrast(self, image: np.ndarray, contrast_min, contrast_max):
-        image_uint8 = scale_adjust(image)
-        cmin = int(np.clip(int(contrast_min), 0, 255))
-        cmax = int(np.clip(int(contrast_max), 0, 255))
-        if cmax < cmin:
-            cmin, cmax = cmax, cmin
-        if cmin == cmax:
-            if cmax < 255:
-                cmax += 1
-            elif cmin > 0:
-                cmin -= 1
-            else:
-                return image_uint8.astype(np.uint16) * 257
-        lut = create_lut(cmin, cmax)
-        contrasted_uint8 = np.clip(cv.LUT(image_uint8, lut), 0, 254, dtype=np.uint8)
-        # Keep segmentation input high-bit depth while preserving display-window semantics.
-        return contrasted_uint8.astype(np.uint16) * 257
+        return window_image_by_contrast(image, contrast_min, contrast_max)
 
     def _resolve_segmentation_input(
         self, params=None, protein_channels=None, np_image=None

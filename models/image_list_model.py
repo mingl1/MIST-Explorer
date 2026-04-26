@@ -85,9 +85,9 @@ class ImageTreeItem(QStandardItem):
         self.storage.update_name(self.data(Qt.ItemDataRole.UserRole), new_text)
 
     def setData(self, value, role=Qt.ItemDataRole.UserRole):
-        super().setData(value, role)
         if role == Qt.ItemDataRole.EditRole:
             self.onTextEdited(value)
+        super().setData(value, role)
 
 
 class ImageTreeModel(QStandardItemModel):

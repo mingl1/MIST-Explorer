@@ -398,7 +398,8 @@ class MainWindow(QMainWindow):
         return True
 
     def closeEvent(self, event):  # type: ignore
-        """Prompt to save unsaved created images before closing."""
+        if self.images_tab is not None:
+            self.images_tab.save_all_images(copy_data=False)
         if self._prompt_save_unsaved_created():
             event.accept()
         else:

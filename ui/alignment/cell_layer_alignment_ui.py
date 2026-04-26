@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core import CellLayerAligner, ImageStorage
+from core.image_utils import window_image_by_contrast
 from ui.alignment.alignment_preview_dialog import AlignmentPreviewDialog
 from ui.processing.segmentation_image_selector import SegmentationImageSelector
 
@@ -66,6 +67,8 @@ class CellLayerAlignmentUI(QWidget):
         self.checkbox_layout = None
         self.need_centering = None
         self.need_gradient_descent = None
+        self.target_use_contrasted_checkbox = None
+        self.unaligned_use_contrasted_checkbox = None
         self.button_layout = None
         self.register_button = None
         self.manually_align_button = None
@@ -102,12 +105,26 @@ class CellLayerAlignmentUI(QWidget):
         target_layout.setContentsMargins(4, 4, 4, 4)
         self.target_image_selector = SegmentationImageSelector(self)
         target_layout.addWidget(self.target_image_selector)
+        self.target_use_contrasted_checkbox = QCheckBox("Use contrasted image (toolbar sliders)")
+        self.target_use_contrasted_checkbox.setChecked(False)
+        self.target_use_contrasted_checkbox.setToolTip(
+            "Use toolbar contrast settings for this image when computing the transform. "
+            "The output channel always uses original pixel values."
+        )
+        target_layout.addWidget(self.target_use_contrasted_checkbox)
 
         self._unaligned_groupbox = QGroupBox("Aligned by this Image", self)
         unaligned_layout = QVBoxLayout(self._unaligned_groupbox)
         unaligned_layout.setContentsMargins(4, 4, 4, 4)
         self.unaligned_image_selector = SegmentationImageSelector(self)
         unaligned_layout.addWidget(self.unaligned_image_selector)
+        self.unaligned_use_contrasted_checkbox = QCheckBox("Use contrasted image (toolbar sliders)")
+        self.unaligned_use_contrasted_checkbox.setChecked(False)
+        self.unaligned_use_contrasted_checkbox.setToolTip(
+            "Use toolbar contrast settings for this image when computing the transform. "
+            "The output channel always uses original pixel values."
+        )
+        unaligned_layout.addWidget(self.unaligned_use_contrasted_checkbox)
 
     def _setup_spacing_layouts(self):
         """Setup layouts for scaling factor input."""
@@ -320,11 +337,30 @@ class CellLayerAlignmentUI(QWidget):
             self.unaligned_uuid,
         )
 
+        target_wrapper = self.target_image[target_ch_name]
+        moving_wrapper = self.unaligned_image[unaligned_ch_name]
+        target_reg = (
+            window_image_by_contrast(
+                target_wrapper.data, target_wrapper.contrast_min, target_wrapper.contrast_max
+            )
+            if self.target_use_contrasted_checkbox.isChecked()
+            else None
+        )
+        moving_reg = (
+            window_image_by_contrast(
+                moving_wrapper.data, moving_wrapper.contrast_min, moving_wrapper.contrast_max
+            )
+            if self.unaligned_use_contrasted_checkbox.isChecked()
+            else None
+        )
+        self.aligner.set_registration_images(target_reg, moving_reg)
+
     def register_images(self):
         """Start the image registration process"""
         if self.target_image is not None and self.unaligned_image is not None:
             self.prepare_aligner()
             self.aligner.progress.emit(0, "Starting alignment...")
+            self.aligner.setStackSize(8 * 1024 * 1024)
             self.aligner.start()
 
     def manually_align_images(self):
