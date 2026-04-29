@@ -3,7 +3,7 @@ Cell layer alignment UI module.
 """
 
 # pylint: disable=no-name-in-module
-from PyQt6.QtCore import QCoreApplication, Qt, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QCoreApplication, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
     QGroupBox,
@@ -64,6 +64,10 @@ class CellLayerAlignmentUI(QWidget):
         self.unaligned_spacing_label = None
         self.unaligned_spacing_x = None
         self.unaligned_spacing_y = None
+        self.fine_alignment_scale_row = None
+        self.fine_alignment_scale_label = None
+        self.fine_alignment_scale_input = None
+        self.memory_estimate_label = None
         self.checkbox_layout = None
         self.need_centering = None
         self.need_gradient_descent = None
@@ -89,6 +93,8 @@ class CellLayerAlignmentUI(QWidget):
         self.main_layout.addWidget(self._target_groupbox)
         self.main_layout.addWidget(self._unaligned_groupbox)
         self.main_layout.addLayout(self.unaligned_spacing_row)
+        self.main_layout.addLayout(self.fine_alignment_scale_row)
+        self.main_layout.addWidget(self.memory_estimate_label)
         self.main_layout.addLayout(self.checkbox_layout)
         self.main_layout.addSpacing(10)
         self.main_layout.addLayout(self.button_layout)
@@ -105,7 +111,9 @@ class CellLayerAlignmentUI(QWidget):
         target_layout.setContentsMargins(4, 4, 4, 4)
         self.target_image_selector = SegmentationImageSelector(self)
         target_layout.addWidget(self.target_image_selector)
-        self.target_use_contrasted_checkbox = QCheckBox("Use contrasted image (toolbar sliders)")
+        self.target_use_contrasted_checkbox = QCheckBox(
+            "Use contrasted image (toolbar sliders)"
+        )
         self.target_use_contrasted_checkbox.setChecked(False)
         self.target_use_contrasted_checkbox.setToolTip(
             "Use toolbar contrast settings for this image when computing the transform. "
@@ -118,7 +126,9 @@ class CellLayerAlignmentUI(QWidget):
         unaligned_layout.setContentsMargins(4, 4, 4, 4)
         self.unaligned_image_selector = SegmentationImageSelector(self)
         unaligned_layout.addWidget(self.unaligned_image_selector)
-        self.unaligned_use_contrasted_checkbox = QCheckBox("Use contrasted image (toolbar sliders)")
+        self.unaligned_use_contrasted_checkbox = QCheckBox(
+            "Use contrasted image (toolbar sliders)"
+        )
         self.unaligned_use_contrasted_checkbox.setChecked(False)
         self.unaligned_use_contrasted_checkbox.setToolTip(
             "Use toolbar contrast settings for this image when computing the transform. "
@@ -137,6 +147,19 @@ class CellLayerAlignmentUI(QWidget):
         self.unaligned_spacing_row.addWidget(self.unaligned_spacing_x)
         self.unaligned_spacing_row.addWidget(QLabel(","))
         self.unaligned_spacing_row.addWidget(self.unaligned_spacing_y)
+
+        self.fine_alignment_scale_row = QHBoxLayout()
+        self.fine_alignment_scale_label = QLabel("Fine Alignment Scale:")
+        self.fine_alignment_scale_input = QLineEdit("0.5")
+        self.fine_alignment_scale_row.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.fine_alignment_scale_row.addWidget(self.fine_alignment_scale_label)
+        self.fine_alignment_scale_row.addWidget(self.fine_alignment_scale_input)
+
+        self.memory_estimate_label = QLabel(
+            "Estimated extra memory during alignment: select images to calculate"
+        )
+        self.memory_estimate_label.setWordWrap(True)
+        self.memory_estimate_label.setStyleSheet("color: gray;")
 
     def _setup_checkboxes(self):
         """Setup checkboxes for alignment options."""
@@ -177,6 +200,7 @@ class CellLayerAlignmentUI(QWidget):
     def _get_button_style(self):
         """Return stylesheet for registration buttons."""
         from ui.theme import ThemeManager
+
         c = ThemeManager.instance().get_current()
         return f"""
             QPushButton {{
@@ -198,19 +222,33 @@ class CellLayerAlignmentUI(QWidget):
         """Set up the connections to the aligner thread"""
         self.aligner.progress.connect(self._handle_progress)
         self.aligner.error.connect(self._handle_error)
-        self.aligner.snapshot.connect(self._handle_snapshot)
 
         self.target_image_selector.image_changed.connect(self._on_target_image_changed)
+        self.target_image_selector.channel_changed.connect(
+            lambda _channel: self._update_memory_estimate()
+        )
         self.unaligned_image_selector.image_changed.connect(
             self._on_unaligned_image_changed
         )
+        self.unaligned_image_selector.channel_changed.connect(
+            lambda _channel: self._update_memory_estimate()
+        )
 
         self.aligner.error.connect(self.errorSignal)
+
+        self.unaligned_spacing_x.textChanged.connect(self._update_memory_estimate)
+        self.unaligned_spacing_y.textChanged.connect(self._update_memory_estimate)
+        self.fine_alignment_scale_input.textChanged.connect(
+            self._update_memory_estimate
+        )
 
         self.need_centering.stateChanged.connect(
             lambda state: self.aligner.skip_coarse_alignment(
                 state == Qt.CheckState.Checked.value
             )
+        )
+        self.need_centering.stateChanged.connect(
+            lambda _state: self._update_memory_estimate()
         )
 
         self.need_gradient_descent.stateChanged.connect(
@@ -218,15 +256,9 @@ class CellLayerAlignmentUI(QWidget):
                 state == Qt.CheckState.Checked.value
             )
         )
-
-    @pyqtSlot(dict)
-    def _handle_snapshot(self, snapshot_data):
-        """Handle snapshot data from aligner."""
-        snapshot_dialog = AlignmentPreviewDialog(
-            snapshot_data,
-            False,
+        self.need_gradient_descent.stateChanged.connect(
+            lambda _state: self._update_memory_estimate()
         )
-        snapshot_dialog.exec()
 
     def _on_target_image_changed(self, uuid: str):
         """Called when user picks a different reference image in the selector."""
@@ -238,6 +270,7 @@ class CellLayerAlignmentUI(QWidget):
         self.target_name = item["name"]
         self.target_image_selector.set_channels(item["data"])
         self._check_can_register()
+        self._update_memory_estimate()
 
     def _on_unaligned_image_changed(self, uuid: str):
         """Called when user picks a different moving image in the selector."""
@@ -249,6 +282,7 @@ class CellLayerAlignmentUI(QWidget):
         self.unaligned_name = item["name"]
         self.unaligned_image_selector.set_channels(item["data"])
         self._check_can_register()
+        self._update_memory_estimate()
 
     def _retranslate_ui(self):
         """Retranslate UI components."""
@@ -273,6 +307,7 @@ class CellLayerAlignmentUI(QWidget):
         self.target_image_selector.set_channels(obj)
         self.target_image_selector.set_current_channel_silent(f"Channel {channel + 1}")
         self._check_can_register()
+        self._update_memory_estimate()
 
     # pylint: disable=unused-argument
     def set_unaligned_image(self, item_uuid, is_leaf, channel):
@@ -289,6 +324,7 @@ class CellLayerAlignmentUI(QWidget):
             f"Channel {channel + 1}"
         )
         self._check_can_register()
+        self._update_memory_estimate()
 
     def _check_can_register(self):
         """Check if both images are loaded and enable/disable register button"""
@@ -297,6 +333,71 @@ class CellLayerAlignmentUI(QWidget):
         )
         self.register_button.setEnabled(can_register)
         self.manually_align_button.setEnabled(can_register)
+
+    @staticmethod
+    def _format_bytes(num_bytes: int) -> str:
+        """Format bytes using binary units for a compact UI estimate."""
+        value = float(num_bytes)
+        for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+            if value < 1024 or unit == "TiB":
+                if unit == "B":
+                    return f"{int(value)} {unit}"
+                return f"{value:.1f} {unit}"
+            value /= 1024.0
+        return f"{value:.1f} TiB"
+
+    def _selected_channel_array(self, image_dict, selector):
+        """Return the currently selected channel array, or None if unavailable."""
+        if image_dict is None:
+            return None
+        channel_name = selector.current_channel()
+        wrapper = image_dict.get(channel_name)
+        if wrapper is None:
+            return None
+        return wrapper.data
+
+    def _update_memory_estimate(self):
+        """Refresh the estimated peak memory subtext."""
+        target_array = self._selected_channel_array(
+            self.target_image, self.target_image_selector
+        )
+        moving_array = self._selected_channel_array(
+            self.unaligned_image, self.unaligned_image_selector
+        )
+        if target_array is None or moving_array is None:
+            self.memory_estimate_label.setText(
+                "Estimated peak memory during alignment: select images to calculate"
+            )
+            return
+
+        try:
+            scale = (
+                float(self.unaligned_spacing_x.text().strip()),
+                float(self.unaligned_spacing_y.text().strip()),
+            )
+            fine_scale = float(self.fine_alignment_scale_input.text().strip())
+            if min(*scale, fine_scale) <= 0:
+                raise ValueError
+        except ValueError:
+            self.memory_estimate_label.setText(
+                "Estimated peak memory during alignment: enter valid positive scale values"
+            )
+            return
+
+        estimated_bytes = self.aligner.estimate_peak_memory_bytes(
+            target_shape=target_array.shape,
+            moving_shape=moving_array.shape,
+            target_dtype=target_array.dtype,
+            moving_dtype=moving_array.dtype,
+            scale=scale,
+            fine_scale=fine_scale,
+            coarse_scale=self.aligner.coarse_scale,
+            use_gradient_descent=not self.need_gradient_descent.isChecked(),
+            skip_coarse_alignment=self.need_centering.isChecked(),
+        )
+        self.memory_estimate_label.setText(
+            f"Estimated peak memory during alignment: ~{self._format_bytes(estimated_bytes)}"
+        )
 
     def prepare_aligner(self):
         """Prepare the aligner with the current settings"""
@@ -316,10 +417,14 @@ class CellLayerAlignmentUI(QWidget):
                 float(self.unaligned_spacing_x.text().strip()),
                 float(self.unaligned_spacing_y.text().strip()),
             )
+            fine_scale = float(self.fine_alignment_scale_input.text().strip())
+            if fine_scale <= 0:
+                raise ValueError("fine_scale")
             self.aligner.set_scale(scale)
+            self.aligner.set_fine_scale(fine_scale)
         except ValueError:
             self._handle_error(
-                "Invalid scale values. Please enter numeric values for x and y."
+                "Invalid scale values. Please enter numeric values for x, y, and fine alignment scale. Fine alignment scale must be greater than 0."
             )
             return
 
@@ -341,14 +446,18 @@ class CellLayerAlignmentUI(QWidget):
         moving_wrapper = self.unaligned_image[unaligned_ch_name]
         target_reg = (
             window_image_by_contrast(
-                target_wrapper.data, target_wrapper.contrast_min, target_wrapper.contrast_max
+                target_wrapper.data,
+                target_wrapper.contrast_min,
+                target_wrapper.contrast_max,
             )
             if self.target_use_contrasted_checkbox.isChecked()
             else None
         )
         moving_reg = (
             window_image_by_contrast(
-                moving_wrapper.data, moving_wrapper.contrast_min, moving_wrapper.contrast_max
+                moving_wrapper.data,
+                moving_wrapper.contrast_min,
+                moving_wrapper.contrast_max,
             )
             if self.unaligned_use_contrasted_checkbox.isChecked()
             else None

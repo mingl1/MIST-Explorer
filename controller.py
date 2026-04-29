@@ -256,15 +256,17 @@ class Controller:
                 transf_matrix = moving_image
                 # print(transf_matrix)
                 _cv2_supported_dtypes = {np.uint8, np.uint16, np.int16, np.float32, np.float64}
+                target_shape = aligned_data.get("target_shape")
                 for layer_key in layer:
-                    # print(L)
-                    height, width = data[layer_key].data.shape[-2:]
-                    # print(h,w)
                     img = item["data"][layer_key].data
                     original_dtype = img.dtype
                     if img.dtype not in _cv2_supported_dtypes:
                         img = img.astype(np.float32)
-                    warped = cv2.warpAffine(img, transf_matrix, (width, height))  # pylint: disable=no-member
+                    if target_shape is not None:
+                        out_h, out_w = target_shape[:2]
+                    else:
+                        out_h, out_w = data[layer_key].data.shape[-2:]
+                    warped = cv2.warpAffine(img, transf_matrix, (out_w, out_h))  # pylint: disable=no-member
                     aligned_data["data"][layer_key] = warped.astype(original_dtype) if warped.dtype != original_dtype else warped
             filename = item["name"]
             if isinstance(layer, list):

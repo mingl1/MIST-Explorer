@@ -6,7 +6,7 @@ import typing
 import numpy as np
 import pyqtgraph as pg
 import tifffile
-from PyQt6.QtCore import QPointF, QRect, QRectF, QSize, Qt, pyqtSignal
+from PyQt6.QtCore import QPoint, QPointF, QRect, QRectF, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import (
     QBrush,
     QColor,
@@ -16,6 +16,7 @@ from PyQt6.QtGui import (
     QIcon,
     QImage,
     QMouseEvent,
+    QPalette,
     QPainter,
     QPen,
     QPixmap,
@@ -28,15 +29,14 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QToolTip,
     QWidget,
 )
 
+from core.project_naming import is_segmentation_channel
 from ui.canvas.items import CropRectItem, ResizableRect
 from ui.lassos.CircleLasso import CircleLasso
 from ui.lassos.PolyLasso import PolyLasso
 from ui.lassos.RectLasso import RectLasso
-from core.project_naming import is_segmentation_channel
 from utils import resource_path
 
 logger = logging.getLogger(__name__)
@@ -44,7 +44,8 @@ logger = logging.getLogger(__name__)
 if typing.TYPE_CHECKING:
     from ui.app import MainWindow
 
-TOOLTIP_PERSIST_MS = 0
+TOOLTIP_CURSOR_OFFSET = QPoint(16, 24)
+TOOLTIP_BOX_PADDING_PX = 6
 
 pg.setConfigOption("imageAxisOrder", "row-major")
 pg.setConfigOption("useOpenGL", True)
@@ -139,6 +140,8 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.np_channels = None
         self.pixel_highlight = None
         self._last_tooltip_text = None
+        self._last_tooltip_pos = None
+        self._tooltip_label = None
         self.setup_ui()
         self.get_scene().addItem(self.pixmap_item)
         self.pixmap_item.show()
@@ -1028,7 +1031,7 @@ class ImageGraphicsViewUI(QGraphicsView):
                 #     self.reference_view.highlight_pixel(x, y)
             else:
                 self.enc.update_mouse_position_label("")
-                QToolTip.hideText()
+                self._hide_tooltip()
                 # Hide pixel highlight when outside image bounds
                 self.hide_pixel_highlight()
                 # if self.reference_view:
@@ -1150,17 +1153,69 @@ class ImageGraphicsViewUI(QGraphicsView):
                     self._roi_origin_scene = None
                     return
 
+    def _ensure_tooltip_label(self):
+        if self._tooltip_label is not None:
+            return self._tooltip_label
+
+        viewport = self.viewport()
+        tooltip = QLabel(viewport)
+        tooltip.setObjectName("canvasTooltip")
+        tooltip.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        tooltip.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
+        )
+        tooltip.setMargin(TOOLTIP_BOX_PADDING_PX)
+        tooltip.setIndent(0)
+        tooltip.setWordWrap(False)
+        tooltip.hide()
+
+        palette = viewport.palette()
+        bg = palette.color(QPalette.ColorRole.ToolTipBase).name()
+        fg = palette.color(QPalette.ColorRole.ToolTipText).name()
+        border = palette.color(QPalette.ColorRole.Mid).name()
+        tooltip.setStyleSheet(
+            "QLabel#canvasTooltip {"
+            f"background-color: {bg};"
+            f"color: {fg};"
+            f"border: 1px solid {border};"
+            f"padding: {TOOLTIP_BOX_PADDING_PX}px;"
+            "}"
+        )
+        self._tooltip_label = tooltip
+        return tooltip
+
     def _show_tooltip(self, pos, text):
-        if text == self._last_tooltip_text:
-            QToolTip.hideText()
+        tooltip = self._ensure_tooltip_label()
+        local_pos = self.viewport().mapFromGlobal(pos) + TOOLTIP_CURSOR_OFFSET
+
+        if text == self._last_tooltip_text and local_pos == self._last_tooltip_pos:
+            return
+
         self._last_tooltip_text = text
-        QToolTip.showText(pos, text, self, self.rect(), TOOLTIP_PERSIST_MS)
+        self._last_tooltip_pos = local_pos
+
+        tooltip.setText(text)
+        tooltip.adjustSize()
+
+        max_x = max(0, self.viewport().width() - tooltip.width())
+        max_y = max(0, self.viewport().height() - tooltip.height())
+        tooltip.move(
+            max(0, min(local_pos.x(), max_x)),
+            max(0, min(local_pos.y(), max_y)),
+        )
+        tooltip.raise_()
+        tooltip.show()
+
+    def _hide_tooltip(self):
+        self._last_tooltip_text = None
+        self._last_tooltip_pos = None
+        if self._tooltip_label is not None:
+            self._tooltip_label.hide()
 
     def leaveEvent(self, event):
         """Cancel ROI dragging when pointer leaves the view."""
         self._cancel_rubber_band_drag()
-        self._last_tooltip_text = None
-        QToolTip.hideText()
+        self._hide_tooltip()
         super().leaveEvent(event)
 
     # pylint: disable=invalid-name
