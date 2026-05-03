@@ -485,10 +485,31 @@ class CellLayerAlignmentUI(QWidget):
         target_ch_name = self.target_image_selector.current_channel()
         unaligned_ch_name = self.unaligned_image_selector.current_channel()
 
+        target_wrapper = self.target_image[target_ch_name]
+        moving_wrapper = self.unaligned_image[unaligned_ch_name]
+        target_display = (
+            window_image_by_contrast(
+                target_wrapper.data,
+                target_wrapper.contrast_min,
+                target_wrapper.contrast_max,
+            )
+            if self.target_use_contrasted_checkbox.isChecked()
+            else target_wrapper.data
+        )
+        moving_display = (
+            window_image_by_contrast(
+                moving_wrapper.data,
+                moving_wrapper.contrast_min,
+                moving_wrapper.contrast_max,
+            )
+            if self.unaligned_use_contrasted_checkbox.isChecked()
+            else moving_wrapper.data
+        )
+
         preview_dialog = AlignmentPreviewDialog(
             {
-                "target_image": self.target_image[target_ch_name].data,
-                "aligned_image": self.unaligned_image[unaligned_ch_name].data,
+                "target_image": target_display,
+                "aligned_image": moving_display,
             },
             True,
         )

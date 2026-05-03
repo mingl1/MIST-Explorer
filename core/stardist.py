@@ -475,9 +475,26 @@ class StarDist(QThread):
             f"for axes {axes}."
         )
 
+    def _sort_labels_by_centroid(self, labels: np.ndarray) -> np.ndarray:
+        from scipy.ndimage import center_of_mass
+
+        unique = np.unique(labels)
+        unique = unique[unique != 0]
+        if len(unique) == 0:
+            return labels
+        centroids = center_of_mass(np.ones_like(labels, dtype=np.float32), labels, unique)
+        order = np.lexsort(([c[1] for c in centroids], [c[0] for c in centroids]))
+        remap = np.zeros(int(labels.max()) + 1, dtype=np.int32)
+        for new_id, old_id in enumerate(unique[order], start=1):
+            remap[old_id] = new_id
+        return remap[labels]
+
     def _emit_segmentation_result(
         self, project_name, is_temp_project, source_uuid=None
     ):
+        self.stardist_labels_grayscale = self._sort_labels_by_centroid(
+            self.stardist_labels_grayscale
+        )
         result = ImageWrapper(
             self.stardist_labels_grayscale, name="Channel 1", cmap="gray"
         )
