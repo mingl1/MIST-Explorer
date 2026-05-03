@@ -15,6 +15,7 @@ from uuid import UUID as UUID_Type
 import cv2
 import numpy as np
 import tifffile as tiff
+
 # Third-party imports
 from PIL import Image
 
@@ -49,7 +50,7 @@ from core.image_utils import (
 
 # Local/project imports
 from core.metadata_utils import parse_metadata
-from core.project_naming import SEGMENTATION_BASE_NAME, is_segmentation_channel, is_segmentation_name
+from core.project_naming import SEGMENTATION_BASE_NAME, is_segmentation_channel
 from core.Worker import Worker
 
 logger = logging.getLogger("core.canvas")
@@ -275,9 +276,7 @@ class ImageStorage:
                 del self.image_list[str(image_id)]
                 gc.collect()
 
-    def update_data(
-        self, image_id, channel="Channel 1", new_wrapper=None
-    ):
+    def update_data(self, image_id, channel="Channel 1", new_wrapper=None):
         with self._data_lock:
             image_id = str(image_id)
             if image_id in self.image_list:
@@ -351,7 +350,7 @@ class ImageWrapper:
         return arr
 
     def __repr__(self):
-        return f"ImageWrapper(name={self.name}, shape={self.data.shape}, dtype={self.data.dtype}, cmap={self.cmap})"
+        return f"ImageWrapper(name={self.name}, shape={self.data.shape}, dtype={self.data.dtype}, cmap={self.cmap}, contrast=({self.contrast_min}, {self.contrast_max}))"
 
     def __str__(self):
         return self.__repr__()
@@ -598,6 +597,7 @@ class BaseGraphicsView(QWidget):
             return ret
         elif isinstance(data, np.ndarray):
             # shouldn't be used
+            logger.debug("Using single channel canvas replacement")
             return self._replace_canvas_single(
                 data, subsample_for_emit, max_display_size
             )
@@ -615,8 +615,6 @@ class BaseGraphicsView(QWidget):
     ) -> np.ndarray:
         """Replace canvas with multichannel image data - target channel first, others in background."""
         self._prepare_channels_for_new_image()
-
-        # Initialize thread lock for background processing
 
         # Process target channel first for immediate display
         if target_channel not in channels_data:
@@ -636,8 +634,8 @@ class BaseGraphicsView(QWidget):
         # )
 
         # Emit target channel immediately for display
-        emit_data = {target_channel: target_image_wrapper.data}
-        self._update_number_of_channels(emit_data, subsample_for_emit)
+        # emit_data = {target_channel: target_image_wrapper.data}
+        # self._update_number_of_channels(emit_data, subsample_for_emit)
 
         # Process remaining channels in background if there are any
         remaining_channels = {
@@ -764,6 +762,7 @@ class BaseGraphicsView(QWidget):
         if replace_image_wrapper:
             logger.debug("stored image_wrapper")
             self.image_wrapper = image_wrapper.copy()
+            logger.debug(self.image_wrapper)
 
     def _prepare_display_image(
         self,
@@ -916,12 +915,15 @@ class ReferenceGraphicsView(BaseGraphicsView):
     def on_channel_changed(self, channel_index: int):
         """Update stored reference channel and notify badge when user navigates via arrows."""
         self.current_channel = channel_index - 1  # keep 0-indexed model in sync
-        self.storage.add_data("reference_channel", {"value": f"Channel {channel_index}"})
+        self.storage.add_data(
+            "reference_channel", {"value": f"Channel {channel_index}"}
+        )
         self.reference_channel_updated.emit()
 
     def set_pixmap(self, image):
         if isinstance(image, np.ndarray) and image.dtype != np.uint8:
             image = scale_adjust(image)
+
         qimage = to_pixmap(image)
         self.update_reference.emit(qimage, self.current_channel + 1)
 
@@ -1005,10 +1007,7 @@ class ImageGraphicsView(BaseGraphicsView):
         if wrapper is None:
             return "gray" if fallback_cmap == "label_image" else fallback_cmap
 
-        if (
-            is_segmentation_channel(wrapper)
-            and wrapper.cmap == "label_image"
-        ):
+        if is_segmentation_channel(wrapper) and wrapper.cmap == "label_image":
             resolved_cmap = self._resolve_stardist_virtual_cmap(fallback_cmap)
             wrapper.cmap = resolved_cmap
             return resolved_cmap
@@ -1351,15 +1350,10 @@ class ImageGraphicsView(BaseGraphicsView):
             logger.warning("No image loaded — update ignored")
             return None
 
-        # update the color map
-        # print(cmap_text)
         if cmap_text == "default":
             cmap_text = self.image_wrapper.cmap
         logger.debug(f"Changing cmap to {cmap_text}")
-        # updates cmap ui but also updated in change_cmap, mainly for
-        # label_image
         self.update_cmap.emit(cmap_text)
-        # update the contrast
         assert self.image_wrapper is not None, "Updating empty image wrapper"
         contrast_min, contrast_max = (
             self.image_wrapper.contrast_min,
@@ -1393,6 +1387,25 @@ class ImageGraphicsView(BaseGraphicsView):
         image_to_display = self._apply_stardist_overlay(image_to_display)
         if self_emit:
             self.set_pixmap(image_to_display)
+
+        if self.uuid is not None:
+            item = self.storage.get_data(str(self.uuid))
+            if item is not None:
+                logger.debug(
+                    "Updating {} , channel: {}".format(
+                        str(self.uuid), self.current_channel
+                    )
+                )
+                channel_num = f"Channel {self.current_channel + 1}"
+                stored_wrapper = item.get("data", {}).get(channel_num)
+                if stored_wrapper is not None:
+                    logger.debug(
+                        "Updating stored wrapper contrast and cmap for %s", channel_num
+                    )
+                    stored_wrapper.contrast_min = self.image_wrapper.contrast_min
+                    stored_wrapper.contrast_max = self.image_wrapper.contrast_max
+                    stored_wrapper.cmap = self.image_wrapper.cmap
+
         return image_to_display
 
     def update_contrast(self, values):
@@ -1478,8 +1491,9 @@ class ImageGraphicsView(BaseGraphicsView):
                 target_channel,
             )
 
-        self.image_worker.signal.connect(self.set_pixmap)
+        # self.image_worker.signal.connect(self.set_pixmap)
         self.image_worker.error.connect(self.on_error)
+        self.image_worker.finished.connect(self.update_image)
         self.image_worker.finished.connect(self.image_worker.quit)
         self.image_worker.finished.connect(self.image_worker.deleteLater)
         self.image_worker.finished.connect(self._process_next_worker)
@@ -1538,7 +1552,7 @@ class ImageGraphicsView(BaseGraphicsView):
                         str(self.uuid),
                         channel_name,
                         wrapper,
-                                )
+                    )
             self.image_wrapper = self.working_channels.get(
                 channel_num, ImageWrapper(np.array([]), "")
             )
@@ -1578,6 +1592,9 @@ class ImageGraphicsView(BaseGraphicsView):
         display_channel_data = target_image_wrapper.data
         self.update_cmap.emit(
             self._effective_channel_cmap(target_channel, previous_cmap)
+        )
+        self.change_slider.emit(
+            (target_image_wrapper.contrast_min, target_image_wrapper.contrast_max)
         )
 
         # Emit target channel immediately for display
@@ -1643,9 +1660,9 @@ class ImageGraphicsView(BaseGraphicsView):
         for channel_num in channels:
             arr = result[channel_num].data
             if combined_mask is None:
-                combined_mask = (arr > 0)
+                combined_mask = arr > 0
             else:
-                combined_mask |= (arr > 0)
+                combined_mask |= arr > 0
 
         if combined_mask is not None:
             coords = cv2.findNonZero(combined_mask.astype(np.uint8))
@@ -1653,7 +1670,7 @@ class ImageGraphicsView(BaseGraphicsView):
                 x, y, w_sub, h_sub = cv2.boundingRect(coords)
                 for channel_num in channels:
                     result[channel_num].data = np.ascontiguousarray(
-                        result[channel_num].data[y:y + h_sub, x:x + w_sub]
+                        result[channel_num].data[y : y + h_sub, x : x + w_sub]
                     )
 
         return current_uuid, result
@@ -1689,8 +1706,7 @@ class ImageGraphicsView(BaseGraphicsView):
         if result is not None:
             for channel_name, wrapper in result.items():
                 if "Channel" in channel_name:
-                    self.storage.update_data(
-                        result_uuid, channel_name, wrapper                    )
+                    self.storage.update_data(result_uuid, channel_name, wrapper)
             if self.same_uuid(result_uuid):
                 self.working_channels = self.storage.get_data(result_uuid)["data"]
                 channel_key = f"Channel {self.current_channel + 1}"
@@ -1744,7 +1760,13 @@ class ImageGraphicsView(BaseGraphicsView):
 
         self.update_contrast((int(round(vmin)), int(round(vmax))))
 
-    def blur_layer(self, blur_percentage: float, confirm=False, source_uuid=None, source_channel=None):
+    def blur_layer(
+        self,
+        blur_percentage: float,
+        confirm=False,
+        source_uuid=None,
+        source_channel=None,
+    ):
         """start gaussian blur in a separate thread"""
         if confirm and self.blur_worker is not None and self.blur_worker.isRunning():
             self.blur_worker.wait()
@@ -1752,13 +1774,21 @@ class ImageGraphicsView(BaseGraphicsView):
             # cancel previous worker if still running
             self.blur_worker.terminate()
             self.blur_worker.wait()
-        self.blur_worker = Worker(self.blur_layer_task, blur_percentage, confirm, source_uuid, source_channel)
+        self.blur_worker = Worker(
+            self.blur_layer_task, blur_percentage, confirm, source_uuid, source_channel
+        )
         # self.blur_worker.signal.connect() # result is rotated_channels
         self.blur_worker.error.connect(self.on_error)
         self.blur_worker.finished.connect(self.blur_worker.quit)
         self.blur_worker.start()
 
-    def blur_layer_task(self, blur_percentage: float, confirm=False, source_uuid=None, source_channel=None):
+    def blur_layer_task(
+        self,
+        blur_percentage: float,
+        confirm=False,
+        source_uuid=None,
+        source_channel=None,
+    ):
         """
         Applies Gaussian blur to the specified image channel and subtracts
         the specified percentage of the blurred image from the original.
@@ -1870,8 +1900,7 @@ class ImageGraphicsView(BaseGraphicsView):
         for channel_name, wrapper in self.working_channels.items():
             if "Channel" in channel_name:
                 wrapper.data = cv2.flip(wrapper.data, 1)
-                self.storage.update_data(
-                    self.uuid, channel_name, wrapper                )
+                self.storage.update_data(self.uuid, channel_name, wrapper)
         channel_key = f"Channel {self.current_channel + 1}"
         if channel_key in self.working_channels:
             self.image_wrapper = self.working_channels[channel_key]
@@ -1886,8 +1915,7 @@ class ImageGraphicsView(BaseGraphicsView):
         for channel_name, wrapper in self.working_channels.items():
             if "Channel" in channel_name:
                 wrapper.data = cv2.flip(wrapper.data, 0)
-                self.storage.update_data(
-                    self.uuid, channel_name, wrapper                )
+                self.storage.update_data(self.uuid, channel_name, wrapper)
         channel_key = f"Channel {self.current_channel + 1}"
         if channel_key in self.working_channels:
             self.image_wrapper = self.working_channels[channel_key]
@@ -2051,5 +2079,3 @@ class ImageDialog(QDialog):
 
 def contrast_key_from_wrapper(wrapper: ImageWrapper):
     return (wrapper.contrast_min, wrapper.contrast_max)
-
-
