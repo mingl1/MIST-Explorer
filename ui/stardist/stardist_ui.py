@@ -267,6 +267,7 @@ class StarDistUI(QWidget):
         if previous_channel in channel_keys:
             self.stardist_channel_selector.setCurrentText(previous_channel)
         self.overlay_toggle_button.setChecked(False)
+        self.cp_advanced.set_smoothing_enabled(len(channel_keys) > 1)
         self.__retranslate_UI()
 
     def clearChannelSelector(self):

@@ -354,6 +354,13 @@ class CellProfilerAdvancedSettings(QWidget):
         for row in self._adaptive_rows:
             self._set_layout_visible(row, show_adaptive)
 
+    def set_smoothing_enabled(self, enabled: bool):
+        self.threshold_smoothing_scale.setEnabled(enabled)
+        self.tss_label.setEnabled(enabled)
+        self.automatic_smoothing.setEnabled(enabled)
+        self.smoothing_filter_size.setEnabled(enabled)
+        self.sfs_label.setEnabled(enabled)
+
     def _set_layout_visible(self, layout, visible):
         """Show/hide all widgets in a layout."""
         if isinstance(layout, QWidget):
