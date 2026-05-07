@@ -517,6 +517,9 @@ class AlignmentPreviewDialog(QDialog):
         self.landmark_cancel_button.setToolTip("Cancel landmark mode (Esc)")
         self.landmark_status_label = QLabel("")
 
+        self.import_landmarks_btn = QPushButton("Import Landmarks JSON")
+        self.import_landmarks_btn.clicked.connect(self._import_landmarks_from_json)
+
         self.export_landmarks_btn = QPushButton("Export Landmarks JSON")
         self.export_landmarks_btn.setEnabled(False)
         self.export_landmarks_btn.clicked.connect(self._export_landmarks_to_json)
@@ -542,6 +545,7 @@ class AlignmentPreviewDialog(QDialog):
         self.landmark_layout.addStretch()
         self.landmark_layout.addWidget(ransac_threshold_label)
         self.landmark_layout.addWidget(self.landmark_ransac_threshold_spinbox)
+        self.landmark_layout.addWidget(self.import_landmarks_btn)
         self.landmark_layout.addWidget(self.export_landmarks_btn)
 
     def _set_transform_controls_enabled(self, enabled: bool) -> None:
@@ -693,7 +697,7 @@ class AlignmentPreviewDialog(QDialog):
         has_pending = self._lm_pending_ref is not None
         self.landmark_undo_button.setEnabled(self._lm_mode and (bool(n) or has_pending))
         self.landmark_cancel_button.setEnabled(self._lm_mode)
-        has_data = bool(n) or bool(self._tps_sequence)
+        has_data = bool(n) or (self._ransac_M is not None)
         self.export_landmarks_btn.setEnabled(has_data)
 
         if not self._lm_mode:
@@ -726,22 +730,51 @@ class AlignmentPreviewDialog(QDialog):
             self.landmark_button.setText(f"Need {3 - n} more pair(s)")
             self.landmark_button.setEnabled(False)
 
+    def _bake_ui_transform(self, qt_matrix: np.ndarray, w: int, h: int) -> None:
+        """Apply the current Qt overlay transform into aligned_image and compose into _ransac_M."""
+        identity = np.array([[1, 0, 0], [0, 1, 0]], dtype=np.float32)
+        if np.allclose(qt_matrix, identity):
+            return
+        original_dtype = self.aligned_image.dtype
+        _cv2_ok = {np.uint8, np.uint16, np.int16, np.float32, np.float64}
+        bake_src = self.aligned_image if self.aligned_image.dtype in _cv2_ok else self.aligned_image.astype(np.float32)
+        baked = cv2.warpAffine(bake_src, qt_matrix, (w, h), flags=cv2.INTER_LINEAR, borderValue=0)
+        self.aligned_image = baked.astype(original_dtype) if baked.dtype != original_dtype else baked
+        qt_3x3 = np.vstack([qt_matrix, [0, 0, 1]])
+        if self._ransac_M is None:
+            self._ransac_M = qt_matrix
+        else:
+            prev_3x3 = np.vstack([self._ransac_M, [0, 0, 1]])
+            self._ransac_M = (qt_3x3 @ prev_3x3)[:2, :]
+
     def _confirm_ransac_affine(self) -> None:
         if len(self._lm_src_pts) < 3:
             return
         src = np.array(self._lm_src_pts, dtype=np.float64)
         dst = np.array(self._lm_dst_pts, dtype=np.float64)
         threshold = self.landmark_ransac_threshold_spinbox.value()
+
+        # Bake any pending UI affine into aligned_image before RANSAC estimation
+        h, w = self.target_image.shape[:2]
+        qt_matrix = transform_to_matrix(self.image_view.moving_item.transform())
+        self._bake_ui_transform(qt_matrix, w, h)
+
         try:
             warped, meta = apply_ransac_affine_warp(
                 self.aligned_image, src, dst,
                 ransac_threshold=threshold,
-                out_shape=self.target_image.shape[:2],
+                out_shape=(h, w),
             )
         except Exception as exc:
             QMessageBox.warning(self, "RANSAC Affine Error", str(exc))
             return
-        self._ransac_M = meta["M"]
+        new_M = meta["M"]
+        if self._ransac_M is None:
+            self._ransac_M = new_M
+        else:
+            prev_3x3 = np.vstack([self._ransac_M, [0, 0, 1]])
+            new_3x3 = np.vstack([new_M, [0, 0, 1]])
+            self._ransac_M = (new_3x3 @ prev_3x3)[:2, :]
         self.aligned_image = warped
         self.create_direct_overlay()
         self.image_view.moving_item.resetTransform()
@@ -759,6 +792,51 @@ class AlignmentPreviewDialog(QDialog):
         self.landmark_status_label.setText(
             f"Inliers: {meta['inliers']}/{len(src)}  reproj: {meta['reprojection_px']:.1f}px"
         )
+
+    def _import_landmarks_from_json(self) -> None:
+        import json
+
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import Landmarks", "", "JSON Files (*.json)"
+        )
+        if not path:
+            return
+        try:
+            with open(path) as f:
+                data = json.load(f)
+            batch = data["current_batch"]
+            landmarks = batch["landmarks"]
+            threshold = float(batch.get("ransac_threshold_px", 5.0))
+        except Exception as exc:
+            QMessageBox.warning(self, "Import Error", f"Could not parse landmarks file:\n{exc}")
+            return
+
+        if not landmarks:
+            QMessageBox.warning(self, "Import Error", "No landmarks found in file.")
+            return
+
+        if not self._lm_mode:
+            self._start_landmark_mode()
+
+        self.landmark_ransac_threshold_spinbox.setValue(threshold)
+
+        for lm in landmarks:
+            src = lm["src"]   # [col, row] in target/reference image (scene coords)
+            dst = lm["dst"]   # [col, row] in moving image (item-local coords)
+            n = len(self._lm_src_pts) + 1
+
+            ref_marker = self._add_scene_marker(src[0], src[1], n, QColor(255, 80, 80))
+            self._lm_ref_markers.append(ref_marker)
+            self._lm_src_pts.append((src[0], src[1]))
+
+            mov_scene = self.image_view.moving_item.mapToScene(QPointF(dst[0], dst[1]))
+            mov_marker = self._add_scene_marker(mov_scene.x(), mov_scene.y(), n, QColor(80, 210, 80))
+            self._lm_mov_markers.append(mov_marker)
+            self._lm_dst_pts.append((dst[0], dst[1]))
+
+        self._lm_pending_ref = None
+        self._lm_waiting_for = "reference"
+        self._update_landmark_ui()
 
     def _export_landmarks_to_json(self) -> None:
         import datetime

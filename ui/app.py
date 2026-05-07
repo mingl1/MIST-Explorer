@@ -30,6 +30,10 @@ from utils import resource_path
 logger = logging.getLogger(__name__)
 
 
+def should_use_custom_windows_chrome() -> bool:
+    return False
+
+
 class _ResizeDragButton(QPushButton):
     """Pill button that forwards mouse events to the SidebarHandle, reusing its drag-to-resize logic."""
 
@@ -161,9 +165,6 @@ class MainWindow(QMainWindow):
 
         self.current_project_path = project_path
 
-        if sys.platform == "win32":
-            self.drag_pos = QPoint()
-
         self.args = argparse.Namespace(
             image=getattr(cli_args, "image", None),
             reference=getattr(cli_args, "reference", None),
@@ -198,6 +199,7 @@ class MainWindow(QMainWindow):
 
     def _init_attributes(self):
         """Initialize instance attributes."""
+        self.custom_windows_chrome_enabled: bool = False
         self.drag_pos: Optional[QPoint] = None
         self.menu_bar: Optional[MenuBarUI] = None
         self.tool_bar: Optional[ToolBarUI] = None
