@@ -10,8 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 # pylint: disable=no-name-in-module
-from PyQt6.QtCore import (QCoreApplication, QEvent, QMetaObject, QPoint,
-                          QPointF, QSize, Qt)
+from PyQt6.QtCore import (QCoreApplication, QMetaObject, QPointF, QSize, Qt)
 from PyQt6.QtGui import (QIcon, QImageReader, QKeySequence, QMouseEvent,
                          QShortcut)
 from PyQt6.QtWidgets import (QFileDialog, QGroupBox, QHBoxLayout, QLabel,
@@ -200,7 +199,6 @@ class MainWindow(QMainWindow):
     def _init_attributes(self):
         """Initialize instance attributes."""
         self.custom_windows_chrome_enabled: bool = False
-        self.drag_pos: Optional[QPoint] = None
         self.menu_bar: Optional[MenuBarUI] = None
         self.tool_bar: Optional[ToolBarUI] = None
         self.central_widget_layout: Optional[QHBoxLayout] = None
@@ -288,18 +286,9 @@ class MainWindow(QMainWindow):
 
     def _setup_main_window(self):
         """Setup main window properties"""
-        if sys.platform == "win32":
-            self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.setWindowIcon(QIcon(resource_path("assets/final_icon.png")))
         self.resize(1440, 1000)
         self.setMinimumSize(1200, 800)
-
-    def toggle_maximize(self):
-        """Toggle between maximized and normal window state"""
-        if self.isMaximized():
-            self.showNormal()
-        else:
-            self.showMaximized()
 
     def _load_project(self, project_path: Path):
         """Load an existing project."""
@@ -426,28 +415,6 @@ class MainWindow(QMainWindow):
 
     # pylint: disable=invalid-name
     def eventFilter(self, obj, event):  # type: ignore
-        """Event filter for handling window dragging"""
-        if sys.platform == "win32":
-            if obj == self.menu_bar:
-                if event.type() == QEvent.Type.MouseButtonPress:
-                    self.drag_pos = event.globalPosition().toPoint()
-                    return False  # Allow the event to propagate for clicks
-                if event.type() == QEvent.Type.MouseMove:
-                    if (
-                        event.buttons() == Qt.MouseButton.LeftButton
-                        and hasattr(self, "drag_pos")
-                        and self.drag_pos is not None
-                    ):
-                        self.move(
-                            self.pos()
-                            + event.globalPosition().toPoint()
-                            - self.drag_pos
-                        )
-                        self.drag_pos = event.globalPosition().toPoint()
-                        return True  # Consume the event if dragging
-                if event.type() == QEvent.Type.MouseButtonRelease:
-                    self.drag_pos = QPoint()  # Reset dragPos
-                    return False  # Allow the event to propagate
         return super().eventFilter(obj, event)
 
     def _add_shortcuts(self):
@@ -476,8 +443,6 @@ class MainWindow(QMainWindow):
         self.tool_bar = ToolBarUI(self)
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.tool_bar)
         self.setMenuBar(self.menu_bar)
-        if sys.platform == "win32":
-            self.menu_bar.installEventFilter(self)
 
     def _setup_side_panel(self):
         """Setup the collapsible side panel"""
