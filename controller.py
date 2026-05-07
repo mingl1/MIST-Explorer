@@ -252,22 +252,40 @@ class Controller:
             if is_manual:
                 layer = list(data.keys())
                 aligned_data["data"] = {}
-                # treat moving_image as transformation matrix
-                transf_matrix = moving_image
-                # print(transf_matrix)
-                _cv2_supported_dtypes = {np.uint8, np.uint16, np.int16, np.float32, np.float64}
                 target_shape = aligned_data.get("target_shape")
-                for layer_key in layer:
-                    img = item["data"][layer_key].data
-                    original_dtype = img.dtype
-                    if img.dtype not in _cv2_supported_dtypes:
-                        img = img.astype(np.float32)
-                    if target_shape is not None:
-                        out_h, out_w = target_shape[:2]
-                    else:
-                        out_h, out_w = data[layer_key].data.shape[-2:]
-                    warped = cv2.warpAffine(img, transf_matrix, (out_w, out_h))  # pylint: disable=no-member
-                    aligned_data["data"][layer_key] = warped.astype(original_dtype) if warped.dtype != original_dtype else warped
+
+                if isinstance(moving_image, dict) and moving_image.get("type") == "ransac_affine_then_affine":
+                    M = moving_image["M"]
+                    affine_matrix = moving_image["affine"]
+                    out_shape_hw = target_shape[:2] if target_shape is not None else None
+                    _cv2_ok = {np.uint8, np.uint16, np.int16, np.float32, np.float64}
+
+                    for layer_key in layer:
+                        img = item["data"][layer_key].data
+                        original_dtype = img.dtype
+                        h, w = out_shape_hw if out_shape_hw else img.shape[:2]
+                        if img.dtype not in _cv2_ok:
+                            img = img.astype(np.float32)
+                        ransac_warped = cv2.warpAffine(img, M, (w, h))
+                        warped = cv2.warpAffine(ransac_warped, affine_matrix, (w, h))
+                        aligned_data["data"][layer_key] = (
+                            warped.astype(original_dtype) if warped.dtype != original_dtype else warped
+                        )
+                else:
+                    # Affine path: moving_image is a 2x3 numpy matrix
+                    transf_matrix = moving_image
+                    _cv2_supported_dtypes = {np.uint8, np.uint16, np.int16, np.float32, np.float64}
+                    for layer_key in layer:
+                        img = item["data"][layer_key].data
+                        original_dtype = img.dtype
+                        if img.dtype not in _cv2_supported_dtypes:
+                            img = img.astype(np.float32)
+                        if target_shape is not None:
+                            out_h, out_w = target_shape[:2]
+                        else:
+                            out_h, out_w = data[layer_key].data.shape[-2:]
+                        warped = cv2.warpAffine(img, transf_matrix, (out_w, out_h))  # pylint: disable=no-member
+                        aligned_data["data"][layer_key] = warped.astype(original_dtype) if warped.dtype != original_dtype else warped
             filename = item["name"]
             if isinstance(layer, list):
                 # handles register.py

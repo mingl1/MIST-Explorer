@@ -199,6 +199,21 @@ class CellLayerAligner(QThread):
             np.array(0),
         )
 
+    def manually_align_combined(self, data: dict) -> None:
+        """Emit a RANSAC affine alignment signal."""
+        self.progress.emit(100, "RANSAC affine alignment set")
+        self.aligned_image_signal.emit(
+            {
+                "uuid": self.unaligned_uuid,
+                "layer": self.unaligned_channel,
+                "replace": self.replace,
+                "data": data,
+                "target_shape": self.original_target_shape,
+            },
+            np.array(0),
+            np.array(0),
+        )
+
     def run(self):
         """Main processing function that runs in the thread"""
         if self.target_image is None or self.unaligned_image is None:

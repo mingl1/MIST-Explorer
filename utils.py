@@ -7,7 +7,6 @@ import numpy as np
 import tifffile as tiff
 from numpy.typing import NDArray
 from PyQt6.QtGui import QImage, QPixmap
-
 logger = logging.getLogger(__name__)
 
 _CV2_WARP_DTYPES = (np.uint8, np.uint16, np.int16, np.float32, np.float64)
@@ -441,6 +440,42 @@ def warp_image(img, transform_matrix) -> np.ndarray:
     if warped.dtype != original_dtype and original_dtype in _CV2_WARP_DTYPES:
         warped = warped.astype(original_dtype, copy=False)
     return warped
+
+
+def _safe_warp_affine(
+    img: np.ndarray,
+    M: np.ndarray,
+    out_shape_hw: tuple[int, int] | None = None,
+) -> np.ndarray:
+    original_dtype = img.dtype
+    _cv2_ok = {np.uint8, np.uint16, np.int16, np.float32, np.float64}
+    if original_dtype not in _cv2_ok:
+        img = img.astype(np.float32)
+    h, w = out_shape_hw if out_shape_hw else img.shape[:2]
+    warped = cv2.warpAffine(img, M, (w, h), flags=cv2.INTER_LINEAR, borderValue=0)
+    return warped.astype(original_dtype) if warped.dtype != original_dtype else warped
+
+
+def apply_ransac_affine_warp(
+    img: np.ndarray,
+    fixed_pts_colrow: np.ndarray,
+    moving_pts_colrow: np.ndarray,
+    ransac_threshold: float = 5.0,
+    out_shape: tuple[int, int] | None = None,
+) -> tuple[np.ndarray, dict]:
+    """Fit affine with RANSAC and warp img. Returns (warped, {"M", "inliers", "reprojection_px"})."""
+    src = moving_pts_colrow.astype(np.float32)
+    dst = fixed_pts_colrow.astype(np.float32)
+    M, inliers = cv2.estimateAffine2D(
+        src, dst, method=cv2.RANSAC, ransacReprojThreshold=ransac_threshold
+    )
+    if M is None:
+        raise RuntimeError("Affine RANSAC failed — too few inliers.")
+    warped = _safe_warp_affine(img, M, out_shape)
+    proj = (M[:, :2] @ moving_pts_colrow.T + M[:, 2:]).T
+    err = float(np.mean(np.linalg.norm(proj - fixed_pts_colrow, axis=1)))
+    n_inliers = int(inliers.sum()) if inliers is not None else len(src)
+    return warped, {"M": M, "inliers": n_inliers, "reprojection_px": err}
 
 
 # Memory monitoring utility

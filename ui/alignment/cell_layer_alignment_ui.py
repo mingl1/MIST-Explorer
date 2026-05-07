@@ -514,6 +514,7 @@ class CellLayerAlignmentUI(QWidget):
             True,
         )
         preview_dialog.transformation_matrix.connect(self.aligner.manually_align)
+        preview_dialog.combined_transform_ready.connect(self.aligner.manually_align_combined)
         preview_dialog.exec()
         self.register_button.setEnabled(True)
         self.manually_align_button.setEnabled(True)
