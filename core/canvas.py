@@ -316,23 +316,29 @@ class ImageWrapper:
         self._thumb_cache: dict[int, np.ndarray] = {}
 
     def copy(self):
-        arr = copy.copy(self.data)
-        new_obj = ImageWrapper(data=arr, name=self.name, cmap=self.cmap)
+        new_obj = object.__new__(ImageWrapper)
+        new_obj.name = self.name
+        new_obj.cmap = self.cmap
+        new_obj.data = self.data.copy()
         new_obj.contrast_min = self.contrast_min
         new_obj.contrast_max = self.contrast_max
         new_obj.is_virtual_segmentation = self.is_virtual_segmentation
+        new_obj._thumb_cache = {}
         return new_obj
 
     def __copy__(self):
         return self.copy()
 
     def __deepcopy__(self, memo):
-        # Deep copy should also create a new numpy array
-        new_data = self.data.copy()
-        new_obj = ImageWrapper(new_data, name=self.name, cmap=self.cmap)
+        new_obj = object.__new__(ImageWrapper)
+        new_obj.name = self.name
+        new_obj.cmap = self.cmap
+        new_obj.data = self.data.copy()
         new_obj.contrast_min = self.contrast_min
         new_obj.contrast_max = self.contrast_max
         new_obj.is_virtual_segmentation = self.is_virtual_segmentation
+        new_obj._thumb_cache = {}
+        memo[id(self)] = new_obj
         return new_obj
 
     def get_uint8_data(self):
@@ -520,9 +526,9 @@ class BaseGraphicsView(QWidget):
                     emit_data[channel_name] = display_image
                     if channel_name == "Channel 1":
                         channel_one_image = display_image
-                self.working_channels = copy.deepcopy(working_channels)
+                self.working_channels = working_channels
                 self._update_number_of_channels(emit_data, subsample_for_emit)
-                self.reset_working_channels = working_channels.copy()
+                self.reset_working_channels = {name: w.copy() for name, w in working_channels.items()}
 
                 self._schedule_caching_task(self.working_channels, self.uuid)
 
@@ -761,7 +767,7 @@ class BaseGraphicsView(QWidget):
         self.reset_working_channels[channel_name] = image_wrapper.copy()
         if replace_image_wrapper:
             logger.debug("stored image_wrapper")
-            self.image_wrapper = image_wrapper.copy()
+            self.image_wrapper = self.working_channels[channel_name]
             logger.debug(self.image_wrapper)
 
     def _prepare_display_image(
@@ -951,7 +957,13 @@ class ImageGraphicsView(BaseGraphicsView):
         self.controller = controller
         self.begin_crop = False
         self.crop_cursor = QCursor(Qt.CursorShape.CrossCursor)
-        self.memory_cache = MemoryEfficientImageCache(max_cache_size_mb=3000)
+        try:
+            import psutil
+            _avail_mb = psutil.virtual_memory().available // (1024 * 1024)
+            _cache_mb = min(int(_avail_mb * 0.20), 1200)
+        except Exception:
+            _cache_mb = 500
+        self.memory_cache = MemoryEfficientImageCache(max_cache_size_mb=_cache_mb, max_entries_per_channel=2)
         self.blur_worker = None
         self.segmentation_labels = None
         self.stardist_overlay_enabled = False
@@ -2049,6 +2061,7 @@ class ImageDialog(QDialog):
         self._layout.addLayout(self.button_layout)
 
         self.setLayout(self._layout)
+        self.cropped_image = None  # QPixmap owns its own buffer; numpy ref no longer needed
 
     def confirm(self):
         self.confirm_crop = True

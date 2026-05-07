@@ -191,11 +191,11 @@ class AlignmentPreviewDialog(QDialog):
     def __init__(self, snapshot_data: dict, can_edit: bool = False, can_emit=False):
         super().__init__(None)
 
-        self.target_image = snapshot_data["target_image"].copy()
+        self.target_image = snapshot_data["target_image"]
         self.aligned_image = snapshot_data["aligned_image"].copy()
         self.metadata = snapshot_data.get("metadata", {})
         self.can_edit = can_edit
-        self.original_aligned_image = self.aligned_image.copy()
+        self.original_aligned_image = snapshot_data["aligned_image"]
         self.result_accepted = False
         self.transformations = [[0.0, []]]
         self.offset_x, self.offset_y, self.move_step = 0, 0, 1
