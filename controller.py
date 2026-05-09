@@ -26,6 +26,7 @@ from core import (
 from core.project_manager import ProjectManager
 from core.project_naming import is_segmentation_channel, is_segmentation_name, is_temp_project_name
 from ui.alignment.alignment_preview_dialog import AlignmentPreviewDialog
+from ui.alignment.alignment_view_dialog import AlignmentViewDialog
 from ui.stardist.crop_experiment_dialog import CropExperimentDialog
 
 logger = logging.getLogger(__name__)
@@ -241,88 +242,92 @@ class Controller:
         }
         is_align_arrays = isinstance(aligned_data["layer"], list)
 
-        def handle_accepted_image(moving_image, is_manual=False):
-            """Handle the moving image change in the preview dialog"""
-            aligned_image = moving_image
+        def _apply_matrix_to_all_layers(matrix, item, target_shape):
+            """Apply a single 2x3 affine matrix to every channel of item["data"]."""
+            _cv2_ok = {np.uint8, np.uint16, np.int16, np.float32, np.float64}
+            results = {}
+            for layer_key, wrapper in item["data"].items():
+                img = wrapper.data
+                original_dtype = img.dtype
+                if img.dtype not in _cv2_ok:
+                    img = img.astype(np.float32)
+                if target_shape is not None:
+                    out_h, out_w = target_shape[:2]
+                else:
+                    out_h, out_w = img.shape[:2]
+                warped = cv2.warpAffine(img, matrix, (out_w, out_h))
+                results[layer_key] = warped.astype(original_dtype) if warped.dtype != original_dtype else warped
+            return results
+
+        def handle_accepted_image(payload):
+            """Handle the transformation_ready or moving_image_changed signal."""
             item_uuid = aligned_data["uuid"]
             layer = aligned_data["layer"]
             item = self.storage.get_data(item_uuid)
             assert item is not None, "Aligned image data not found in storage"
             data = copy.deepcopy(item["data"])
-            if is_manual:
-                layer = list(data.keys())
-                aligned_data["data"] = {}
-                target_shape = aligned_data.get("target_shape")
-
-                if isinstance(moving_image, dict) and moving_image.get("type") == "ransac_affine_then_affine":
-                    M = moving_image["M"]
-                    affine_matrix = moving_image["affine"]
-                    out_shape_hw = target_shape[:2] if target_shape is not None else None
-                    _cv2_ok = {np.uint8, np.uint16, np.int16, np.float32, np.float64}
-
-                    for layer_key in layer:
-                        img = item["data"][layer_key].data
-                        original_dtype = img.dtype
-                        h, w = out_shape_hw if out_shape_hw else img.shape[:2]
-                        if img.dtype not in _cv2_ok:
-                            img = img.astype(np.float32)
-                        ransac_warped = cv2.warpAffine(img, M, (w, h))
-                        warped = cv2.warpAffine(ransac_warped, affine_matrix, (w, h))
-                        aligned_data["data"][layer_key] = (
-                            warped.astype(original_dtype) if warped.dtype != original_dtype else warped
-                        )
-                else:
-                    # Affine path: moving_image is a 2x3 numpy matrix
-                    transf_matrix = moving_image
-                    _cv2_supported_dtypes = {np.uint8, np.uint16, np.int16, np.float32, np.float64}
-                    for layer_key in layer:
-                        img = item["data"][layer_key].data
-                        original_dtype = img.dtype
-                        if img.dtype not in _cv2_supported_dtypes:
-                            img = img.astype(np.float32)
-                        if target_shape is not None:
-                            out_h, out_w = target_shape[:2]
-                        else:
-                            out_h, out_w = data[layer_key].data.shape[-2:]
-                        warped = cv2.warpAffine(img, transf_matrix, (out_w, out_h))  # pylint: disable=no-member
-                        aligned_data["data"][layer_key] = warped.astype(original_dtype) if warped.dtype != original_dtype else warped
             filename = item["name"]
-            if isinstance(layer, list):
-                # handles register.py
-                assert len(aligned_data["data"].keys()) == len(layer), (
-                    "Aligned data keys do not match the expected layers"
-                )
-                data = {}
-                for layer_key in layer:
-                    img_data = (
-                        aligned_data["data"][layer_key]
-                        if aligned_data["data"][layer_key] is not None
-                        else moving_image
+
+            # Arrays-preview case: payload is a raw np.ndarray from moving_image_changed
+            if isinstance(payload, np.ndarray):
+                aligned_image = payload
+                if isinstance(layer, list):
+                    assert len(aligned_data["data"].keys()) == len(layer), (
+                        "Aligned data keys do not match the expected layers"
                     )
-                    wrapped_image = ImageWrapper(img_data, layer_key)
-                    # data[L].data = aligned_data["data"][L]
-                    data[layer_key] = wrapped_image
-                aligned_name = "Registered_" + filename
-            else:
-                wrapped_image = ImageWrapper(aligned_image, layer)
-                aligned_name = f"Aligned_{filename}"
-                data[layer].data = aligned_image
-            if is_manual:
+                    data = {}
+                    for layer_key in layer:
+                        img_data = aligned_data["data"][layer_key]
+                        data[layer_key] = ImageWrapper(img_data, layer_key)
+                    aligned_name = "Registered_" + filename
+                else:
+                    data[layer].data = aligned_image
+                    aligned_name = f"Aligned_{filename}"
+                self.model_canvas.add_to_canvas(data, True, aligned_name)
+                return
+
+            # Manual-alignment case: payload is {"matrix": 2x3, "action": str}
+            matrix = payload["matrix"]
+            action = payload.get("action", "add_layer")
+            target_shape = aligned_data.get("target_shape")
+            warped_layers = _apply_matrix_to_all_layers(matrix, item, target_shape)
+
+            if action == "replace_channel":
+                target_uuid = aligned_data.get("target_uuid", "")
+                target_channel = aligned_data.get("target_channel", "")
+                target_item = self.storage.get_data(target_uuid) if target_uuid else None
+                if target_item is not None and target_channel:
+                    out_data = copy.deepcopy(target_item["data"])
+                    moving_ch = aligned_data.get("layer", "")
+                    warped_for_channel = warped_layers.get(moving_ch) or next(iter(warped_layers.values()))
+                    out_data[target_channel] = ImageWrapper(warped_for_channel, target_channel)
+                    aligned_name = "Replaced_" + target_item["name"]
+                    self.model_canvas.add_to_canvas(out_data, True, aligned_name)
+                    return
+
+            # add_layer (default): warp all moving channels, add as new layer
+            aligned_data["data"] = warped_layers
+            if isinstance(layer, list):
+                out_data = {}
+                for layer_key in layer:
+                    out_data[layer_key] = ImageWrapper(warped_layers[layer_key], layer_key)
                 aligned_name = "Manual_" + filename
+            else:
+                data[layer].data = warped_layers.get(layer, next(iter(warped_layers.values())))
+                out_data = data
+                aligned_name = "Manual_" + filename
+            self.model_canvas.add_to_canvas(out_data, True, aligned_name)
 
-            self.model_canvas.add_to_canvas(data, True, aligned_name)
-
-        # manual alignment
+        # manual alignment (no preview data available)
         if not np.any(aligned_small) and not np.any(target_small):
-            handle_accepted_image(aligned_data["data"], True)
+            handle_accepted_image({"matrix": aligned_data["data"], "action": "add_layer"})
         else:
             if is_align_arrays:
-                preview_dialog = AlignmentPreviewDialog(
-                    snapshot, can_edit=False, can_emit=True
-                )
+                preview_dialog = AlignmentViewDialog(snapshot)
+                preview_dialog.moving_image_changed.connect(handle_accepted_image)
             else:
-                preview_dialog = AlignmentPreviewDialog(snapshot, can_edit=True)
-            preview_dialog.moving_image_changed.connect(handle_accepted_image)
+                preview_dialog = AlignmentPreviewDialog(snapshot)
+                preview_dialog.transformation_ready.connect(handle_accepted_image)
             preview_dialog.exec()
 
     def _show_preview_dialog(self, target_small, aligned_small):
@@ -336,7 +341,7 @@ class Controller:
                 "preview_aligned_shape": aligned_small.shape,
             },
         }
-        preview_dialog = AlignmentPreviewDialog(snapshot, can_edit=True)
+        preview_dialog = AlignmentPreviewDialog(snapshot)
         result = preview_dialog.exec()
         return result == 1 and preview_dialog.result_accepted
 

@@ -511,13 +511,17 @@ class CellLayerAlignmentUI(QWidget):
                 "target_image": target_display,
                 "aligned_image": moving_display,
             },
-            True,
         )
-        preview_dialog.transformation_matrix.connect(self.aligner.manually_align)
-        preview_dialog.combined_transform_ready.connect(self.aligner.manually_align_combined)
+        preview_dialog.transformation_ready.connect(self._on_alignment_ready)
         preview_dialog.exec()
         self.register_button.setEnabled(True)
         self.manually_align_button.setEnabled(True)
+
+    def _on_alignment_ready(self, payload: dict) -> None:
+        """Route transformation_ready payload from AlignmentPreviewDialog to the aligner."""
+        matrix = payload["matrix"]
+        action = payload.get("action", "add_layer")
+        self.aligner.manually_align(matrix, action)
 
     def _handle_progress(self, value, message):
         """Handle progress updates from the aligner thread"""

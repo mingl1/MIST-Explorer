@@ -6,23 +6,19 @@ logger = logging.getLogger(__name__)
 
 import numpy as np
 import pandas as pd
-
-from core.dataframe_utils import METADATA_COLUMNS, get_marker_columns
 import qtrangeslider
 import tifffile as tiff
-from PyQt6.QtCore import QByteArray, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QIcon, QImage, QPainter, QPalette, QPixmap
-from PyQt6.QtSvg import QSvgRenderer
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QColor, QIcon, QImage, QPalette
 from PyQt6.QtWidgets import (
-    QApplication,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
-    QLineEdit,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
@@ -36,6 +32,7 @@ from PyQt6.QtWidgets import (
 )
 
 from controller import Controller
+from core.dataframe_utils import METADATA_COLUMNS, get_marker_columns
 from core.image_utils import auto_contrast_helper, create_lut, scale_adjust
 from utils import resource_path
 
@@ -997,6 +994,7 @@ class ImageOverlay(QWidget):
     @staticmethod
     def _layer_theme() -> dict:
         from ui.theme import ThemeManager
+
         c = ThemeManager.instance().get_current()
         return {
             "label": c["text_secondary"],
@@ -1010,12 +1008,14 @@ class ImageOverlay(QWidget):
     @staticmethod
     def make_svg_icon(svg_path: str, size: int = 22) -> QIcon:
         from ui.theme import make_themed_icon
+
         return make_themed_icon(svg_path, size)
 
     def add_layer_controls(self, c):
         idx = len(self.controls) - 1
         theme = self._layer_theme()
         from ui.theme import ThemeManager
+
         tc = ThemeManager.instance().get_current()
 
         # --- Icons (loaded once per call; small overhead) ---
@@ -1203,8 +1203,7 @@ class ImageOverlay(QWidget):
         vis_lo_edit.setFixedWidth(36)
         vis_lo_edit.setAlignment(Qt.AlignmentFlag.AlignRight)
         vis_lo_edit.setToolTip("Click to type a value")
-        vis_lo_edit.setStyleSheet(_edit_muted_style
-        )
+        vis_lo_edit.setStyleSheet(_edit_muted_style)
         vis_slider = qtrangeslider.QDoubleRangeSlider(Qt.Orientation.Horizontal)
         vis_slider.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
@@ -1264,7 +1263,9 @@ class ImageOverlay(QWidget):
 
         def on_lo_edited():
             try:
-                v = max(0, min(int(con_lo_edit.text()), int(contrast_slider.value()[1])))
+                v = max(
+                    0, min(int(con_lo_edit.text()), int(contrast_slider.value()[1]))
+                )
             except ValueError:
                 v = int(contrast_slider.value()[0])
             con_lo_edit.setText(str(v))
@@ -1272,7 +1273,9 @@ class ImageOverlay(QWidget):
 
         def on_hi_edited():
             try:
-                v = max(int(contrast_slider.value()[0]), min(int(con_hi_edit.text()), 255))
+                v = max(
+                    int(contrast_slider.value()[0]), min(int(con_hi_edit.text()), 255)
+                )
             except ValueError:
                 v = int(contrast_slider.value()[1])
             con_hi_edit.setText(str(v))

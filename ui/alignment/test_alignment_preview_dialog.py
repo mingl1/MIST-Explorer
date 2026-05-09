@@ -68,13 +68,17 @@ def test_editable_controls(dialog):
 
 
 def test_view_only_controls(qtbot):
+    """AlignmentViewDialog (arrays-preview base) has no editing controls."""
+    from ui.alignment.alignment_view_dialog import AlignmentViewDialog
     snapshot_data = {
         "target_image": np.zeros((100, 100), dtype=np.uint8),
         "aligned_image": np.zeros((100, 100), dtype=np.uint8),
     }
-    dialog = AlignmentPreviewDialog(snapshot_data, can_edit=False)
+    dialog = AlignmentViewDialog(snapshot_data)
     qtbot.addWidget(dialog)
     assert not hasattr(dialog, "dx_input")
+    assert hasattr(dialog, "confirm_button")
+    assert not hasattr(dialog, "replace_button")
 
 
 def test_contrast_checkbox(dialog):

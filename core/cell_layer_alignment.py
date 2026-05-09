@@ -182,33 +182,19 @@ class CellLayerAligner(QThread):
         """
         self.need_gradient_descent = not skip
 
-    def manually_align(self, transf_matrix=None):
-        """
-        Emit manually aligned image
-        """
+    def manually_align(self, matrix: np.ndarray, action: str = "add_layer") -> None:
+        """Emit a manual alignment with a single composed 2x3 affine matrix."""
         self.progress.emit(100, "Manual alignment set")
         self.aligned_image_signal.emit(
             {
                 "uuid": self.unaligned_uuid,
                 "layer": self.unaligned_channel,
                 "replace": self.replace,
-                "data": transf_matrix,
+                "data": matrix,
                 "target_shape": self.original_target_shape,
-            },
-            np.array(0),
-            np.array(0),
-        )
-
-    def manually_align_combined(self, data: dict) -> None:
-        """Emit a RANSAC affine alignment signal."""
-        self.progress.emit(100, "RANSAC affine alignment set")
-        self.aligned_image_signal.emit(
-            {
-                "uuid": self.unaligned_uuid,
-                "layer": self.unaligned_channel,
-                "replace": self.replace,
-                "data": data,
-                "target_shape": self.original_target_shape,
+                "action": action,
+                "target_uuid": self.target_uuid,
+                "target_channel": self.target_channel,
             },
             np.array(0),
             np.array(0),
