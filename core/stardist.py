@@ -11,8 +11,8 @@ from PyQt6.QtWidgets import QFileDialog
 from stardist.models import StarDist2D
 
 from core import ImageStorage, ImageWrapper
-from core.cellprofiler_segmentation import identify_primary_objects
-from core.image_utils import create_lut, scale_adjust, window_image_by_contrast
+from core.cellprofiler_segmentation import identify_primary_objects, segment_primary_objects
+from core.image_utils import window_image_by_contrast
 from core.project_naming import SEGMENTATION_BASE_NAME, prefix_with_project_name
 from utils import resource_path
 
@@ -436,6 +436,10 @@ class StarDist(QThread):
         with self._state_lock:
             self.params["exclude_border_objects"] = bool(enabled)
 
+    def set_invert_image(self, enabled):
+        with self._state_lock:
+            self.params["invert_image"] = bool(enabled)
+
     def _fatal_error_message(self, msg):
         self.error_signal.emit(msg)
         self.progress.emit(100, "")
@@ -482,7 +486,9 @@ class StarDist(QThread):
         unique = unique[unique != 0]
         if len(unique) == 0:
             return labels
-        centroids = center_of_mass(np.ones_like(labels, dtype=np.float32), labels, unique)
+        centroids = center_of_mass(
+            np.ones_like(labels, dtype=np.float32), labels, unique
+        )
         order = np.lexsort(([c[1] for c in centroids], [c[0] for c in centroids]))
         remap = np.zeros(int(labels.max()) + 1, dtype=np.int32)
         for new_id, old_id in enumerate(unique[order], start=1):
@@ -568,37 +574,26 @@ class StarDist(QThread):
             "exclude_border_objects": bool(params.get("exclude_border_objects", True)),
         }
 
+        seg_settings = {
+            **cp_settings,
+            "min_size": min_size,
+            "max_size": max_size,
+            "enable_dilation": params.get("enable_dilation", True),
+            "radius": params.get("radius", 5),
+            "invert_image": bool(params.get("invert_image", False)),
+        }
+
         try:
-            self.stardist_labels_grayscale = identify_primary_objects(
-                cell_image, min_size=min_size, max_size=max_size, settings=cp_settings
-            )
+            self.stardist_labels_grayscale = segment_primary_objects(cell_image, seg_settings)
         except Exception as exc:
-            self._fatal_error_message(f"CellProfiler-like segmentation failed: {exc}")
+            self._fatal_error_message(
+                f"CellProfiler-like segmentation failed: {exc}. You may need to install pocl-opencl-icd (WSL2 users)."
+            )
             return
 
         if self._cancel_requested:
             self.progress.emit(100, "Cancelled")
             return
-
-        if params.get("enable_dilation", True):
-            self.progress.emit(95, "Dilating")
-            try:
-                # Preserve large label ids for downstream processing.
-                self.stardist_labels_grayscale = np.asarray(
-                    dilate_labels(
-                        self.stardist_labels_grayscale, radius=params["radius"]
-                    ),
-                    dtype=np.int32,
-                )
-            except Exception as exc:
-                self._fatal_error_message(
-                    f"Error during dilation: {exc}. You may need to install pocl-opencl-icd (WSL2 users)."
-                )
-                return
-
-            if self._cancel_requested:
-                self.progress.emit(100, "Cancelled")
-                return
 
         self.progress.emit(100, "CellProfiler-like segmentation done")
         self._emit_segmentation_result(project_name, is_temp_project, source_uuid)

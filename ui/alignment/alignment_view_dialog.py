@@ -274,10 +274,25 @@ class AlignmentViewDialog(QDialog):
 
         self._add_header_widgets(main_layout)
 
+        controls_row = QHBoxLayout()
         self.enhance_contrast_checkbox = QCheckBox("Enhance Contrast")
         self.enhance_contrast_checkbox.setChecked(True)
         self.enhance_contrast_checkbox.stateChanged.connect(self._on_contrast_changed)
-        main_layout.addWidget(self.enhance_contrast_checkbox)
+        controls_row.addWidget(self.enhance_contrast_checkbox)
+        self.invert_fixed_checkbox = QCheckBox("Invert Fixed")
+        self.invert_fixed_checkbox.setToolTip(
+            "Invert target (red) image — useful for white-background RGB images"
+        )
+        self.invert_fixed_checkbox.stateChanged.connect(self._on_invert_changed)
+        controls_row.addWidget(self.invert_fixed_checkbox)
+        self.invert_moving_checkbox = QCheckBox("Invert Moving")
+        self.invert_moving_checkbox.setToolTip(
+            "Invert aligned (green) image — useful for white-background RGB images"
+        )
+        self.invert_moving_checkbox.stateChanged.connect(self._on_invert_changed)
+        controls_row.addWidget(self.invert_moving_checkbox)
+        controls_row.addStretch()
+        main_layout.addLayout(controls_row)
 
         # Opacity slider — setOpacity on QGraphicsPixmapItem, no pixmap rebuild
         opacity_row = QHBoxLayout()
@@ -324,6 +339,9 @@ class AlignmentViewDialog(QDialog):
         self.adjust_contrast = self.enhance_contrast_checkbox.isChecked()
         self._refresh_overlay()
 
+    def _on_invert_changed(self, _state) -> None:
+        self._refresh_overlay()
+
     def _update_preview_label(self) -> None:
         self.preview_label.setText(
             "Red = Target, Green = Aligned | "
@@ -341,6 +359,11 @@ class AlignmentViewDialog(QDialog):
 
         target_gray = _norm_to_uint8(target_img)
         aligned_gray = _norm_to_uint8(aligned_img)
+
+        if self.invert_fixed_checkbox.isChecked():
+            target_gray = 255 - target_gray
+        if self.invert_moving_checkbox.isChecked():
+            aligned_gray = 255 - aligned_gray
 
         if self.adjust_contrast:
             target_gray = to_uint8(adjust_contrast(target_gray.astype(np.float32), 30, 99))

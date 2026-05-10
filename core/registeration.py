@@ -90,10 +90,10 @@ class Register(QThread):
     def run(self):
         self.tifs = (
             {
-                "image_dict": self.storage.get_reference_image(),
+                "image_dict": self.storage.get_alignment_ref_image(),
             },
             {
-                "image_dict": self.storage.get_canvas_image(),
+                "image_dict": self.storage.get_alignment_moving_image(),
             },
         )
 
@@ -294,8 +294,8 @@ class Register(QThread):
         layers = list(data.keys())
         layers = sorted(layers)
         result["layer"] = layers
-        moving_uuid = self.storage.get_data("canvas_uuid")
-        assert moving_uuid is not None, "No canvas UUID found"
+        moving_uuid = self.storage.get_data("alignment_moving_uuid")
+        assert moving_uuid is not None, "No alignment moving UUID found"
         moving_uuid = moving_uuid["value"]
         result["uuid"] = moving_uuid
         if self._handle_cancel():

@@ -124,8 +124,8 @@ class AlignmentPreviewDialog(AlignmentViewDialog):
         self.update_offset_label()
 
     def _setup_buttons(self) -> None:
-        self.confirm_button = QPushButton("Confirm")
-        self.replace_button = QPushButton("Confirm & Replace")
+        self.confirm_button = QPushButton("Save")
+        self.replace_button = QPushButton("Confirm and Replace")
         self.cancel_button = QPushButton("Cancel")
         self.confirm_button.clicked.connect(lambda: self._on_confirm("add_layer"))
         self.replace_button.clicked.connect(lambda: self._on_confirm("replace_channel"))
@@ -154,6 +154,12 @@ class AlignmentPreviewDialog(AlignmentViewDialog):
             self.preview_label.setStyleSheet("")
 
     def reset_zoom(self, event=None) -> None:
+        if event and getattr(self, "_lm_mode", False):
+            scene_pt = self.image_view.mapToScene(event.pos())
+            items = self.image_view.get_scene().items(scene_pt)
+            if any(isinstance(item, QGraphicsEllipseItem) for item in items):
+                event.accept()
+                return
         super().reset_zoom(event)
 
     def _reset_all(self) -> None:
@@ -399,6 +405,8 @@ class AlignmentPreviewDialog(AlignmentViewDialog):
             "confirm_button",
             "replace_button",
             "enhance_contrast_checkbox",
+            "invert_fixed_checkbox",
+            "invert_moving_checkbox",
         ):
             w = getattr(self, attr, None)
             if w is not None:

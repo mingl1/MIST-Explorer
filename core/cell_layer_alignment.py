@@ -37,6 +37,7 @@ class CellLayerAligner(QThread):
     progress = pyqtSignal(int, str)
     error = pyqtSignal(str)
     aligned_image_signal = pyqtSignal(dict, np.ndarray, np.ndarray)
+    manual_ready = pyqtSignal(dict)
 
     def __init__(
         self,
@@ -185,19 +186,16 @@ class CellLayerAligner(QThread):
     def manually_align(self, matrix: np.ndarray, action: str = "add_layer") -> None:
         """Emit a manual alignment with a single composed 2x3 affine matrix."""
         self.progress.emit(100, "Manual alignment set")
-        self.aligned_image_signal.emit(
+        self.manual_ready.emit(
             {
                 "uuid": self.unaligned_uuid,
                 "layer": self.unaligned_channel,
-                "replace": self.replace,
-                "data": matrix,
+                "matrix": matrix,
                 "target_shape": self.original_target_shape,
                 "action": action,
                 "target_uuid": self.target_uuid,
                 "target_channel": self.target_channel,
-            },
-            np.array(0),
-            np.array(0),
+            }
         )
 
     def run(self):
@@ -330,6 +328,7 @@ class CellLayerAligner(QThread):
                 intermediate_aligned, full_refinement_transform
             )
             del intermediate_aligned
+            full_gradient_transform = None
             if gradient_transform is not None:
                 # Apply gradient descent refinement if available
                 full_gradient_transform = self._scale_transform_matrix(
@@ -340,6 +339,19 @@ class CellLayerAligner(QThread):
                 )
                 del final_aligned_image
                 final_aligned_image = next_aligned
+
+            # warp_image() uses its matrix as a backward map (DST→SRC), so
+            # sequential warps compose as: M_coarse @ M_refine (@ M_grad).
+            # _apply_matrix_to_all_layers uses cv2.warpAffine directly (forward
+            # SRC→DST convention), so we invert the composed backward map to
+            # get a forward matrix compatible with Qt transforms.
+            coarse_3x3 = np.vstack([full_coarse_matrix, [0, 0, 1]])
+            refine_3x3 = np.vstack([full_refinement_transform, [0, 0, 1]])
+            pre_3x3_bwd = coarse_3x3 @ refine_3x3
+            if full_gradient_transform is not None:
+                pre_3x3_bwd = pre_3x3_bwd @ np.vstack([full_gradient_transform, [0, 0, 1]])
+            pre_matrix = np.linalg.inv(pre_3x3_bwd)[:2, :].astype(np.float64)
+
             # Convert result back to original dtype for storage. When dtypes
             # already match, _convert_to_original_dtype returns the same array —
             # reuse it as the signal payload so we don't hold two full-res
@@ -351,10 +363,12 @@ class CellLayerAligner(QThread):
                 final_aligned_image = result_data
 
             result_payload = {
-                "uuid": self.target_uuid,
-                "layer": self.target_channel,
-                "replace": self.replace,
-                "data": result_data,
+                "uuid": self.unaligned_uuid,
+                "layer": self.unaligned_channel,
+                "matrix": pre_matrix,
+                "target_uuid": self.target_uuid,
+                "target_channel": self.target_channel,
+                "target_shape": self.original_target_shape,
             }
 
             self.progress.emit(100, "Two-stage alignment complete")

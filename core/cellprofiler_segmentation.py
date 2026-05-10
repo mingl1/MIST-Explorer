@@ -420,3 +420,29 @@ def identify_primary_objects(image_2d, min_size, max_size, settings=None):
     labeled, _ = centrosome.cpmorphology.relabel(labeled)
     # Keep labels in int32 to avoid the uint16 instance-id ceiling (65,535).
     return np.asarray(labeled, dtype=np.int32)
+
+
+def segment_primary_objects(image: np.ndarray, settings: dict) -> np.ndarray:
+    """identify_primary_objects + optional inversion/dilation. Pure function, no Qt/signals."""
+    min_size = int(settings["min_size"])
+    max_size = int(settings["max_size"])
+    if max_size < min_size:
+        min_size, max_size = max_size, min_size
+
+    if image.ndim == 3 and image.shape[-1] == 3:
+        import cv2 as _cv2
+        image = _cv2.cvtColor(image.astype(np.float32), _cv2.COLOR_RGB2GRAY)
+        lo, hi = image.min(), image.max()
+        image = (image - lo) / (hi - lo) if hi > lo else np.zeros_like(image)
+
+    if settings.get("invert_image", False):
+        image = 1.0 - image.astype(np.float32)
+
+    labels = identify_primary_objects(image, min_size=min_size, max_size=max_size, settings=settings)
+
+    if settings.get("enable_dilation", True) and labels.max() > 0:
+        from pyclesperanto import dilate_labels
+        radius = settings.get("dilation_radius") or settings.get("radius", 5)
+        labels = np.asarray(dilate_labels(labels, radius=radius), dtype=np.int32)
+
+    return labels

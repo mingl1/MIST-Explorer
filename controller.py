@@ -24,7 +24,7 @@ from core import (
     StarDist,
 )
 from core.project_manager import ProjectManager
-from core.project_naming import is_segmentation_channel, is_segmentation_name, is_temp_project_name
+from core.project_naming import is_segmentation_channel, is_temp_project_name
 from ui.alignment.alignment_preview_dialog import AlignmentPreviewDialog
 from ui.alignment.alignment_view_dialog import AlignmentViewDialog
 from ui.stardist.crop_experiment_dialog import CropExperimentDialog
@@ -117,10 +117,10 @@ class Controller:
             self.model_reference_canvas.add_to_canvas(initial_args.reference)
 
         # self.need_preview_alignment.connect(self._handle_aligned_image)
-        self.view.cell_layer_alignment.aligner.aligned_image_signal.connect(
-            self._handle_aligned_image
-        )
-        self.model_register.alignment_complete.connect(self._handle_aligned_image)
+        aligner = self.view.cell_layer_alignment.aligner
+        aligner.manual_ready.connect(self._handle_manual_registration)
+        aligner.aligned_image_signal.connect(self._handle_registration_image)
+        self.model_register.alignment_complete.connect(self._handle_alignment_image)
         self.model_register.error.connect(self.handle_error)
 
     def handle_error(self, error_message):
@@ -233,102 +233,96 @@ class Controller:
         # update the selector directly after the new image exists in the model.
         self.view.register_groupbox.reference_selector.follow_canvas_uuid(str(my_uuid))
 
-    def _handle_aligned_image(self, aligned_data, target_small, aligned_small):
-        """Handle the aligned image result"""
-        # Show the preview dialog
-        snapshot = {
-            "target_image": target_small,
-            "aligned_image": aligned_small,
-        }
-        is_align_arrays = isinstance(aligned_data["layer"], list)
+    @staticmethod
+    def _apply_matrix_to_all_layers(
+        matrix: np.ndarray, item: dict, target_shape
+    ) -> dict:
+        """Apply a 2x3 affine matrix to every channel of item["data"]."""
+        _cv2_ok = {np.uint8, np.uint16, np.int16, np.float32, np.float64}
+        results = {}
+        for layer_key, wrapper in item["data"].items():
+            img = wrapper.data
+            original_dtype = img.dtype
+            if img.dtype not in _cv2_ok:
+                img = img.astype(np.float32)
+            out_h, out_w = target_shape[:2] if target_shape is not None else img.shape[:2]
+            warped = cv2.warpAffine(img, matrix, (out_w, out_h))
+            results[layer_key] = (
+                warped.astype(original_dtype) if warped.dtype != original_dtype else warped
+            )
+        return results
 
-        def _apply_matrix_to_all_layers(matrix, item, target_shape):
-            """Apply a single 2x3 affine matrix to every channel of item["data"]."""
-            _cv2_ok = {np.uint8, np.uint16, np.int16, np.float32, np.float64}
-            results = {}
-            for layer_key, wrapper in item["data"].items():
-                img = wrapper.data
-                original_dtype = img.dtype
-                if img.dtype not in _cv2_ok:
-                    img = img.astype(np.float32)
-                if target_shape is not None:
-                    out_h, out_w = target_shape[:2]
-                else:
-                    out_h, out_w = img.shape[:2]
-                warped = cv2.warpAffine(img, matrix, (out_w, out_h))
-                results[layer_key] = warped.astype(original_dtype) if warped.dtype != original_dtype else warped
-            return results
+    def _commit_registration(
+        self, aligned_data: dict, matrix: np.ndarray, action: str
+    ) -> None:
+        """Apply matrix and add the result to canvas. Shared by manual and auto paths."""
+        item = self.storage.get_data(aligned_data["uuid"])
+        assert item is not None, "Aligned image data not found in storage"
+        warped_layers = Controller._apply_matrix_to_all_layers(
+            matrix, item, aligned_data.get("target_shape")
+        )
+        if action == "replace_channel":
+            target_uuid = aligned_data.get("target_uuid", "")
+            target_channel = aligned_data.get("target_channel", "")
+            target_item = self.storage.get_data(target_uuid) if target_uuid else None
+            if target_item is None or not target_channel:
+                return  # target not found — nothing to do
+            out_data = copy.deepcopy(target_item["data"])
+            out_data[target_channel] = ImageWrapper(
+                warped_layers.get(aligned_data.get("layer", "")), target_channel
+            )
+            self.model_canvas.add_to_canvas(
+                out_data, True, "Registered_" + target_item["name"]
+            )
+            return
+        layer = aligned_data["layer"]
+        data = copy.deepcopy(item["data"])
+        data[layer].data = warped_layers.get(layer, next(iter(warped_layers.values())))
+        self.model_canvas.add_to_canvas(data, True, "Registered_" + item["name"])
 
-        def handle_accepted_image(payload):
-            """Handle the transformation_ready or moving_image_changed signal."""
-            item_uuid = aligned_data["uuid"]
-            layer = aligned_data["layer"]
-            item = self.storage.get_data(item_uuid)
+    def _handle_manual_registration(self, aligned_data: dict) -> None:
+        """Handle manual registration: apply matrix directly, no dialog."""
+        self._commit_registration(
+            aligned_data, aligned_data["matrix"], aligned_data.get("action", "add_layer")
+        )
+
+    def _handle_registration_image(
+        self, aligned_data: dict, target_small: np.ndarray, aligned_small: np.ndarray
+    ) -> None:
+        """Handle auto cell-layer alignment: show dialog, compose matrices, then commit."""
+        snapshot = {"target_image": target_small, "aligned_image": aligned_small}
+        pre_matrix = aligned_data["matrix"]
+
+        def on_accepted(payload):
+            fine_matrix = payload["matrix"]
+            pre_3x3 = np.vstack([pre_matrix, [0, 0, 1]])
+            fine_3x3 = np.vstack([fine_matrix, [0, 0, 1]])
+            combined = (fine_3x3 @ pre_3x3)[:2, :]
+            self._commit_registration(aligned_data, combined, payload.get("action", "add_layer"))
+
+        preview_dialog = AlignmentPreviewDialog(snapshot)
+        preview_dialog.transformation_ready.connect(on_accepted)
+        preview_dialog.exec()
+
+    def _handle_alignment_image(
+        self, aligned_data: dict, target_small: np.ndarray, aligned_small: np.ndarray
+    ) -> None:
+        """Handle registered-arrays result: show AlignmentViewDialog for confirmation."""
+        snapshot = {"target_image": target_small, "aligned_image": aligned_small}
+        layer = aligned_data["layer"]  # list of channel keys
+
+        def on_accepted(_payload):
+            item = self.storage.get_data(aligned_data["uuid"])
             assert item is not None, "Aligned image data not found in storage"
-            data = copy.deepcopy(item["data"])
-            filename = item["name"]
+            assert len(aligned_data["data"].keys()) == len(layer), (
+                "Aligned data keys do not match the expected layers"
+            )
+            out_data = {k: ImageWrapper(aligned_data["data"][k], k) for k in layer}
+            self.model_canvas.add_to_canvas(out_data, True, "Registered_" + item["name"])
 
-            # Arrays-preview case: payload is a raw np.ndarray from moving_image_changed
-            if isinstance(payload, np.ndarray):
-                aligned_image = payload
-                if isinstance(layer, list):
-                    assert len(aligned_data["data"].keys()) == len(layer), (
-                        "Aligned data keys do not match the expected layers"
-                    )
-                    data = {}
-                    for layer_key in layer:
-                        img_data = aligned_data["data"][layer_key]
-                        data[layer_key] = ImageWrapper(img_data, layer_key)
-                    aligned_name = "Registered_" + filename
-                else:
-                    data[layer].data = aligned_image
-                    aligned_name = f"Aligned_{filename}"
-                self.model_canvas.add_to_canvas(data, True, aligned_name)
-                return
-
-            # Manual-alignment case: payload is {"matrix": 2x3, "action": str}
-            matrix = payload["matrix"]
-            action = payload.get("action", "add_layer")
-            target_shape = aligned_data.get("target_shape")
-            warped_layers = _apply_matrix_to_all_layers(matrix, item, target_shape)
-
-            if action == "replace_channel":
-                target_uuid = aligned_data.get("target_uuid", "")
-                target_channel = aligned_data.get("target_channel", "")
-                target_item = self.storage.get_data(target_uuid) if target_uuid else None
-                if target_item is not None and target_channel:
-                    out_data = copy.deepcopy(target_item["data"])
-                    moving_ch = aligned_data.get("layer", "")
-                    warped_for_channel = warped_layers.get(moving_ch) or next(iter(warped_layers.values()))
-                    out_data[target_channel] = ImageWrapper(warped_for_channel, target_channel)
-                    aligned_name = "Replaced_" + target_item["name"]
-                    self.model_canvas.add_to_canvas(out_data, True, aligned_name)
-                    return
-
-            # add_layer (default): warp all moving channels, add as new layer
-            aligned_data["data"] = warped_layers
-            if isinstance(layer, list):
-                out_data = {}
-                for layer_key in layer:
-                    out_data[layer_key] = ImageWrapper(warped_layers[layer_key], layer_key)
-                aligned_name = "Manual_" + filename
-            else:
-                data[layer].data = warped_layers.get(layer, next(iter(warped_layers.values())))
-                out_data = data
-                aligned_name = "Manual_" + filename
-            self.model_canvas.add_to_canvas(out_data, True, aligned_name)
-
-        # manual alignment (no preview data available)
-        if not np.any(aligned_small) and not np.any(target_small):
-            handle_accepted_image({"matrix": aligned_data["data"], "action": "add_layer"})
-        else:
-            if is_align_arrays:
-                preview_dialog = AlignmentViewDialog(snapshot)
-                preview_dialog.moving_image_changed.connect(handle_accepted_image)
-            else:
-                preview_dialog = AlignmentPreviewDialog(snapshot)
-                preview_dialog.transformation_ready.connect(handle_accepted_image)
-            preview_dialog.exec()
+        preview_dialog = AlignmentViewDialog(snapshot)
+        preview_dialog.moving_image_changed.connect(on_accepted)
+        preview_dialog.exec()
 
     def _show_preview_dialog(self, target_small, aligned_small):
         """Show the preview dialog with red/green overlay"""
@@ -709,7 +703,9 @@ class SignalConnectionManager:
             self.c.model_canvas.set_stardist_overlay_enabled
         )
         self.c.model_canvas.overlay_build_started.connect(
-            lambda: self.c.view.stardist_groupbox.overlay_toggle_button.setEnabled(False)
+            lambda: self.c.view.stardist_groupbox.overlay_toggle_button.setEnabled(
+                False
+            )
         )
         self.c.model_canvas.overlay_build_finished.connect(
             lambda: self.c.view.stardist_groupbox.overlay_toggle_button.setEnabled(True)
@@ -790,6 +786,7 @@ class SignalConnectionManager:
         cp.exclude_border_objects.toggled.connect(
             self.c.model_stardist.set_exclude_border_objects
         )
+        cp.invert_image.toggled.connect(self.c.model_stardist.set_invert_image)
         cp.crop_experiment_button.clicked.connect(self._open_crop_experiment)
         cp.save_preset_button.clicked.connect(self._save_cp_preset)
         cp.load_preset_button_adv.clicked.connect(self._load_cp_preset)
@@ -865,6 +862,7 @@ class SignalConnectionManager:
             ),
             "low_res_maxima": bool(params.get("low_res_maxima", True)),
             "exclude_border_objects": bool(params.get("exclude_border_objects", True)),
+            "invert_image": bool(params.get("invert_image", False)),
         }
 
         dialog = CropExperimentDialog(
@@ -1081,6 +1079,7 @@ class SignalConnectionManager:
         img_data = storage.get_data(uuid)
         if img_data is None:
             return
+        storage.add_data("alignment_moving_uuid", {"value": uuid})
         channels = img_data["data"]
         self.c.model_register.update_moving_image(channels)
         self.c.view.register_groupbox.image_selector.set_channels(channels)
@@ -1094,6 +1093,7 @@ class SignalConnectionManager:
         img_data = storage.get_data(uuid)
         if img_data is None:
             return
+        storage.add_data("alignment_ref_uuid", {"value": uuid})
         channels = img_data["data"]
         self.c.model_register.update_reference_channels(channels)
         self.c.view.register_groupbox.reference_selector.set_channels(channels)
@@ -1149,7 +1149,9 @@ class SignalConnectionManager:
 
         # Disable save/filtered-stats buttons during generation
         self.c.view.cell_intensity_groupbox.generate_cell_data.connect(
-            lambda: self.c.view.cell_intensity_groupbox.set_processing_buttons_enabled(False)
+            lambda: self.c.view.cell_intensity_groupbox.set_processing_buttons_enabled(
+                False
+            )
         )
         self.c.model_cell_intensity.progress.connect(self._on_cell_intensity_progress)
         self.c.model_cell_intensity.channel_done.connect(
@@ -1163,9 +1165,15 @@ class SignalConnectionManager:
             self._on_generation_image_selected
         )
         tree_model = self.c.view.images_tab.image_tree_model
-        tree_model.rowsInserted.connect(lambda *_: self._repopulate_generation_selector())
-        tree_model.rowsRemoved.connect(lambda *_: self._repopulate_generation_selector())
-        tree_model.dataChanged.connect(lambda *_: self._repopulate_generation_selector())
+        tree_model.rowsInserted.connect(
+            lambda *_: self._repopulate_generation_selector()
+        )
+        tree_model.rowsRemoved.connect(
+            lambda *_: self._repopulate_generation_selector()
+        )
+        tree_model.dataChanged.connect(
+            lambda *_: self._repopulate_generation_selector()
+        )
         self._repopulate_generation_selector()
 
     def _on_cell_intensity_progress(self, value: int, msg: str):
@@ -1265,9 +1273,15 @@ class SignalConnectionManager:
         selector.channel_changed.connect(self._on_segmentation_channel_selected)
 
         tree_model = self.c.view.images_tab.image_tree_model
-        tree_model.rowsInserted.connect(lambda *_: self._repopulate_segmentation_selector())
-        tree_model.rowsRemoved.connect(lambda *_: self._repopulate_segmentation_selector())
-        tree_model.dataChanged.connect(lambda *_: self._repopulate_segmentation_selector())
+        tree_model.rowsInserted.connect(
+            lambda *_: self._repopulate_segmentation_selector()
+        )
+        tree_model.rowsRemoved.connect(
+            lambda *_: self._repopulate_segmentation_selector()
+        )
+        tree_model.dataChanged.connect(
+            lambda *_: self._repopulate_segmentation_selector()
+        )
         # Populate immediately with any images already in the tree (e.g. from project load)
         self._repopulate_segmentation_selector()
 
@@ -1329,9 +1343,15 @@ class SignalConnectionManager:
     def _setup_cell_layer_alignment_selector_connections(self):
         """Repopulate CellLayerAlignment image selectors when tree changes."""
         tree_model = self.c.view.images_tab.image_tree_model
-        tree_model.rowsInserted.connect(lambda *_: self._repopulate_cell_alignment_selectors())
-        tree_model.rowsRemoved.connect(lambda *_: self._repopulate_cell_alignment_selectors())
-        tree_model.dataChanged.connect(lambda *_: self._repopulate_cell_alignment_selectors())
+        tree_model.rowsInserted.connect(
+            lambda *_: self._repopulate_cell_alignment_selectors()
+        )
+        tree_model.rowsRemoved.connect(
+            lambda *_: self._repopulate_cell_alignment_selectors()
+        )
+        tree_model.dataChanged.connect(
+            lambda *_: self._repopulate_cell_alignment_selectors()
+        )
         self._repopulate_cell_alignment_selectors()
 
     def _repopulate_cell_alignment_selectors(self):

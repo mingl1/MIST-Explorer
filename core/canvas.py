@@ -261,6 +261,20 @@ class ImageStorage:
             assert data is not None and "data" in data.keys(), "canvas image is none"
             return data["data"]
 
+    def get_alignment_ref_image(self):
+        with self._data_lock:
+            entry = self.image_list["alignment_ref_uuid"]
+            data = self.image_list.get(str(entry["value"]))
+            assert data is not None and "data" in data, "alignment ref image is none"
+            return data["data"]
+
+    def get_alignment_moving_image(self):
+        with self._data_lock:
+            entry = self.image_list["alignment_moving_uuid"]
+            data = self.image_list.get(str(entry["value"]))
+            assert data is not None and "data" in data, "alignment moving image is none"
+            return data["data"]
+
     def add_data(self, image_id, data):
         with self._data_lock:
             self.image_list[str(image_id)] = data
@@ -1388,9 +1402,14 @@ class ImageGraphicsView(BaseGraphicsView):
                 use_cache=use_cache,
                 cache_result=cache_result,
             )
+        if image.size == 0:
+            return None
         if cmap_text != "label_image" and prev_cmap != "label_image":
-            logger.debug(f"changing cmap to {cmap_text}")
-            image_to_display = self.change_cmap(cmap_text, image)
+            if image.ndim == 3 and image.shape[2] == 3:
+                image_to_display = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+            else:
+                logger.debug(f"changing cmap to {cmap_text}")
+                image_to_display = self.change_cmap(cmap_text, image)
         else:
             logger.debug("using raw image")
             image_to_display = image

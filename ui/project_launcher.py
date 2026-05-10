@@ -1,23 +1,21 @@
-import platform
-from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
-from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QIcon, QPixmap, QColor
+from PyQt6.QtCore import QSize, Qt
+from PyQt6.QtGui import QColor, QPixmap
 from PyQt6.QtWidgets import (
     QDialog,
-    QVBoxLayout,
+    QFileDialog,
+    QFrame,
     QHBoxLayout,
-    QPushButton,
+    QInputDialog,
     QLabel,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
-    QInputDialog,
-    QFileDialog,
+    QPushButton,
+    QVBoxLayout,
     QWidget,
-    QFrame,
 )
 
 from core.project_manager import ProjectManager
@@ -36,6 +34,7 @@ class ProjectCard(QWidget):
         layout.setSpacing(10)
 
         from ui.theme import ThemeManager
+
         tc = ThemeManager.instance().get_current()
 
         icon_label = QLabel()
@@ -110,7 +109,7 @@ class ProjectCard(QWidget):
             self,
             "Delete Project",
             f'Are you sure you want to delete "{self.metadata.name}"?\n\nThis will permanently delete the project folder.',
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No | QMessageBox.StandardButton.Yes,
         )
         if reply == QMessageBox.StandardButton.Yes:
             ProjectManager.delete_project(self.metadata.path)
