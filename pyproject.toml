@@ -11,7 +11,7 @@ dependencies = [
     "matplotlib==3.10.3",
     "numexpr==2.11.0",
     "numpy==1.26.4",
-    "opencv-python-headless==4.11.0.86",
+    "opencv-contrib-python==4.11.0.86",
     "pandas==2.3.0",
     "pillow==11.3.0",
     "plotly==6.2.0",
@@ -20,7 +20,7 @@ dependencies = [
     "pyqt6==6.9.1",
     "pyqt6-qt6==6.9.1",
     "pyqt6-sip==13.10.2",
-    "pyqtgraph==0.13.7",
+    "pyqtgraph==0.14.0",
     "pystackreg==0.2.8",
     "qtrangeslider==0.1.5",
     "scanpy[leiden]==1.11.5",
@@ -37,6 +37,7 @@ dependencies = [
     "openpyxl>=3.1.5",
     "openvino>=2026.0.0",
     "rpy2>=3.6.7",
+    "scikit-misc>=0.5.2",
 ]
 
 [project.optional-dependencies]

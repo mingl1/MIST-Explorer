@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (
 )
 from skimage.color import label2rgb as sk_label2rgb
 
-from core.cellprofiler_segmentation import identify_primary_objects
+from core.cellprofiler_segmentation import segment_primary_objects
 from core.image_utils import create_lut, numpy_to_qimage, scale_adjust
 from ui.stardist.cellprofiler_ui import CellProfilerAdvancedSettings
 
@@ -429,6 +429,7 @@ class CropExperimentDialog(QDialog):
             cp.automatic_maxima_suppression,
             cp.low_res_maxima,
             cp.exclude_border_objects,
+            cp.invert_image,
             self._exp_enable_dilation,
             self._exp_use_contrasted,
         ):
@@ -475,6 +476,7 @@ class CropExperimentDialog(QDialog):
             "enable_dilation": self._exp_enable_dilation.isChecked(),
             "dilation_radius": self._exp_dilation_radius.value(),
             "use_contrasted_image": self._exp_use_contrasted.isChecked(),
+            "invert_image": self._exp_cp_advanced.invert_image.isChecked(),
         }
 
     def _run_segmentation(self):
@@ -482,10 +484,6 @@ class CropExperimentDialog(QDialog):
             return
 
         settings = self._collect_settings()
-        min_size = settings["min_size"]
-        max_size = settings["max_size"]
-        if max_size < min_size:
-            min_size, max_size = max_size, min_size
 
         # Choose segmentation input based on use_contrasted toggle
         if settings["use_contrasted_image"]:
@@ -494,30 +492,22 @@ class CropExperimentDialog(QDialog):
             seg_input = self._cropped_raw
 
         try:
-            labels = identify_primary_objects(
-                seg_input, min_size=min_size, max_size=max_size, settings=settings
-            )
+            labels = segment_primary_objects(seg_input, settings)
         except Exception:
             labels = np.zeros(self._cropped_raw.shape[:2], dtype=np.int32)
 
-        if settings["enable_dilation"] and labels.max() > 0:
-            try:
-                from pyclesperanto import dilate_labels
+        if settings.get("invert_image", False) and self._cropped_display is not None:
+            display_base = (255 - self._cropped_display).astype(self._cropped_display.dtype)
+        else:
+            display_base = self._cropped_display
 
-                labels = np.asarray(
-                    dilate_labels(labels, radius=settings["dilation_radius"]),
-                    dtype=np.int32,
-                )
-            except Exception:
-                pass
-
-        overlay = self._render_preview(labels)
+        overlay = self._render_preview(labels, display_base)
         qimg = numpy_to_qimage(np.ascontiguousarray(overlay))
         self._preview_view.update_image(QPixmap.fromImage(qimg))
 
-    def _render_preview(self, labels: np.ndarray) -> np.ndarray:
+    def _render_preview(self, labels: np.ndarray, display_base: np.ndarray | None = None) -> np.ndarray:
         """Blend segmentation labels over the contrasted crop image."""
-        base = self._cropped_display
+        base = display_base if display_base is not None else self._cropped_display
         if base is None:
             return np.zeros((*labels.shape, 3), dtype=np.uint8)
 
@@ -600,6 +590,7 @@ class CropExperimentDialog(QDialog):
         cp.exclude_border_objects.setChecked(
             bool(s.get("exclude_border_objects", True))
         )
+        cp.invert_image.setChecked(bool(s.get("invert_image", False)))
 
     def _on_save(self):
         settings = self._collect_settings()

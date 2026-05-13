@@ -108,10 +108,18 @@ def parse_cli_args(argv=None):
         action="store_true",
         help="Start immediately with a temporary project.",
     )
+    parser.add_argument("-i", "--image", default=None,
+        help="Image for Extract tab.")
+    parser.add_argument("-s", "--segmentation", default=None,
+        help="Segmentation mask (PNG/TIFF) for View tab.")
+    parser.add_argument("-c", "--cell-data", dest="cell_data", default=None,
+        help="Cell data CSV/XLSX for View tab.")
+    parser.add_argument("-r", "--reference", default=None,
+        help="Reference image for Extract tab.")
     return parser.parse_known_args(argv)
 
 
-def launch_main_window(app: QApplication, project_path: Path):
+def launch_main_window(app: QApplication, project_path: Path, cli_args=None):
     loading_dialog = LoadingDialog()
     loading_dialog.show()
     app.processEvents()
@@ -136,11 +144,15 @@ def launch_main_window(app: QApplication, project_path: Path):
 
     from controller import Controller
     from ui import app as ui_app
+    from ui.theme import ThemeManager
+
+    # Initialize app-wide theme (no-op if already done)
+    ThemeManager.init(app)
 
     loading_dialog.update_progress(100, "Done")
     app.processEvents()
 
-    window = ui_app.MainWindow(project_path=project_path)
+    window = ui_app.MainWindow(project_path=project_path, cli_args=cli_args)
     Controller.init(window)
     window.show()
     loading_dialog.hide()
@@ -163,6 +175,12 @@ if __name__ == "__main__":
     loading_dialog.update_progress(5, "Initializing...")
     __app.processEvents()
 
+    loading_dialog.update_progress(8, "Applying theme...")
+    __app.processEvents()
+
+    from ui.theme import ThemeManager
+    ThemeManager.init(__app)
+
     loading_dialog.update_progress(10, "Loading project manager...")
     __app.processEvents()
 
@@ -176,8 +194,11 @@ if __name__ == "__main__":
     loading_dialog.accept()
     __app.processEvents()
 
+    if (cli_args.image or cli_args.segmentation) and not cli_args.temp:
+        cli_args.temp = True
+
     if cli_args.temp:
-        launch_main_window(__app, ProjectManager.create_temp_project())
+        launch_main_window(__app, ProjectManager.create_temp_project(), cli_args)
     else:
         from ui.project_launcher import ProjectLauncher
 
@@ -185,6 +206,6 @@ if __name__ == "__main__":
         if launcher.exec() == ProjectLauncher.DialogCode.Accepted:
             project_path = launcher.get_selected_project()
             if project_path:
-                launch_main_window(__app, project_path)
+                launch_main_window(__app, project_path, cli_args)
         else:
             sys.exit(0)

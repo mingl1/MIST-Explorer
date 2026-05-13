@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 SEGMENTATION_BASE_NAME = "Segmentation"
 TEMP_PROJECT_PREFIX = "Temp Project "
 
@@ -40,13 +39,24 @@ def is_segmentation_name(label_name: str | None) -> bool:
     """Match segmentation label names with or without a project prefix."""
     if not label_name:
         return False
-    return label_name == SEGMENTATION_BASE_NAME or label_name.endswith(
-        f"_{SEGMENTATION_BASE_NAME}"
+    return bool(
+        label_name == SEGMENTATION_BASE_NAME
+        or label_name.endswith(f"_{SEGMENTATION_BASE_NAME}")
+    )
+
+
+def is_segmentation_channel(wrapper) -> bool:
+    """Check if a wrapper represents a segmentation channel (by flag or name)."""
+    return bool(
+        getattr(wrapper, "is_virtual_segmentation", False)
+        or is_segmentation_name(getattr(wrapper, "name", ""))
     )
 
 
 def _sanitize_filename_component(value: str) -> str:
-    sanitized = "".join(c if c.isalnum() or c in (" ", "-", "_") else "_" for c in value)
+    sanitized = "".join(
+        c if c.isalnum() or c in (" ", "-", "_") else "_" for c in value
+    )
     sanitized = sanitized.strip()
     return sanitized
 

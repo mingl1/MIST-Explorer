@@ -38,8 +38,9 @@ class Register(QThread):
         self.protein_signal_array = None
         self.has_blue = False
         self.storage = ImageStorage()
+        self.reference_channel_key = "Channel 1"
+        self.moving_channel_key = "Channel 1"
         self.params = {
-            "alignment_layer": 0,
             "cell_layer": 1,  # 0 index
             "protein_detection_layer": 2,  # 0 index
             "max_size": 10000,
@@ -89,10 +90,10 @@ class Register(QThread):
     def run(self):
         self.tifs = (
             {
-                "image_dict": self.storage.get_reference_image(),
+                "image_dict": self.storage.get_alignment_ref_image(),
             },
             {
-                "image_dict": self.storage.get_canvas_image(),
+                "image_dict": self.storage.get_alignment_moving_image(),
             },
         )
 
@@ -106,8 +107,7 @@ class Register(QThread):
         self.progress.emit(0, "preparing alignment")  # update progress bar
         channel_wrappers = reference_image_file["image_dict"]
         assert channel_wrappers is not None, "channel wrappers are empty"
-        reference_tif_index = self.params["alignment_layer"]
-        alignment_layer = channel_wrappers[f"Channel {reference_tif_index + 1}"].data
+        alignment_layer = channel_wrappers[self.reference_channel_key].data
 
         alignment_layer = self.adjust_contrast(alignment_layer, 50, 99)
         # resize to maximum allowed size
@@ -121,14 +121,14 @@ class Register(QThread):
         moving_map = None
         # generate tiles
         for tif_n, tif in enumerate(self.tifs):
-            # skip reference
+            # skip reference (tif 0 is always the fixed/reference image)
             if self._handle_cancel():
                 return
-            if tif_n == reference_tif_index:
+            if tif_n == 0:
                 self.tifs[tif_n]["outputs"] = None
                 continue
             alignable_brightfield = self.tifs[tif_n]["image_dict"][
-                f"Channel {reference_tif_index + 1}"
+                self.moving_channel_key
             ].data
 
             alignable_brightfield = alignable_brightfield[0:m, 0:m]
@@ -235,6 +235,9 @@ class Register(QThread):
                     transf = transforms[0]
                     itk_transf = transforms[1]
 
+                    _cv2_supported = {np.uint8, np.uint16, np.int16, np.float32, np.float64}
+                    if source.dtype not in _cv2_supported:
+                        source = source.astype(np.float32)
                     if transf is not None:
                         if isinstance(transf, np.ndarray):
                             registered = cv2.warpAffine(
@@ -291,15 +294,16 @@ class Register(QThread):
         layers = list(data.keys())
         layers = sorted(layers)
         result["layer"] = layers
-        moving_uuid = self.storage.get_data("canvas_uuid")
-        assert moving_uuid is not None, "No canvas UUID found"
+        moving_uuid = self.storage.get_data("alignment_moving_uuid")
+        assert moving_uuid is not None, "No alignment moving UUID found"
         moving_uuid = moving_uuid["value"]
         result["uuid"] = moving_uuid
         if self._handle_cancel():
             return
+        moving_channel_idx = int(self.moving_channel_key.replace("Channel ", "")) - 1
         self.alignment_complete.emit(
             result,
-            aligned_protein_signal[self.params["alignment_layer"]][:m, :m],
+            aligned_protein_signal[moving_channel_idx][:m, :m],
             alignment_layer[:m, :m],
         )
         self.protein_signal_arr_signal.emit(
@@ -648,12 +652,11 @@ class Register(QThread):
             logger.warning("ITK alignment failed: %s", e)
             return None, None, None
 
-    def set_alignment_layer(self, channel):
-        match = re.search(r"\d+", channel)
-        if match:
-            number = int(match.group())
-            result = number - 1  # 0 index
-            self.params["alignment_layer"] = result
+    def set_reference_channel_key(self, channel_key: str) -> None:
+        self.reference_channel_key = channel_key
+
+    def set_moving_channel_key(self, channel_key: str) -> None:
+        self.moving_channel_key = channel_key
 
     def set_cell_layer(self, channel):
         match = re.search(r"\d+", channel)

@@ -26,7 +26,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from core.project_naming import is_segmentation_name
+from core.project_naming import is_segmentation_channel
+from ui.processing.segmentation_image_selector import SegmentationImageSelector
 
 
 _SLIDER_STEPS = [0.55, 0.70, 0.85, 1.00, 1.15, 1.30]
@@ -45,6 +46,7 @@ class ProteinDistributionDialog(QDialog):
         self._per_cell_counts = np.asarray(payload["per_cell_counts"])
         self._num_proteins = payload["num_proteins"]
         self._total_cells = payload["total_cells"]
+        self._selected_threshold = _SLIDER_STEPS[_SLIDER_DEFAULT_INDEX]
         distribution = payload["distribution"]
 
         layout = QVBoxLayout(self)
@@ -83,7 +85,11 @@ class ProteinDistributionDialog(QDialog):
         self._remaining_label = QLabel()
         layout.addWidget(self._remaining_label)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, self)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Apply | QDialogButtonBox.StandardButton.Close,
+            self,
+        )
+        buttons.button(QDialogButtonBox.StandardButton.Apply).clicked.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
@@ -93,8 +99,12 @@ class ProteinDistributionDialog(QDialog):
         )
         self._on_slider_changed(_SLIDER_DEFAULT_INDEX, threshold_label)
 
+    def selected_threshold(self) -> float:
+        return self._selected_threshold
+
     def _on_slider_changed(self, idx: int, threshold_label: QLabel):
         threshold = _SLIDER_STEPS[idx]
+        self._selected_threshold = threshold
         threshold_label.setText(f"Filter threshold (beads / proteins): {threshold:.2f}")
 
         if self._total_cells == 0 or self._num_proteins == 0:
@@ -118,6 +128,7 @@ class CellIntensityUI(QWidget):
     emitColorCodes = pyqtSignal(dict)
     generate_cell_data = pyqtSignal()
     requestFilteredStats = pyqtSignal(int)
+    thresholdApplied = pyqtSignal(float, int)
 
     def __init__(self, parent=None, containing_layout: typing.Optional[QVBoxLayout] = None):
         super().__init__(parent)
@@ -131,6 +142,7 @@ class CellIntensityUI(QWidget):
         self.main_layout = None
         self.components_widget = None
         self.cellintensity_components_vlayout = None
+        self.image_selector = None
         self.bead_data_layout = None
         self.bead_data = None
         self.bead_data_label = None
@@ -146,6 +158,10 @@ class CellIntensityUI(QWidget):
         self.cancel_button = None
         self.save_button = None
         self.filtered_stats_button = None
+        self.filter_status_label = None
+        self.channel_progress_label = None
+        self._channels_total = 0
+        self._channels_done = 0
 
         self.setup_ui(parent, containing_layout)
 
@@ -153,7 +169,7 @@ class CellIntensityUI(QWidget):
         """Update available channels in dropdowns."""
         valid_channels = {}
         for channel_name, wrapper in channels.items():
-            if is_segmentation_name(getattr(wrapper, "name", "")):
+            if is_segmentation_channel(wrapper):
                 continue
             valid_channels[channel_name] = wrapper
 
@@ -178,6 +194,11 @@ class CellIntensityUI(QWidget):
 
         self.components_widget = QWidget()
         self.cellintensity_components_vlayout = QVBoxLayout(self.components_widget)
+
+        # Image selector (no channel picker — channels are assigned per color code below)
+        self.image_selector = SegmentationImageSelector(self.cell_intensity_groupbox)
+        self.image_selector.hide_channel_selector()
+        self.cellintensity_components_vlayout.addWidget(self.image_selector)
 
         # bead data
         self.bead_data_layout = QHBoxLayout()
@@ -224,14 +245,25 @@ class CellIntensityUI(QWidget):
         self.cancel_button = QPushButton(self.cell_intensity_groupbox)
         self.cellintensity_components_vlayout.addWidget(self.cancel_button)
 
-        # save button
+        # save button (disabled until a run completes)
         self.save_button = QPushButton(self.cell_intensity_groupbox)
+        self.save_button.setEnabled(False)
         self.cellintensity_components_vlayout.addWidget(self.save_button)
 
         # filtered bead stats button
         self.filtered_stats_button = QPushButton(self.cell_intensity_groupbox)
         self.filtered_stats_button.clicked.connect(self._show_filtered_bead_stats)
         self.cellintensity_components_vlayout.addWidget(self.filtered_stats_button)
+
+        # filter status label (shown after applying threshold)
+        self.filter_status_label = QLabel()
+        self.filter_status_label.setVisible(False)
+        self.cellintensity_components_vlayout.addWidget(self.filter_status_label)
+
+        # channel progress label (shown while running)
+        self.channel_progress_label = QLabel()
+        self.channel_progress_label.setVisible(False)
+        self.cellintensity_components_vlayout.addWidget(self.channel_progress_label)
 
         self.main_layout.addWidget(self.components_widget)
 
@@ -242,11 +274,27 @@ class CellIntensityUI(QWidget):
 
     def _handle_generate_cell_data(self):
         if self.bead_data_file is not None:
+            self.filter_status_label.setVisible(False)
+            self._start_run(len(self.channel_to_color_code))
             self.emitBeadData.emit(self.bead_data_file)
             self.emitColorCodes.emit(self.channel_to_color_code)
             self.generate_cell_data.emit()
         else:
             self.errorSignal.emit("Please load bead data first.")
+
+    def _start_run(self, total_channels: int):
+        self._channels_total = total_channels
+        self._channels_done = 0
+        self.save_button.setEnabled(False)
+        self.channel_progress_label.setText(f"0 / {total_channels} channels processed")
+        self.channel_progress_label.setVisible(True)
+
+    def on_channel_done(self, done: int, total: int):
+        self._channels_done = done
+        self._channels_total = total
+        self.channel_progress_label.setText(f"{done} / {total} channels processed")
+        if done >= total:
+            self.save_button.setEnabled(True)
 
     def add_channel_row(self):
         """Add a new row for channel color code mapping."""
@@ -348,9 +396,29 @@ class CellIntensityUI(QWidget):
         """Enable generation only when a source image is selected in the image manager."""
         self.run_button.setEnabled(bool(enabled))
 
+    def set_processing_buttons_enabled(self, enabled: bool):
+        """Enable/disable filtered stats button during generation. Save is controlled by on_channel_done."""
+        self.filtered_stats_button.setEnabled(bool(enabled))
+
     def show_protein_distribution(self, payload: object):
         dialog = ProteinDistributionDialog(payload, self)
-        dialog.exec()
+        result = dialog.exec()
+        if result == QDialog.DialogCode.Accepted:
+            threshold = dialog.selected_threshold()
+            num_proteins = payload["num_proteins"]
+            total_cells = payload["total_cells"]
+            per_cell_counts = np.asarray(payload["per_cell_counts"])
+
+            if total_cells > 0 and num_proteins > 0:
+                passing = int(np.sum(per_cell_counts / num_proteins >= threshold))
+            else:
+                passing = 0
+
+            self.filter_status_label.setText(
+                f"{passing} cells remaining / {total_cells} total cells"
+            )
+            self.filter_status_label.setVisible(True)
+            self.thresholdApplied.emit(threshold, num_proteins)
 
     def _retranslate_ui(self):
         _translate = QCoreApplication.translate

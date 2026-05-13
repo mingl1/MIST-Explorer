@@ -15,12 +15,14 @@ from PyQt6.QtWidgets import (
 )
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
+from core.dataframe_utils import get_marker_columns
+
 
 class DistributionViewer(QMainWindow):
     def __init__(self, data):
         super().__init__()
 
-        cols = data.columns[3:]
+        cols = get_marker_columns(data)
 
         self.data = data[cols]  # DataFrame with data to plot
 

@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
 )
 from qtrangeslider import QRangeSlider
 
-from core.project_naming import is_segmentation_name
+from core.project_naming import is_segmentation_channel
 from ui.toolbar.Action import Action
 from utils import resource_path
 
@@ -69,20 +69,22 @@ class ToolBarUI(QToolBar):
         self.tab_buttons[0].setChecked(True)
 
     def _tab_button_style(self):
-        return """
-            QToolButton {
+        from ui.theme import ThemeManager
+        c = ThemeManager.instance().get_current()
+        return f"""
+            QToolButton {{
                 padding: 8px 16px;
                 border: none;
                 background: transparent;
                 font-size: 12px;
-            }
-            QToolButton:hover {
-                background: rgba(0, 0, 0, 0.3);
-            }
-            QToolButton:checked {
-                border-bottom: 2px solid #007AFF;
+            }}
+            QToolButton:hover {{
+                background: {c["bg_hover"]};
+            }}
+            QToolButton:checked {{
+                border-bottom: 2px solid {c["tab_checked"]};
                 font-weight: Bold;
-            }
+            }}
         """
 
     @pyqtSlot(int)
@@ -132,7 +134,7 @@ class ToolBarUI(QToolBar):
             for channel_key in channel_keys:
                 wrapper = channels[channel_key]
                 display_name = getattr(wrapper, "name", "") or channel_key
-                if is_segmentation_name(display_name):
+                if is_segmentation_channel(wrapper):
                     text = f"{channel_key} ({display_name})"
                 elif display_name != channel_key:
                     text = f"{channel_key} ({display_name})"

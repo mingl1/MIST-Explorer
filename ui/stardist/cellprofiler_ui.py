@@ -260,6 +260,10 @@ class CellProfilerAdvancedSettings(QWidget):
         self.exclude_border_objects.setChecked(True)
         layout.addWidget(self.exclude_border_objects)
 
+        self.invert_image = QCheckBox()
+        self.invert_image.setChecked(False)
+        layout.addWidget(self.invert_image)
+
         self.crop_experiment_button = QPushButton()
         layout.addWidget(self.crop_experiment_button)
 
@@ -354,6 +358,13 @@ class CellProfilerAdvancedSettings(QWidget):
         for row in self._adaptive_rows:
             self._set_layout_visible(row, show_adaptive)
 
+    def set_smoothing_enabled(self, enabled: bool):
+        self.threshold_smoothing_scale.setEnabled(enabled)
+        self.tss_label.setEnabled(enabled)
+        self.automatic_smoothing.setEnabled(enabled)
+        self.smoothing_filter_size.setEnabled(enabled)
+        self.sfs_label.setEnabled(enabled)
+
     def _set_layout_visible(self, layout, visible):
         """Show/hide all widgets in a layout."""
         if isinstance(layout, QWidget):
@@ -402,6 +413,7 @@ class CellProfilerAdvancedSettings(QWidget):
         self.mss_label.setText(_t("MainWindow", "Maxima Suppression Size"))
         self.low_res_maxima.setText(_t("MainWindow", "Low-Res Image for Maxima"))
         self.exclude_border_objects.setText(_t("MainWindow", "Exclude Border Objects"))
+        self.invert_image.setText(_t("MainWindow", "Invert Image"))
         self.crop_experiment_button.setText(_t("MainWindow", "Sample && Test"))
         self.save_preset_button.setText(_t("MainWindow", "Save Preset"))
         self.load_preset_button_adv.setText(_t("MainWindow", "Load Preset"))

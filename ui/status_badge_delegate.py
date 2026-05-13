@@ -9,12 +9,12 @@ at paint time so it always reflects current state without any mirroring.
 
 from enum import Enum
 
-from PyQt6.QtCore import QRectF, Qt
+from PyQt6.QtCore import QRectF, QSize, Qt
 from PyQt6.QtGui import QColor, QPainter, QPainterPath
 from PyQt6.QtWidgets import QStyledItemDelegate, QStyleOptionViewItem
 
 from core import ImageStorage
-from core.project_naming import is_segmentation_name
+from core.project_naming import is_segmentation_channel
 
 _BADGE_HEIGHT = 14
 _BADGE_PADDING_X = 6
@@ -23,39 +23,46 @@ _FONT_SIZE = 7
 
 
 class BadgeStyle(Enum):
-    """Visual style for each role badge: (display label, background hex, foreground hex)."""
+    """Visual style for each role badge: (display label, bg_key, fg_key)."""
 
-    VIEW = ("View", "#3b82f6", "#ffffff")
-    REF = ("Ref", "#22c55e", "#ffffff")
-    SEG = ("Seg", "#f97316", "#ffffff")
-    LABEL = ("Label", "#a855f7", "#ffffff")
-    T_REF = ("T.Ref", "#14b8a6", "#ffffff")
-    T_MOV = ("T.Mov", "#14b8a6", "#ffffff")
+    VIEW = ("View", "badge_view_bg", "badge_fg")
+    REF = ("Ref", "badge_ref_bg", "badge_fg")
+    LABEL = ("Label", "badge_label_bg", "badge_fg")
 
-    def __init__(self, label: str, bg: str, fg: str):
+    def __init__(self, label: str, bg_key: str, fg_key: str):
         self.label = label
-        self.bg = bg
-        self.fg = fg
+        self._bg_key = bg_key
+        self._fg_key = fg_key
+
+    @property
+    def bg(self) -> str:
+        try:
+            from ui.theme import ThemeManager
+            return ThemeManager.instance().get(self._bg_key)
+        except RuntimeError:
+            return {"badge_view_bg": "#3b82f6", "badge_ref_bg": "#22c55e", "badge_label_bg": "#a855f7"}[self._bg_key]
+
+    @property
+    def fg(self) -> str:
+        try:
+            from ui.theme import ThemeManager
+            return ThemeManager.instance().get(self._fg_key)
+        except RuntimeError:
+            return "#ffffff"
 
 
 # Stable left-to-right display order for badges
 _BADGE_ORDER: list[BadgeStyle] = [
     BadgeStyle.VIEW,
     BadgeStyle.REF,
-    BadgeStyle.SEG,
     BadgeStyle.LABEL,
-    BadgeStyle.T_REF,
-    BadgeStyle.T_MOV,
 ]
 
 # Maps ImageStorage key → BadgeStyle for UUID-level role checks
 _STORAGE_ROLE_MAP: list[tuple[str, BadgeStyle]] = [
     ("canvas_uuid", BadgeStyle.VIEW),
     ("reference_uuid", BadgeStyle.REF),
-    ("seg_source_uuid", BadgeStyle.SEG),
     ("seg_label_uuid", BadgeStyle.LABEL),
-    ("tissue_target_uuid", BadgeStyle.T_REF),
-    ("tissue_unaligned_uuid", BadgeStyle.T_MOV),
 ]
 
 
@@ -70,10 +77,7 @@ def _resolve_stored_channel(
     if storage_key == "reference_uuid":
         ref_ch = storage.get_data("reference_channel")
         return ref_ch["value"] if ref_ch else None
-    if storage_key == "seg_source_uuid":
-        ch = entry.get("channel")
-        return ch if isinstance(ch, str) else None
-    if storage_key in ("tissue_target_uuid", "tissue_unaligned_uuid", "seg_label_uuid"):
+    if storage_key == "seg_label_uuid":
         ch = entry.get("channel")
         return f"Channel {ch + 1}" if isinstance(ch, int) else None
     if storage_key == "canvas_uuid":
@@ -113,12 +117,18 @@ class StatusBadgeDelegate(QStyledItemDelegate):
             img = storage.get_data(uuid_str)
             if img and channel_name:
                 wrapper = img.get("data", {}).get(channel_name)
-                if wrapper is not None and is_segmentation_name(
-                    getattr(wrapper, "name", "")
-                ):
+                if wrapper is not None and is_segmentation_channel(wrapper):
                     badges.add(BadgeStyle.LABEL)
 
         return frozenset(badges)
+
+    def initStyleOption(self, option: QStyleOptionViewItem, index):
+        super().initStyleOption(option, index)
+        # Root items use 50 px icons; channel children use 30 px — tell Qt to
+        # allocate only the space actually needed so child rows have no gap.
+        is_root = not index.parent().isValid()
+        icon_px = 50 if is_root else 30
+        option.decorationSize = QSize(icon_px, icon_px)
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index):
         super().paint(painter, option, index)

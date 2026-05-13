@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from core.project_naming import is_segmentation_name
+from core.project_naming import is_segmentation_channel
 from ui.stardist.cellprofiler_ui import CellProfilerAdvancedSettings
 
 
@@ -192,6 +192,7 @@ class StarDistUI(QWidget):
         self.overlay_toggle_button = QPushButton(self.stardist_groupbox)
         self.overlay_toggle_button.setCheckable(True)
         self.overlay_toggle_button.setChecked(False)
+        self.overlay_toggle_button.toggled.connect(self._update_overlay_button_text)
         self.stardist_components_vlayout.addWidget(self.overlay_toggle_button)
 
         # cancel button
@@ -224,6 +225,9 @@ class StarDistUI(QWidget):
         self._sync_tab_size_policies(0)
         QMetaObject.connectSlotsByName(self)
 
+    def _update_overlay_button_text(self, checked: bool):
+        self.overlay_toggle_button.setText("Hide Overlay" if checked else "Show Overlay")
+
     def _sync_tab_size_policies(self, current_index: int):
         """Make non-current pages Ignored so QTabWidget sizeHint only reflects the active tab."""
         for i in range(self.segmentation_tabs.count()):
@@ -234,6 +238,15 @@ class StarDistUI(QWidget):
             )
             page.setSizePolicy(sp)
         self.segmentation_tabs.updateGeometry()
+
+    def hide_channel_selector_row(self):
+        """Hide the built-in channel selector row.
+
+        Called when an external shared selector manages image/channel selection
+        so the row is not shown as a redundant duplicate.
+        """
+        self.stardist_channel_selector_label.setVisible(False)
+        self.stardist_channel_selector.setVisible(False)
 
     def set_groupbox_title(self, name, channel):
         self.stardist_groupbox.setTitle(f"Cell Segmentation - {name}")
@@ -246,7 +259,7 @@ class StarDistUI(QWidget):
             [
                 key
                 for key, wrapper in channels.items()
-                if not is_segmentation_name(getattr(wrapper, "name", ""))
+                if not is_segmentation_channel(wrapper)
             ],
             key=lambda x: int(x.replace("Channel ", "")),
         )
@@ -254,6 +267,7 @@ class StarDistUI(QWidget):
         if previous_channel in channel_keys:
             self.stardist_channel_selector.setCurrentText(previous_channel)
         self.overlay_toggle_button.setChecked(False)
+        self.cp_advanced.set_smoothing_enabled(len(channel_keys) > 1)
         self.__retranslate_UI()
 
     def clearChannelSelector(self):

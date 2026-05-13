@@ -1,6 +1,5 @@
-import sys
-from PyQt6.QtGui import QAction
-from PyQt6.QtWidgets import QMainWindow, QMenuBar, QPushButton, QWidget, QHBoxLayout
+from PyQt6.QtGui import QAction, QKeySequence
+from PyQt6.QtWidgets import QMainWindow, QMenuBar
 
 
 class MenuBarUI(QMenuBar):
@@ -27,6 +26,12 @@ class MenuBarUI(QMenuBar):
 
         self.menuFile.addSeparator()
 
+        self.save_all_to_action = QAction("Save all images to...", self.menuFile)
+        self.save_all_to_action.triggered.connect(parent.save_all_images_to_folder)
+        self.menuFile.addAction(self.save_all_to_action)
+
+        self.menuFile.addSeparator()
+
         self.open_project_folder = QAction("Open Project Folder", self.menuFile)
         self.open_project_folder.triggered.connect(parent.open_project_folder)
         self.menuFile.addAction(self.open_project_folder)
@@ -44,27 +49,13 @@ class MenuBarUI(QMenuBar):
         view_log_action.triggered.connect(parent.show_log_dialog)
         self.menuView.addAction(view_log_action)
 
-        if sys.platform == "win32":
-            # Window controls
-            self.controls_widget = QWidget()
-            self.controls_layout = QHBoxLayout(self.controls_widget)
-            self.controls_layout.setContentsMargins(0, 0, 0, 0)
-            self.controls_layout.setSpacing(0)
+        self.menuView.addSeparator()
 
-            self.minimize_button = QPushButton("—")
-            self.maximize_button = QPushButton("[]")
-            self.close_button = QPushButton("X")
+        toggle_theme_action = QAction("Toggle Theme", self.menuView)
+        toggle_theme_action.setShortcut(QKeySequence("Ctrl+Shift+T"))
+        toggle_theme_action.triggered.connect(self._toggle_theme)
+        self.menuView.addAction(toggle_theme_action)
 
-            self.minimize_button.setFixedSize(30, 30)
-            self.maximize_button.setFixedSize(30, 30)
-            self.close_button.setFixedSize(30, 30)
-
-            self.minimize_button.clicked.connect(parent.showMinimized)
-            self.maximize_button.clicked.connect(parent.toggle_maximize)
-            self.close_button.clicked.connect(parent.close)
-
-            self.controls_layout.addWidget(self.minimize_button)
-            self.controls_layout.addWidget(self.maximize_button)
-            self.controls_layout.addWidget(self.close_button)
-
-            self.setCornerWidget(self.controls_widget)
+    def _toggle_theme(self):
+        from ui.theme import ThemeManager
+        ThemeManager.instance().toggle()

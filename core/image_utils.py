@@ -1,7 +1,10 @@
 import cv2
 import numpy as np
+from matplotlib import colormaps
+from matplotlib.colors import Colormap
 from numpy.typing import NDArray
-from PyQt6.QtGui import QImage, QPixmap
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QIcon, QImage, QPixmap
 
 
 def scale_adjust(arr: np.ndarray) -> NDArray[np.uint8]:
@@ -41,6 +44,25 @@ def create_lut(new_min, new_max):
     lut[new_max + 1:] = 255
 
     return lut
+
+
+def window_image_by_contrast(image: np.ndarray, contrast_min, contrast_max) -> np.ndarray:
+    """Apply toolbar contrast window to *image*, returning a uint16 result."""
+    image_uint8 = scale_adjust(image)
+    cmin = int(np.clip(int(contrast_min), 0, 255))
+    cmax = int(np.clip(int(contrast_max), 0, 255))
+    if cmax < cmin:
+        cmin, cmax = cmax, cmin
+    if cmin == cmax:
+        if cmax < 255:
+            cmax += 1
+        elif cmin > 0:
+            cmin -= 1
+        else:
+            return image_uint8.astype(np.uint16) * 257
+    lut = create_lut(cmin, cmax)
+    contrasted_uint8 = np.clip(cv2.LUT(image_uint8, lut), 0, 254, dtype=np.uint8)
+    return contrasted_uint8.astype(np.uint16) * 257
 
 
 def auto_contrast_helper(
@@ -87,6 +109,68 @@ def auto_contrast_helper(
             vmax = min(vmax_all, vmin + min_span)
 
     return vmin, vmax
+
+
+def generate_lut(cmap: str):
+    """Generate an 8-bit lookup table for a matplotlib colormap (BGR output)."""
+    color_map: Colormap = colormaps.get_cmap(cmap)
+    label_range = np.linspace(0, 1, 256)
+    temp = color_map(label_range)
+    temp = temp[:, 2::-1]  # drop alpha and convert RGBA → BGR
+    return np.uint8(temp * 256).reshape(256, 1, 3)
+
+
+def label2rgb(labels, lut):
+    """Apply a BGR colormap LUT to a grayscale (or already-3ch) image."""
+    if len(labels.shape) == 3 and labels.shape[2] == 3:
+        r, g, b = cv2.split(labels)
+        return cv2.LUT(cv2.merge((r, g, b)), lut)
+    if len(labels.shape) > 2:
+        labels = labels[:, :, 0]
+    return cv2.LUT(cv2.merge((labels, labels, labels)), lut)
+
+
+def create_thumbnail(wrapper, size: int = 50) -> QIcon:
+    """Create a QIcon thumbnail from an ImageWrapper.
+
+    Expensive work (scale_adjust + downscale to render_size) is cached on
+    ``wrapper._thumb_cache`` so that repeated calls caused by contrast/cmap
+    changes only execute cheap LUT operations on the already-small array.
+    """
+    render_size = size * 2  # 2× for Retina sharpness
+
+    # --- Stage 1: build/retrieve the pre-scaled base array (cached) ---
+    if render_size not in wrapper._thumb_cache:
+        arr = scale_adjust(wrapper.data.copy())
+        h, w = arr.shape[:2]
+        if h > 0 and w > 0 and max(h, w) > render_size:
+            scale = render_size / max(h, w)
+            new_h = max(1, int(h * scale))
+            new_w = max(1, int(w * scale))
+            arr = cv2.resize(arr, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        wrapper._thumb_cache[render_size] = arr
+    arr = wrapper._thumb_cache[render_size].copy()
+
+    # --- Stage 2: apply contrast LUT (cheap on small array) ---
+    if arr.size > 0:
+        vmin_i = int(wrapper.contrast_min)
+        vmax_i = int(wrapper.contrast_max)
+        if vmax_i > vmin_i:
+            arr = create_lut(vmin_i, vmax_i)[arr]
+
+    # --- Stage 3: apply colormap (cheap on small array) ---
+    cmap = wrapper.cmap
+    if cmap is not None and cmap not in ("gray", "label_image"):
+        arr = label2rgb(arr, generate_lut(cmap))
+        arr = cv2.cvtColor(arr, cv2.COLOR_BGR2RGB)
+
+    qimage = numpy_to_qimage(arr)
+    thumbnail = QPixmap(qimage).scaled(
+        render_size, render_size,
+        Qt.AspectRatioMode.KeepAspectRatio,
+        Qt.TransformationMode.SmoothTransformation,
+    )
+    return QIcon(thumbnail)
 
 
 def adjustContrast(img, alpha=5, beta=15):

@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 from PyQt6.QtCore import QCoreApplication, QMetaObject, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
-    QComboBox,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -12,6 +11,8 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from ui.processing.segmentation_image_selector import SegmentationImageSelector
 
 
 class RegisterUI(QWidget):
@@ -31,13 +32,17 @@ class RegisterUI(QWidget):
         self.register_components_vlayout.setSpacing(0)
         self.register_components_vlayout.setContentsMargins(0, 0, 0, 0)
 
-        # ALIGNMENT LAYER
-        self.alignment_layer_layout = QHBoxLayout()
-        self.alignment_layer = QComboBox(self.register_groupbox)
-        self.alignment_layer_label = QLabel()
-        self.alignment_layer_layout.addWidget(self.alignment_layer_label)
-        self.alignment_layer_layout.addWidget(self.alignment_layer)
-        self.register_components_vlayout.addLayout(self.alignment_layer_layout)
+        # Reference image selector
+        self.reference_label = QLabel("Reference Image:")
+        self.register_components_vlayout.addWidget(self.reference_label)
+        self.reference_selector = SegmentationImageSelector(self.register_groupbox)
+        self.register_components_vlayout.addWidget(self.reference_selector)
+
+        # Moving image selector
+        self.moving_label = QLabel("Moving Image:")
+        self.register_components_vlayout.addWidget(self.moving_label)
+        self.image_selector = SegmentationImageSelector(self.register_groupbox)
+        self.register_components_vlayout.addWidget(self.image_selector)
 
         # max size
         self.max_size_layout = QHBoxLayout()
@@ -104,24 +109,12 @@ class RegisterUI(QWidget):
         self.__retranslate_UI()
         QMetaObject.connectSlotsByName(self)
 
-    def updateChannelSelector(self, channels: dict):
-        """Update the channel selectors with available channels."""
-        self.alignment_layer.clear()
-        channel_keys = sorted(
-            channels.keys(), key=lambda x: int(x.replace("Channel ", ""))
-        )
-
-        self.alignment_layer.addItems(channel_keys)
-        if len(channels) >= 1:
-            self.alignment_layer.setCurrentIndex(0)
-
     def __retranslate_UI(self):
         _translate = QCoreApplication.translate
         self.register_groupbox.setTitle(_translate("MainWindow", "Align Arrays"))
-        self.alignment_layer_label.setText(_translate("MainWindow", "Reference Layer"))
-        self.max_size_label.setText(_translate("MainWindow", "Max Size"))
+        self.max_size_label.setText(_translate("MainWindow", "Max Size (px)"))
         self.num_tiles_label.setText(_translate("MainWindow", "Number of Tiles"))
-        self.overlap_label.setText(_translate("MainWindow", "Overlap"))
+        self.overlap_label.setText(_translate("MainWindow", "Overlap (px)"))
         self.ncc_threshold_label.setText(_translate("MainWindow", "NCC Threshold"))
         self.run_button.setText(_translate("MainWindow", "Run Full Image"))
         self.cancel_button.setText(_translate("MainWindow", "Cancel"))
