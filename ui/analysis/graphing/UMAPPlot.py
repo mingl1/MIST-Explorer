@@ -40,24 +40,17 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
 from ui.analysis.graphing.UMAPDataModel import DataModel
 from ui.analysis.graphing.UMAPLocale import Locale
 from ui.analysis.graphing.UMAPWorkers import AnalysisWorker, ClusteringWorker
+from utils import resource_path
 
 matplotlib.use("QtAgg")
 
 # --- 1. Debugging Setup ---
 
-log_format = "%(asctime)s - %(levelname)s - %(message)s"
-logging.basicConfig(
-    level=logging.DEBUG,
-    format=log_format,
-    handlers=[logging.FileHandler("app_debug.log"), logging.StreamHandler(sys.stdout)],
-)
-
 logger = logging.getLogger("UMAP_App")
-
-logging.getLogger("matplotlib").setLevel(logging.WARNING)
 
 
 def excepthook(exc_type, exc_value, exc_tb):
@@ -79,58 +72,56 @@ def excepthook(exc_type, exc_value, exc_tb):
 
 
 class ThemeManager:
-    """
-    Manages the 'Abyssal Void' (Dark) and 'Sterile Lab' (Light) themes.
-    """
+    """Legacy bridge — delegates to the app-wide ThemeManager in ui.theme."""
 
-    THEMES = {
-        "DARK": {
-            "bg_dark": "#0b0c10",  # Deep Void
-            "bg_panel": "#1f2833",  # Dark Slate
-            "text_main": "#c5c6c7",  # Soft Grey
-            "accent": "#66fcf1",  # Electric Cyan
-            "accent_dim": "#45a29e",  # Dull Cyan
-            "alert": "#ffaa00",  # Signal Amber
-            "grid": "#2d3436",  # Subtle Grid
-            "plot_cmap": "plasma",  # Matplotlib colormap
-            "plot_palette": "tab20",  # Categorical palette
-            "pg_bg": "#0b0c10",  # PyQtGraph Background
-        },
-        "LIGHT": {
-            "bg_dark": "#ffffff",  # Clinical White
-            "bg_panel": "#f0f2f5",  # Lab Coat Grey
-            "text_main": "#2d3436",  # Ink Black
-            "accent": "#0984e3",  # Blueprint Blue (Sharp, Technical)
-            "accent_dim": "#74b9ff",  # Soft Blue
-            "alert": "#d63031",  # Safety Red
-            "grid": "#dfe6e9",  # Faint Grey Lines
-            "plot_cmap": "viridis",  # Viridis reads better on white
-            "plot_palette": "tab20",  # Categorical palette
-            "pg_bg": "#ffffff",  # PyQtGraph Background
-        },
-    }
-
-    current_mode = "DARK"
+    from ui.theme import THEMES
+    from ui.theme import ThemeManager as _AppTheme
 
     @classmethod
     def get_current(cls):
-        return cls.THEMES[cls.current_mode]
+        try:
+            return cls._AppTheme.instance().get_current()
+        except RuntimeError:
+            return cls.THEMES["DARK"]
 
     @classmethod
     def toggle(cls):
-        cls.current_mode = "LIGHT" if cls.current_mode == "DARK" else "DARK"
+        try:
+            cls._AppTheme.instance().toggle()
+        except RuntimeError:
+            pass
         return cls.get_current()
+
+    @property
+    def current_mode(self):
+        try:
+            return self._AppTheme.instance().current_mode
+        except RuntimeError:
+            return "DARK"
+
+    # Class-level access for code that reads ThemeManager.current_mode
+    @classmethod
+    def _get_current_mode(cls):
+        try:
+            return cls._AppTheme.instance().current_mode
+        except RuntimeError:
+            return "DARK"
 
     @classmethod
     def get_stylesheet(cls):
         c = cls.get_current()
-        
-        # Resolve icon path
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        icons_dir = os.path.join(base_dir, "icons").replace("\\", "/")
-        
+
+        # Resolve icon path (use resource_path for PyInstaller compatibility)
+        icons_dir = resource_path(
+            os.path.join("ui", "analysis", "graphing", "icons")
+        ).replace("\\", "/")
+
         # Select icon based on theme
-        tick_icon = "checkbox_tick_dark.svg" if cls.current_mode == "DARK" else "checkbox_tick_light.svg"
+        tick_icon = (
+            "checkbox_tick_dark.svg"
+            if cls._get_current_mode() == "DARK"
+            else "checkbox_tick_light.svg"
+        )
         tick_path = f"{icons_dir}/{tick_icon}"
 
         return f"""
@@ -212,7 +203,7 @@ class ThemeManager:
         }}
         QPushButton:hover {{
             background-color: {c["accent"]};
-            color: {c["bg_dark"] if cls.current_mode == "DARK" else "#ffffff"};
+            color: {c["bg_dark"] if cls._get_current_mode() == "DARK" else "#ffffff"};
             border: 1px solid {c["accent"]};
         }}
         QPushButton:pressed {{
@@ -299,39 +290,34 @@ class ThemeManager:
         }}
         QPushButton#MainRunBtn:hover {{
             background-color: {c["accent"]};
-            color: {c["bg_dark"] if cls.current_mode == "DARK" else "#ffffff"};
+            color: {c["bg_dark"] if cls._get_current_mode() == "DARK" else "#ffffff"};
         }}
         """
 
 
 def apply_matplotlib_theme(figure, ax=None):
-    """Force Matplotlib to respect the current theme."""
-    c = ThemeManager.get_current()
+    """Force Matplotlib to respect the current theme.
 
-    figure.patch.set_facecolor(c["bg_dark"])
+    Delegates to ui.theme.apply_matplotlib_theme which uses the central
+    ThemeManager.  Falls back to local colors if the central manager
+    is not yet initialised.
+    """
+    try:
+        from ui.theme import apply_matplotlib_theme as _apply
 
-    if ax:
-        ax.set_facecolor(c["bg_dark"])
-        ax.tick_params(colors=c["text_main"], which="both")
-
-        # Spines
-        for spine in ax.spines.values():
-            spine.set_edgecolor(c["accent_dim"])
-            spine.set_linewidth(1.5)
-
-        # Labels
-        ax.xaxis.label.set_color(c["accent"])
-        ax.yaxis.label.set_color(c["accent"])
-        ax.title.set_color(c["accent"])
-
-        # Legend
-        legend = ax.get_legend()
-        if legend:
-            frame = legend.get_frame()
-            frame.set_facecolor(c["bg_panel"])
-            frame.set_edgecolor(c["grid"])
-            for text in legend.get_texts():
-                text.set_color(c["text_main"])
+        _apply(figure, ax)
+    except RuntimeError:
+        c = ThemeManager.get_current()
+        figure.patch.set_facecolor(c["bg_dark"])
+        if ax:
+            ax.set_facecolor(c["bg_dark"])
+            ax.tick_params(colors=c["text_main"], which="both")
+            for spine in ax.spines.values():
+                spine.set_edgecolor(c["accent_dim"])
+                spine.set_linewidth(1.5)
+            ax.xaxis.label.set_color(c["accent"])
+            ax.yaxis.label.set_color(c["accent"])
+            ax.title.set_color(c["accent"])
 
 
 def to_rgb(hex_color):
@@ -390,12 +376,6 @@ class UMAPControls(QWidget):
         input_row.addWidget(self.btn_select_input)
         data_layout.addLayout(input_row)
 
-        self.feature_list = QListWidget()
-        self.feature_list.setMinimumHeight(200)
-        self.populate_features(all_features)
-        data_layout.addWidget(self.feature_list)
-        self.feature_list.itemChanged.connect(self.emit_apply_data)
-
         btn_row = QHBoxLayout()
         btn_all = QPushButton(Locale.get("BTN_ALL"))
         btn_all.clicked.connect(self.select_all)
@@ -405,16 +385,22 @@ class UMAPControls(QWidget):
         btn_row.addWidget(btn_none)
         data_layout.addLayout(btn_row)
 
+        self.feature_list = QListWidget()
+        self.feature_list.setMinimumHeight(200)
+        self.populate_features(all_features)
+        data_layout.addWidget(self.feature_list)
+        self.feature_list.itemChanged.connect(self.emit_apply_data)
+
         data_group.setLayout(data_layout)
         layout.addWidget(data_group)
 
         # === 1. PCA ===
         pca_group = QGroupBox(Locale.get("GRP_PCA"))
         pca_layout = QVBoxLayout()
-        self.lbl_pca = QLabel(Locale.get("LBL_COMPONENTS", 10))
+        self.lbl_pca = QLabel(Locale.get("LBL_COMPONENTS", 5))
         self.slider_pca = QSlider(Qt.Orientation.Horizontal)
         self.slider_pca.setRange(2, max_pca_components)
-        self.slider_pca.setValue(10)
+        self.slider_pca.setValue(5)
         self.slider_pca.valueChanged.connect(
             lambda v: self.lbl_pca.setText(Locale.get("LBL_COMPONENTS", v))
         )
@@ -513,24 +499,21 @@ class UMAPControls(QWidget):
             item = self.feature_list.item(i)
             item.setHidden(text.lower() not in item.text().lower())
 
-    def select_all(self, emit=True):
+    def select_all(self, _=None):
         self.feature_list.blockSignals(True)
         for i in range(self.feature_list.count()):
             item = self.feature_list.item(i)
             if not item.isHidden():
                 item.setCheckState(Qt.CheckState.Checked)
         self.feature_list.blockSignals(False)
-        if emit:
-            self.emit_apply_data()
+        self.emit_apply_data()
 
-    def select_none(self, emit=True):
-        if emit:
-            self.feature_list.blockSignals(True)
+    def select_none(self, _=None):
+        self.feature_list.blockSignals(True)
         for i in range(self.feature_list.count()):
             self.feature_list.item(i).setCheckState(Qt.CheckState.Unchecked)
-        if emit:
-            self.feature_list.blockSignals(False)
-            self.emit_apply_data()
+        self.feature_list.blockSignals(False)
+        self.emit_apply_data()
 
     def get_selected_features(self):
         selected = []
@@ -576,18 +559,22 @@ class PlotView(QWidget):
         self.ax.axis("off")
         self.current_adata = None
         self.current_key = None
+        self.current_hide_hidden = False
 
     def refresh_theme(self):
         """Called when theme toggles"""
         apply_matplotlib_theme(self.figure, self.ax)
         if self.current_adata and self.current_key:
-            self.update_plot(self.current_adata, self.current_key)
+            self.update_plot(
+                self.current_adata, self.current_key, self.current_hide_hidden
+            )
         else:
             self.canvas.draw()
 
-    def update_plot(self, adata, color_key):
+    def update_plot(self, adata, color_key, hide_hidden=False):
         self.current_adata = adata
         self.current_key = color_key
+        self.current_hide_hidden = hide_hidden
 
         self.figure.clear()
         apply_matplotlib_theme(self.figure)
@@ -596,23 +583,28 @@ class PlotView(QWidget):
 
         c = ThemeManager.get_current()
         try:
+            adata_plot = adata[adata.obs[color_key].notna()] if hide_hidden else adata
             sc.pl.umap(
-                adata,
+                adata_plot,
                 color=color_key,
                 ax=self.ax,
                 show=False,
-                title=f"PROJECTION :: {color_key.upper()}",
+                title=f"{color_key.upper().split('_')[0]} UMAP",
                 legend_loc="on data",
-                palette=c["plot_palette"],
                 frameon=False,
             )
+            for text_obj in list(self.ax.texts):
+                if text_obj.get_text() in ("NA", "NaN", "nan"):
+                    text_obj.remove()
             for text_obj in self.ax.texts:
                 text_obj.set_fontfamily("monospace")
                 text_obj.set_fontsize(10)
                 text_obj.set_weight("bold")
 
                 fg_color = (
-                    "#ffffff" if ThemeManager.current_mode == "DARK" else "#000000"
+                    "#ffffff"
+                    if ThemeManager._get_current_mode() == "DARK"
+                    else "#000000"
                 )
                 text_obj.set_color(fg_color)
 
@@ -621,7 +613,9 @@ class PlotView(QWidget):
                 )
             self.figure.tight_layout()
             self.canvas.draw()
-        except Exception:
+        except Exception as e:
+            logger.exception("UMAP_PLOT_FAIL")
+            logger.debug(f"Error: {e}")
             self.ax.text(
                 0.5, 0.5, Locale.get("PLOT_NO_SIGNAL"), ha="center", color=c["alert"]
             )
@@ -675,15 +669,11 @@ class HeatmapView(QWidget):
         self,
         adata,
         cluster_key,
-        visible_indices,
-        rename_map,
         selected_features,
     ):
         self.last_params = (
             adata,
             cluster_key,
-            visible_indices,
-            rename_map,
             selected_features,
         )
 
@@ -711,14 +701,13 @@ class HeatmapView(QWidget):
             return
 
         try:
-            # Data subsetting logic
-            all_codes = adata.obs[cluster_key].cat.codes
-            mask_cells = np.isin(all_codes, visible_indices)
+            # Drop cells where cluster_key is nan
+            mask_cells = adata.obs[cluster_key].notna()
             if np.sum(mask_cells) == 0:
                 show_msg(Locale.get("HM_VOID"))
                 return
 
-            heatmap_data = adata[mask_cells, :][:, selected_features].copy()
+            heatmap_data = adata[mask_cells, :][:, list(selected_features)].copy()
 
             # Apply scaling if checkbox is checked
             if self.chk_scale.isChecked():
@@ -733,18 +722,12 @@ class HeatmapView(QWidget):
                 final_features.sort()
 
             # Handle Group Sorting (X)
-            current_codes = heatmap_data.obs[cluster_key].cat.codes
-            new_labels = [rename_map.get(c, str(c)) for c in current_codes]
-
-            # Determine unique labels in natural order (based on code)
-            present_codes = np.unique(current_codes)
-            natural_order = [rename_map.get(c, str(c)) for c in sorted(present_codes)]
-
-            final_categories = natural_order
-
-            heatmap_data.obs["display_label"] = pd.Categorical(
-                new_labels, categories=final_categories, ordered=True
-            )
+            heatmap_data.obs["display_label"] = heatmap_data.obs[cluster_key].copy()
+            final_categories = list(heatmap_data.obs["display_label"].cat.categories)
+            if f"{cluster_key}_colors" in heatmap_data.uns:
+                heatmap_data.uns["display_label_colors"] = heatmap_data.uns[
+                    f"{cluster_key}_colors"
+                ]
 
             # Apply Equiwidth Resampling
             if self.chk_equiwidth.isChecked():
@@ -792,7 +775,9 @@ class HeatmapView(QWidget):
                     groupby="display_label",
                     swap_axes=True,
                     show=False,
-                    cmap="magma" if ThemeManager.current_mode == "DARK" else "viridis",
+                    cmap="magma"
+                    if ThemeManager._get_current_mode() == "DARK"
+                    else "viridis",
                     dendrogram=False,
                 )
 
@@ -857,14 +842,16 @@ class RankedGenesView(QWidget):
 
         self.adata = None
         self.key = None
+        self.hide_hidden = False
 
     def refresh_theme(self):
         # Simply regenerating plots picks up the current theme
         self.on_update()
 
-    def set_data(self, adata, key):
+    def set_data(self, adata, key, hide_hidden=False):
         self.adata = adata
         self.key = key
+        self.hide_hidden = hide_hidden
 
         if self.adata and self.key and self.key in self.adata.obs:
             cats = self.adata.obs[self.key].cat.categories
@@ -897,18 +884,6 @@ class RankedGenesView(QWidget):
                     )
                 except Exception as e:
                     logger.error(f"Failed to rank genes: {e}")
-
-    def update_cluster_names(self, renames):
-        """
-        Updates the displayed names in the combo box based on the dictionary
-        renames: { int_code : str_new_name }
-        """
-        self.cluster_combo.blockSignals(True)
-        for i in range(self.cluster_combo.count()):
-            # Assuming the combo box items were added in order of codes (which they are in set_data)
-            if i in renames:
-                self.cluster_combo.setItemText(i, renames[i])
-        self.cluster_combo.blockSignals(False)
 
     def on_update(self):
         if self.adata is None or self.key is None:
@@ -963,25 +938,69 @@ class RankedGenesView(QWidget):
 
                 is_categorical = color_key == self.key
 
-                sc.pl.umap(
-                    self.adata,
-                    color=color_key,
-                    ax=ax,
-                    show=False,
-                    legend_loc="on data" if is_categorical else None,
-                    frameon=False,
-                    title=color_key,
-                    cmap=c["plot_cmap"],
-                    palette=c["plot_palette"],
-                    colorbar_loc=None,
+                visible_mask = (
+                    self.adata.obs[self.key].notna()
+                    if self.hide_hidden
+                    else slice(None)
                 )
+                x = self.adata.obsm["X_umap"][:, 0][visible_mask]
+                y = self.adata.obsm["X_umap"][:, 1][visible_mask]
 
-                # Enforce square aspect ratio
+                ax.set_title(color_key)
+                ax.axis("off")
                 ax.set_aspect("equal", "box")
+
+                if is_categorical:
+                    cats = self.adata.obs[color_key][visible_mask]
+                    cat_colors = self.adata.uns.get(f"{color_key}_colors")
+                    if cat_colors is None:
+                        import matplotlib.colors as mcolors
+                        import matplotlib.pyplot as plt
+
+                        cmap = plt.get_cmap("tab20")
+                        base_colors = (
+                            cmap.colors
+                            if hasattr(cmap, "colors")
+                            else [cmap(i) for i in range(cmap.N)]
+                        )
+                        cat_colors = [
+                            mcolors.to_hex(base_colors[i % len(base_colors)])
+                            for i in range(len(cats.cat.categories))
+                        ]
+
+                    color_map_dict = dict(zip(cats.cat.categories, cat_colors))
+                    c_values = [
+                        color_map_dict.get(v, "#cccccc") if pd.notna(v) else "#cccccc"
+                        for v in cats
+                    ]
+                    ax.scatter(x, y, c=c_values, s=5, alpha=0.8, edgecolors="none")
+
+                    for cat in cats.cat.categories:
+                        cat_mask = cats == cat
+                        if cat_mask.any():
+                            cat_x = x[cat_mask].mean()
+                            cat_y = y[cat_mask].mean()
+                            ax.text(cat_x, cat_y, str(cat), ha="center", va="center")
+                else:
+                    c_values = sc.get.obs_df(self.adata, keys=[color_key])[
+                        color_key
+                    ].values[visible_mask]
+                    sort_idx = np.argsort(c_values)
+                    ax.scatter(
+                        x[sort_idx],
+                        y[sort_idx],
+                        c=c_values[sort_idx],
+                        cmap=c["plot_cmap"],
+                        s=5,
+                        alpha=0.8,
+                        edgecolors="none",
+                    )
 
                 # --- COLOR SETTINGS ---
                 fg_color = (
-                    "#ffffff" if ThemeManager.current_mode == "DARK" else "#000000"
+                    "#ffffff"
+                    if ThemeManager._get_current_mode() == "DARK"
+                    else "#000000"
                 )
                 ax.title.set_color(fg_color)
                 ax.title.set_fontfamily("monospace")
@@ -1060,6 +1079,10 @@ class SegmentationView(QWidget):
 
         r_layout.addWidget(QLabel(Locale.get("SEG_CLUSTER_FILTER")))
 
+        self.cluster_list = QListWidget()
+        self.cluster_list.itemChanged.connect(self.on_item_changed)
+        r_layout.addWidget(self.cluster_list)
+
         btn_row = QHBoxLayout()
         self.btn_all = QPushButton(Locale.get("BTN_ALL"))
         self.btn_all.clicked.connect(self.select_all)
@@ -1069,9 +1092,12 @@ class SegmentationView(QWidget):
         btn_row.addWidget(self.btn_none)
         r_layout.addLayout(btn_row)
 
-        self.cluster_list = QListWidget()
-        self.cluster_list.itemChanged.connect(self.on_item_changed)
-        r_layout.addWidget(self.cluster_list)
+        self.chk_hide_hidden = QCheckBox("HIDE FILTERED ON UMAP")
+        self.chk_hide_hidden.stateChanged.connect(
+            lambda: self.cluster_state_changed.emit(*self.get_state())
+        )
+        r_layout.addWidget(self.chk_hide_hidden)
+
         self.splitter.addWidget(right_w)
         self.splitter.setStretchFactor(0, 4)
         main_layout.addWidget(self.splitter)
@@ -1105,14 +1131,32 @@ class SegmentationView(QWidget):
 
         self.refresh_theme()
         if f"{cluster_key}_colors" not in adata.uns:
-            sc.pl.umap(adata, color=cluster_key, show=False)
+            import matplotlib.colors as mcolors
+            import matplotlib.pyplot as plt
+
+            c = ThemeManager.get_current()
+            palette_name = c.get("plot_palette", "tab20")
+            categories = adata.obs[cluster_key].cat.categories
+            cmap = plt.get_cmap(palette_name)
+            base_colors = (
+                cmap.colors
+                if hasattr(cmap, "colors")
+                else [cmap(i) for i in range(cmap.N)]
+            )
+            colors = [
+                mcolors.to_hex(base_colors[i % len(base_colors)])
+                for i in range(len(categories))
+            ]
+            adata.uns[f"{cluster_key}_colors"] = np.array(colors)
         cluster_colors = adata.uns[f"{cluster_key}_colors"]
         categories = adata.obs[cluster_key].cat.categories
         self.npy_cat_idx_to_rgb = np.array([to_rgb(c) for c in cluster_colors])
-        valid_ids = adata.obs["cell_id"].values.astype(int)
-        max_id = max(self.seg_data.max(), valid_ids.max())
-        self.npy_id_to_cat_idx = np.full(max_id + 1, -1, dtype=np.int32)
-        self.npy_id_to_cat_idx[valid_ids] = adata.obs[cluster_key].cat.codes.values
+
+        if self.seg_data is not None:
+            valid_ids = adata.obs["cell_id"].values.astype(int)
+            max_id = max(self.seg_data.max(), valid_ids.max())
+            self.npy_id_to_cat_idx = np.full(max_id + 1, -1, dtype=np.int32)
+            self.npy_id_to_cat_idx[valid_ids] = adata.obs[cluster_key].cat.codes.values
 
         self.cluster_list.blockSignals(True)
         self.cluster_list.clear()
@@ -1199,60 +1243,77 @@ class UMAPVisualizer(QMainWindow):
         self.resize(1300, 900)
         self.setStyleSheet(ThemeManager.get_stylesheet())
         self.is_running_full_pipeline = False
+        self.analysis_worker = None
+        self.clustering_worker = None
 
         try:
             self.model = DataModel(df, normalization="RC")
             self.segmentation = segmentation
         except Exception as e:
-            QMessageBox.critical(self, "SYSTEM_FAILURE", f"INIT_ERR: {e}")
+            logger.critical(f"DataModel init failed: {e}", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "UMAP Error",
+                f"Failed to initialize data model:\n\n{e}\n\nSee log for full traceback.",
+            )
             return
 
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        main_layout = QVBoxLayout(central_widget)
+        try:
+            central_widget = QWidget()
+            self.setCentralWidget(central_widget)
+            main_layout = QVBoxLayout(central_widget)
 
-        # === TOOLBAR & THEME TOGGLE ===
-        top_bar = QHBoxLayout()
-        header = QLabel(Locale.get("HEADER"))
-        header.setObjectName("h1")
-        top_bar.addWidget(header)
-        top_bar.addStretch()
+            # === TOOLBAR & THEME TOGGLE ===
+            top_bar = QHBoxLayout()
+            header = QLabel(Locale.get("HEADER"))
+            header.setObjectName("h1")
+            top_bar.addWidget(header)
+            top_bar.addStretch()
 
-        self.btn_theme = QPushButton(Locale.get("THEME_BTN"))
-        self.btn_theme.setFixedWidth(200)
-        self.btn_theme.clicked.connect(self.toggle_theme)
-        top_bar.addWidget(self.btn_theme)
+            self.btn_theme = QPushButton(Locale.get("THEME_BTN"))
+            self.btn_theme.setFixedWidth(200)
+            self.btn_theme.clicked.connect(self.toggle_theme)
+            top_bar.addWidget(self.btn_theme)
 
-        main_layout.addLayout(top_bar)
+            main_layout.addLayout(top_bar)
 
-        # === TABS ===
-        self.tabs = QTabWidget()
-        main_layout.addWidget(self.tabs)
+            # === TABS ===
+            self.tabs = QTabWidget()
+            main_layout.addWidget(self.tabs)
 
-        self.umap_tab = QWidget()
-        self.setup_umap_tab()
-        self.tabs.addTab(self.umap_tab, Locale.get("TAB_UMAP"))
+            self.umap_tab = QWidget()
+            self.setup_umap_tab()
+            self.tabs.addTab(self.umap_tab, Locale.get("TAB_UMAP"))
 
-        self.seg_view = SegmentationView(segmentation)
-        self.seg_view.cluster_state_changed.connect(self.trigger_heatmap_update)
-        self.tabs.addTab(self.seg_view, Locale.get("TAB_SEG"))
+            self.seg_view = SegmentationView(segmentation)
+            self.seg_view.cluster_state_changed.connect(self.trigger_heatmap_update)
+            self.tabs.addTab(self.seg_view, Locale.get("TAB_SEG"))
 
-        self.heatmap_view = HeatmapView()
-        self.tabs.addTab(self.heatmap_view, Locale.get("TAB_HEATMAP"))
+            self.heatmap_view = HeatmapView()
+            self.tabs.addTab(self.heatmap_view, Locale.get("TAB_HEATMAP"))
 
-        self.ranked_genes_view = RankedGenesView()
-        self.tabs.addTab(self.ranked_genes_view, "RANKED GENES")
+            self.ranked_genes_view = RankedGenesView()
+            self.tabs.addTab(self.ranked_genes_view, "RANKED GENES")
 
-        # === STATUS BAR ===
-        self.status_bar = self.statusBar()
-        self.progress = QProgressBar()
-        self.progress.setVisible(False)
-        self.progress.setMaximumWidth(200)
-        self.status_bar.addPermanentWidget(self.progress)
-        self.status_label = QLabel(Locale.get("STATUS_READY"))
-        self.status_bar.addWidget(self.status_label)
+            self.tabs.currentChanged.connect(self._on_tab_changed)
 
-        self.update_status_style()
+            # === STATUS BAR ===
+            self.status_bar = self.statusBar()
+            self.progress = QProgressBar()
+            self.progress.setVisible(False)
+            self.progress.setMaximumWidth(200)
+            self.status_bar.addPermanentWidget(self.progress)
+            self.status_label = QLabel(Locale.get("STATUS_READY"))
+            self.status_bar.addWidget(self.status_label)
+
+            self.update_status_style()
+        except Exception as e:
+            logger.critical(f"UMAP UI setup failed: {e}", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "UMAP Error",
+                f"Failed to set up UMAP window:\n\n{e}\n\nSee log for full traceback.",
+            )
 
     def setup_umap_tab(self):
         layout = QHBoxLayout(self.umap_tab)
@@ -1280,17 +1341,69 @@ class UMAPVisualizer(QMainWindow):
             return
         if visible is None or renames is None:
             visible, renames = self.seg_view.get_state()
-        
-        self.ranked_genes_view.update_cluster_names(renames)
-        
+
+        adata = self.model.adata
+        base_key = "leiden"
+        view_key = f"{base_key}_view"
+
+        orig_categories = list(adata.obs[base_key].cat.categories)
+
+        present_codes = sorted([c for c in renames.keys() if c in visible])
+        unique_new_labels = []
+        for c in present_codes:
+            lbl = renames.get(c, str(orig_categories[c]))
+            if lbl not in unique_new_labels:
+                unique_new_labels.append(lbl)
+
+        new_labels = []
+        for code in adata.obs[base_key].cat.codes:
+            if code >= 0 and code in visible:
+                new_labels.append(renames.get(code, str(orig_categories[code])))
+            else:
+                new_labels.append(np.nan)
+
+        adata.obs[view_key] = pd.Categorical(new_labels, categories=unique_new_labels)
+
+        if f"{base_key}_colors" in adata.uns:
+            orig_colors = adata.uns[f"{base_key}_colors"]
+
+            color_map = {}
+            for i, cat_name in enumerate(orig_categories):
+                if i in visible:
+                    new_name = renames.get(i, str(cat_name))
+                    if new_name not in color_map:
+                        color_map[new_name] = orig_colors[i]
+
+            view_colors = [color_map[cat] for cat in unique_new_labels]
+            adata.uns[f"{view_key}_colors"] = np.array(view_colors)
+
+        hide_hidden = self.seg_view.chk_hide_hidden.isChecked()
+        self.plot_view.update_plot(adata, view_key, hide_hidden)
+        self.ranked_genes_view.set_data(adata, view_key, hide_hidden)
+
         selected_features = self.controls.get_selected_features()
-        self.heatmap_view.update_heatmap(
-            self.model.adata, "leiden", visible, renames, selected_features
-        )
+        self.heatmap_view.update_heatmap(adata, view_key, selected_features)
 
     def start_full_analysis(self, params):
+        features = self.controls.get_selected_features()
+        if len(features) < 1:
+            QMessageBox.warning(self, "INPUT_ERR", "MIN_FEATURES_REQUIRED: 1")
+            return
+
         self.set_busy_state(True)
         self.is_running_full_pipeline = True
+
+        # Reprocess data with current normalization/features before running pipeline
+        normalization = self.controls.combo_norm.currentText()
+        try:
+            self.model.reprocess_data(normalization, features)
+            new_max_pcs = self.model.get_max_pcs()
+            self.controls.set_max_pca(new_max_pcs)
+        except Exception as e:
+            QMessageBox.critical(self, "ERR", str(e))
+            self.set_busy_state(False)
+            self.is_running_full_pipeline = False
+            return
 
         self.analysis_worker = AnalysisWorker(
             model=self.model,
@@ -1320,18 +1433,19 @@ class UMAPVisualizer(QMainWindow):
         self.clustering_worker.error.connect(self.on_analysis_error)
         self.clustering_worker.start()
 
+    def _on_tab_changed(self, index):
+        """Redraw the UMAP plot when switching back to the UMAP tab."""
+        if index == 0 and self.plot_view.current_adata is not None:
+            self.plot_view.canvas.draw_idle()
+
     def on_analysis_finished(self, adata, key):
         self.set_busy_state(False)
         self.is_running_full_pipeline = False
-        self.plot_view.update_plot(adata, key)
         n_clusters = len(adata.obs[key].unique())
         self.status_label.setText(
             f"COMPLETED: {n_clusters} CLUSTERS IDENTIFIED ({key.upper()})"
         )
-        if self.segmentation is not None:
-            self.seg_view.render_clusters(adata, key)
-        self.trigger_heatmap_update()
-        self.ranked_genes_view.set_data(adata, key)
+        self.seg_view.render_clusters(adata, key)
 
     def on_analysis_error(self, error_msg):
         self.set_busy_state(False)
@@ -1340,41 +1454,46 @@ class UMAPVisualizer(QMainWindow):
         QMessageBox.critical(self, "PROCESS_TERMINATED", error_msg)
 
     def apply_data_changes(self, normalization, features):
+        """Lightweight update when proteins/normalization change — no reprocessing."""
         if len(features) < 1:
-            QMessageBox.warning(self, "INPUT_ERR", "MIN_FEATURES_REQUIRED: 1")
             return
+        # Max PCs = n_features - 1 (PCA constraint)
+        self.controls.set_max_pca(max(len(features) - 1, 2))
+        msg = f"SELECTED: {len(features)} FEATS | {normalization} — click Run Analysis to apply"
+        self.status_label.setText(msg)
 
-        self.set_busy_state(True)
-        self.status_label.setText("REPROCESSING_STREAM...")
-        QApplication.processEvents()
-
-        try:
-            self.model.reprocess_data(normalization, features)
-            new_max_pcs = self.model.get_max_pcs()
-            self.controls.set_max_pca(new_max_pcs)
-            self.plot_view.figure.clear()
-            apply_matplotlib_theme(self.plot_view.figure)  # Re-apply theme on clear
-            self.plot_view.canvas.draw()
-
-            self.heatmap_view.figure.clear()
-            apply_matplotlib_theme(self.heatmap_view.figure)
-            self.heatmap_view.canvas.draw()
-
-            msg = f"UPDATED: {len(features)} FEATS | {normalization}"
-            self.status_label.setText(msg)
-        except Exception as e:
-            QMessageBox.critical(self, "ERR", str(e))
-        finally:
-            self.set_busy_state(False)
+    def cancel_analysis(self):
+        """Cancel any running analysis or clustering worker."""
+        if self.analysis_worker and self.analysis_worker.isRunning():
+            self.analysis_worker.cancel()
+            self.analysis_worker.finished.disconnect()
+            self.analysis_worker.error.disconnect()
+        if self.clustering_worker and self.clustering_worker.isRunning():
+            self.clustering_worker.cancel()
+            self.clustering_worker.finished.disconnect()
+            self.clustering_worker.error.disconnect()
+        self.is_running_full_pipeline = False
+        self.set_busy_state(False)
+        self.status_label.setText("Analysis cancelled.")
+        logger.info("Analysis cancelled by user.")
 
     def set_busy_state(self, is_busy):
-        self.controls.btn_run.setEnabled(not is_busy)
         if is_busy:
-            self.controls.btn_run.setText(Locale.get("BTN_PROCESSING"))
+            self.controls.btn_run.setText(Locale.get("BTN_CANCEL"))
+            try:
+                self.controls.btn_run.clicked.disconnect()
+            except TypeError:
+                pass
+            self.controls.btn_run.clicked.connect(self.cancel_analysis)
             self.progress.setVisible(True)
             self.progress.setRange(0, 0)
         else:
             self.controls.btn_run.setText(Locale.get("BTN_EXECUTE"))
+            try:
+                self.controls.btn_run.clicked.disconnect()
+            except TypeError:
+                pass
+            self.controls.btn_run.clicked.connect(self.controls.emit_run)
             self.progress.setVisible(False)
 
     def toggle_theme(self):
@@ -1395,7 +1514,7 @@ class UMAPVisualizer(QMainWindow):
         # 4. Update Status Bar
         self.update_status_style()
 
-        logger.info(f"THEME SWITCHED TO: {ThemeManager.current_mode}")
+        logger.info("THEME SWITCHED TO: %s", ThemeManager._get_current_mode())
 
     def update_status_style(self):
         c = ThemeManager.get_current()
@@ -1426,4 +1545,4 @@ if __name__ == "__main__":
         sys.exit(app.exec())
     except FileNotFoundError:
         logger.error("Demo files not found. Exiting.")
-        print("Demo files (csv/tif) not found. Please check paths.")
+        logger.error("Demo files (csv/tif) not found. Please check paths.")

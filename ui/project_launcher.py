@@ -1,23 +1,21 @@
-import platform
-from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
-from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QIcon, QPixmap, QColor
+from PyQt6.QtCore import QSize, Qt
+from PyQt6.QtGui import QColor, QPixmap
 from PyQt6.QtWidgets import (
     QDialog,
-    QVBoxLayout,
+    QFileDialog,
+    QFrame,
     QHBoxLayout,
-    QPushButton,
+    QInputDialog,
     QLabel,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
-    QInputDialog,
-    QFileDialog,
+    QPushButton,
+    QVBoxLayout,
     QWidget,
-    QFrame,
 )
 
 from core.project_manager import ProjectManager
@@ -35,16 +33,22 @@ class ProjectCard(QWidget):
         layout.setContentsMargins(8, 4, 8, 4)
         layout.setSpacing(10)
 
+        from ui.theme import ThemeManager
+
+        tc = ThemeManager.instance().get_current()
+
         icon_label = QLabel()
         icon_label.setFixedSize(32, 32)
         icon = QPixmap(32, 32)
-        icon.fill(QColor(100, 100, 100))
+        icon.fill(QColor(tc["bg_tertiary"]))
         icon_label.setPixmap(icon)
         layout.addWidget(icon_label)
 
         info_layout = QVBoxLayout()
         info_layout.setContentsMargins(0, 0, 0, 0)
         info_layout.setSpacing(2)
+
+        muted = f"color: {tc['text_secondary']};"
 
         name_label = QLabel(self.metadata.name)
         font = name_label.font()
@@ -57,14 +61,14 @@ class ProjectCard(QWidget):
         font = date_label.font()
         font.setPointSize(10)
         date_label.setFont(font)
-        date_label.setStyleSheet("color: dimgray;")
+        date_label.setStyleSheet(muted)
 
         image_count = len(self.metadata.images)
         count_label = QLabel(f"{image_count} image{'s' if image_count != 1 else ''}")
         font = count_label.font()
         font.setPointSize(10)
         count_label.setFont(font)
-        count_label.setStyleSheet("color: dimgray;")
+        count_label.setStyleSheet(muted)
 
         size_bytes = ProjectManager.get_folder_size(self.metadata.path)
         size_str = ProjectManager.format_size(size_bytes)
@@ -72,7 +76,7 @@ class ProjectCard(QWidget):
         font = size_label.font()
         font.setPointSize(10)
         size_label.setFont(font)
-        size_label.setStyleSheet("color: dimgray;")
+        size_label.setStyleSheet(muted)
 
         info_layout.addWidget(name_label)
         info_layout.addWidget(date_label)
@@ -105,7 +109,7 @@ class ProjectCard(QWidget):
             self,
             "Delete Project",
             f'Are you sure you want to delete "{self.metadata.name}"?\n\nThis will permanently delete the project folder.',
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No | QMessageBox.StandardButton.Yes,
         )
         if reply == QMessageBox.StandardButton.Yes:
             ProjectManager.delete_project(self.metadata.path)
@@ -142,6 +146,11 @@ class ProjectLauncher(QDialog):
         new_project_btn.setFixedHeight(36)
         new_project_btn.clicked.connect(self._on_new_project)
         layout.addWidget(new_project_btn)
+
+        temp_project_btn = QPushButton("Temp Project")
+        temp_project_btn.setFixedHeight(32)
+        temp_project_btn.clicked.connect(self._on_temp_project)
+        layout.addWidget(temp_project_btn)
 
         open_project_btn = QPushButton("Open Existing Project...")
         open_project_btn.setFixedHeight(32)
@@ -205,6 +214,10 @@ class ProjectLauncher(QDialog):
         if ok and name.strip():
             self.selected_project_path = ProjectManager.create_project(name.strip())
             self.accept()
+
+    def _on_temp_project(self):
+        self.selected_project_path = ProjectManager.create_temp_project()
+        self.accept()
 
     def _on_open_existing(self):
         path = QFileDialog.getExistingDirectory(

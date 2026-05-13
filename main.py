@@ -1,9 +1,60 @@
 """
 Main script for starting the MIST-Explorer application.
 """
+import argparse
 import io
+import logging
 import os
 import sys
+import traceback
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
+
+# --- Log directory ---
+_log_dir = Path.home() / ".mist-explorer" / "logs"
+_log_dir.mkdir(parents=True, exist_ok=True)
+_log_file = _log_dir / "mist-explorer.log"
+_crash_file = _log_dir / "crash.log"
+
+# --- Root logger with file + console output ---
+_fmt = logging.Formatter(
+    "%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+)
+
+# Rotating file handler: 5 MB per file, keep 3 backups
+_file_handler = RotatingFileHandler(
+    _log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+)
+_file_handler.setLevel(logging.DEBUG)
+_file_handler.setFormatter(_fmt)
+
+_console_handler = logging.StreamHandler()
+_console_handler.setLevel(logging.WARNING)
+_console_handler.setFormatter(_fmt)
+
+logging.basicConfig(level=logging.WARNING, handlers=[_file_handler, _console_handler])
+for _name in ("core", "ui", "controller", "UMAP_App", "MIST_UMAP", "MIST_MAIN"):
+    logging.getLogger(_name).setLevel(logging.DEBUG)
+
+_logger = logging.getLogger("MIST_MAIN")
+_logger.info("=== MIST-Explorer started ===")
+_logger.info(f"Log file: {_log_file}")
+
+
+# --- Global crash handler ---
+def _crash_handler(exc_type, exc_value, exc_tb):
+    """Write unhandled exceptions to crash.log and the main log, then exit."""
+    tb_text = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+    _logger.critical(f"Unhandled exception:\n{tb_text}")
+    try:
+        with open(_crash_file, "w", encoding="utf-8") as f:
+            f.write(f"MIST-Explorer Crash Report\n{'=' * 40}\n\n{tb_text}")
+    except Exception:
+        pass
+    sys.__excepthook__(exc_type, exc_value, exc_tb)
+
+
+sys.excepthook = _crash_handler
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 from PyQt6.QtCore import QCoreApplication, Qt
@@ -50,8 +101,68 @@ class LoadingDialog(QDialog):
         QCoreApplication.processEvents()
 
 
+def parse_cli_args(argv=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--temp",
+        action="store_true",
+        help="Start immediately with a temporary project.",
+    )
+    parser.add_argument("-i", "--image", default=None,
+        help="Image for Extract tab.")
+    parser.add_argument("-s", "--segmentation", default=None,
+        help="Segmentation mask (PNG/TIFF) for View tab.")
+    parser.add_argument("-c", "--cell-data", dest="cell_data", default=None,
+        help="Cell data CSV/XLSX for View tab.")
+    parser.add_argument("-r", "--reference", default=None,
+        help="Reference image for Extract tab.")
+    return parser.parse_known_args(argv)
+
+
+def launch_main_window(app: QApplication, project_path: Path, cli_args=None):
+    loading_dialog = LoadingDialog()
+    loading_dialog.show()
+    app.processEvents()
+
+    steps = [
+        ("Loading numpy...", 20),
+        ("Initializing core modules...", 40),
+        ("Loading image processing...", 50),
+        ("Loading analysis tools...", 60),
+        ("Loading UI components...", 80),
+        ("Starting application...", 90),
+    ]
+
+    for message, value in steps:
+        loading_dialog.update_progress(value, message)
+        app.processEvents()
+
+    import numpy as np
+
+    if not hasattr(np, "bool"):
+        np.bool = np.bool_
+
+    from controller import Controller
+    from ui import app as ui_app
+    from ui.theme import ThemeManager
+
+    # Initialize app-wide theme (no-op if already done)
+    ThemeManager.init(app)
+
+    loading_dialog.update_progress(100, "Done")
+    app.processEvents()
+
+    window = ui_app.MainWindow(project_path=project_path, cli_args=cli_args)
+    Controller.init(window)
+    window.show()
+    loading_dialog.hide()
+
+    app.exec()
+
+
 if __name__ == "__main__":
-    __app = QApplication(sys.argv)
+    cli_args, qt_args = parse_cli_args(sys.argv[1:])
+    __app = QApplication([sys.argv[0], *qt_args])
 
     loading_dialog = LoadingDialog()
     loading_dialog.show()
@@ -63,6 +174,12 @@ if __name__ == "__main__":
 
     loading_dialog.update_progress(5, "Initializing...")
     __app.processEvents()
+
+    loading_dialog.update_progress(8, "Applying theme...")
+    __app.processEvents()
+
+    from ui.theme import ThemeManager
+    ThemeManager.init(__app)
 
     loading_dialog.update_progress(10, "Loading project manager...")
     __app.processEvents()
@@ -77,45 +194,18 @@ if __name__ == "__main__":
     loading_dialog.accept()
     __app.processEvents()
 
-    from ui.project_launcher import ProjectLauncher
+    if (cli_args.image or cli_args.segmentation) and not cli_args.temp:
+        cli_args.temp = True
 
-    launcher = ProjectLauncher()
-    if launcher.exec() == ProjectLauncher.DialogCode.Accepted:
-        project_path = launcher.get_selected_project()
-        if project_path:
-            loading_dialog = LoadingDialog()
-            loading_dialog.show()
-            __app.processEvents()
-
-            steps = [
-                ("Loading numpy...", 20),
-                ("Initializing core modules...", 40),
-                ("Loading image processing...", 50),
-                ("Loading analysis tools...", 60),
-                ("Loading UI components...", 80),
-                ("Starting application...", 90),
-            ]
-
-            for message, value in steps:
-                loading_dialog.update_progress(value, message)
-                __app.processEvents()
-
-            import numpy as np
-
-            if not hasattr(np, "bool"):
-                np.bool = np.bool_
-
-            from controller import Controller
-            from ui import app
-
-            loading_dialog.update_progress(100, "Done")
-            __app.processEvents()
-
-            window = app.MainWindow(project_path=project_path)
-            Controller.init(window)
-            window.show()
-            loading_dialog.hide()
-
-            __app.exec()
+    if cli_args.temp:
+        launch_main_window(__app, ProjectManager.create_temp_project(), cli_args)
     else:
-        sys.exit(0)
+        from ui.project_launcher import ProjectLauncher
+
+        launcher = ProjectLauncher()
+        if launcher.exec() == ProjectLauncher.DialogCode.Accepted:
+            project_path = launcher.get_selected_project()
+            if project_path:
+                launch_main_window(__app, project_path, cli_args)
+        else:
+            sys.exit(0)

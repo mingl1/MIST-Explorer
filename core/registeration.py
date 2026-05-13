@@ -1,4 +1,5 @@
 import heapq
+import logging
 import math
 import re
 import time
@@ -14,6 +15,8 @@ from PyQt6.QtCore import QThread, pyqtSignal
 
 from core import ImageStorage
 from utils import calculate_ncc, to_uint8
+
+logger = logging.getLogger(__name__)
 
 
 class Register(QThread):
@@ -35,13 +38,18 @@ class Register(QThread):
         self.protein_signal_array = None
         self.has_blue = False
         self.storage = ImageStorage()
+        self.reference_channel_key = "Channel 1"
+        self.moving_channel_key = "Channel 1"
         self.params = {
-            "alignment_layer": 0,
             "cell_layer": 1,  # 0 index
             "protein_detection_layer": 2,  # 0 index
             "max_size": 10000,
             "num_tiles": 10,
             "overlap": 250,
+            "ncc_threshold": 0.85,
+            "itk_mesh_size": 8,
+            "itk_iterations": 30,
+            "itk_timeout": 120,
         }
         self.tifs = (
             {
@@ -56,6 +64,7 @@ class Register(QThread):
         self.max_points = max_points
 
     def _fatal_error_message(self, msg):
+        logger.error("Registration error: %s", msg)
         self.error.emit(msg)
         self.progress.emit(100, "Retry Maybe")
 
@@ -67,19 +76,8 @@ class Register(QThread):
             return False
 
     def run_registration(self):
-        # don't think we need to check for GPU here, since we are not using
-        # tensorflow
-
-        # gpu = len(tf.config.list_physical_devices("GPU")) > 0
-        # if gpu:
-        #     device_name = tf.test.gpu_device_name()
-        #     print("gpu name: ", device_name)
-        # else:
-        #     device_name = "/CPU:0"
-
-        # with tf.device(device_name):
         self._is_running = True
-        print("Running registration on device:", "CPU")  # or device_name
+        logger.info("Running registration on device: CPU")
         if self.isRunning() and self._is_running:
             self.error.emit("Registration is already running")
             return
@@ -88,16 +86,14 @@ class Register(QThread):
             return
         self.start()
         self.finished.connect(lambda: setattr(self, "_is_running", False))
-        # self.finished.connect(self.deleteLater)
-        # self.run()
 
     def run(self):
         self.tifs = (
             {
-                "image_dict": self.storage.get_reference_image(),
+                "image_dict": self.storage.get_alignment_ref_image(),
             },
             {
-                "image_dict": self.storage.get_canvas_image(),
+                "image_dict": self.storage.get_alignment_moving_image(),
             },
         )
 
@@ -106,17 +102,12 @@ class Register(QThread):
         ]  # this is this maximum size allowed for the registration
         self.overlap = self.params["overlap"]  # overlap between each tile
         self.num_tiles = self.params["num_tiles"]  # how many tiles we want
+        self.ncc_threshold = self.params["ncc_threshold"]
         reference_image_file = self.tifs[0]
         self.progress.emit(0, "preparing alignment")  # update progress bar
         channel_wrappers = reference_image_file["image_dict"]
         assert channel_wrappers is not None, "channel wrappers are empty"
-        reference_tif_index = self.params["alignment_layer"]
-        alignment_layer = channel_wrappers[f"Channel {reference_tif_index + 1}"].data
-
-        # if alignment_layer.dtype != np.uint16:
-        #     raise ValueError(
-        #         f"data type is not uint16. stopping alignment, datatype is {alignment_layer.dtype}"
-        #     )
+        alignment_layer = channel_wrappers[self.reference_channel_key].data
 
         alignment_layer = self.adjust_contrast(alignment_layer, 50, 99)
         # resize to maximum allowed size
@@ -130,14 +121,14 @@ class Register(QThread):
         moving_map = None
         # generate tiles
         for tif_n, tif in enumerate(self.tifs):
-            # skip reference
+            # skip reference (tif 0 is always the fixed/reference image)
             if self._handle_cancel():
                 return
-            if tif_n == reference_tif_index:
+            if tif_n == 0:
                 self.tifs[tif_n]["outputs"] = None
                 continue
             alignable_brightfield = self.tifs[tif_n]["image_dict"][
-                f"Channel {reference_tif_index + 1}"
+                self.moving_channel_key
             ].data
 
             alignable_brightfield = alignable_brightfield[0:m, 0:m]
@@ -159,8 +150,6 @@ class Register(QThread):
                 xmin = moving_bounds["xmin"]
 
                 radius = int(fixed_map.tile_size)
-                # import time
-                # time.sleep(20)
                 inputs.append(
                     (fixed_img, moving_img, ymin, xmin, radius, x, y))
 
@@ -189,7 +178,7 @@ class Register(QThread):
                     continue
                 outputs.append(result)
 
-            print("done aligning")
+            logger.info("Done aligning")
 
             self.tifs[tif_n]["outputs"] = outputs
 
@@ -208,13 +197,13 @@ class Register(QThread):
                 continue
 
             file = tif["image_dict"]
-            print(file.keys())
+            logger.debug("File keys: %s", file.keys())
             n_frames = len(file)  # 4
-            print("n frames", n_frames)
+            logger.debug("n frames: %d", n_frames)
             new_registered_tif = []
 
             for layer_number in range(n_frames):
-                print("Layer Number:", layer_number, "for tif", i)
+                logger.debug("Layer Number: %d for tif %d", layer_number, i)
                 progress_update = int(((layer_number + 1) / n_frames) * 100)
                 self.progress.emit(
                     progress_update,
@@ -246,6 +235,9 @@ class Register(QThread):
                     transf = transforms[0]
                     itk_transf = transforms[1]
 
+                    _cv2_supported = {np.uint8, np.uint16, np.int16, np.float32, np.float64}
+                    if source.dtype not in _cv2_supported:
+                        source = source.astype(np.float32)
                     if transf is not None:
                         if isinstance(transf, np.ndarray):
                             registered = cv2.warpAffine(
@@ -272,8 +264,6 @@ class Register(QThread):
                         ymin: ymin + radius * 2, xmin: xmin + radius * 2
                     ]
 
-                    # corresponding_tile = cv2.copyMakeBorder(corresponding_tile, 0,1,0,1, cv2.BORDER_REPLICATE)
-
                     dest.paste(Image.fromarray(pystackreg.util.to_uint16(
                         corresponding_tile)), (int(x - radius), int(y - radius)), )
 
@@ -291,7 +281,6 @@ class Register(QThread):
         self.protein_signal_array = aligned_protein_signal[
             self.params["protein_detection_layer"], :m, :m
         ]  # -> use to generate cell intensity table
-        # self.protein_signal_array = aligned_protein_signal[self.params['protein_detection_layer'], :, :]
         cell_image = aligned_protein_signal[
             self.params["cell_layer"], :m, :m
         ]  # -> stardist
@@ -305,15 +294,16 @@ class Register(QThread):
         layers = list(data.keys())
         layers = sorted(layers)
         result["layer"] = layers
-        moving_uuid = self.storage.get_data("canvas_uuid")
-        assert moving_uuid is not None, "No canvas UUID found"
+        moving_uuid = self.storage.get_data("alignment_moving_uuid")
+        assert moving_uuid is not None, "No alignment moving UUID found"
         moving_uuid = moving_uuid["value"]
         result["uuid"] = moving_uuid
         if self._handle_cancel():
             return
+        moving_channel_idx = int(self.moving_channel_key.replace("Channel ", "")) - 1
         self.alignment_complete.emit(
             result,
-            aligned_protein_signal[self.params["alignment_layer"]][:m, :m],
+            aligned_protein_signal[moving_channel_idx][:m, :m],
             alignment_layer[:m, :m],
         )
         self.protein_signal_arr_signal.emit(
@@ -397,7 +387,6 @@ class Register(QThread):
         target = fixed_img.copy()
         source = self.adjust_contrast(source, 50, 99)
         target = self.adjust_contrast(target, 50, 99)
-        start_time = time.time()
         # Strategy 1: Optical flow with multiple scales
         moving_points = self.find_points_robust(source, top_k=self.max_points)
         fixed_points = self.find_points_robust(target, top_k=self.max_points)
@@ -432,8 +421,9 @@ class Register(QThread):
                     best_registered = registered
                     best_ncc = ncc_after
                     transf = M
-                print(
-                    f"Optical flow alignment successful with {key} points, NCC before: {ncc_before}, after: {ncc_after}"
+                logger.debug(
+                    "Optical flow alignment successful with %s points, NCC before: %.4f, after: %.4f",
+                    key, ncc_before, ncc_after,
                 )
         if try_astro_align:
             try:
@@ -454,7 +444,7 @@ class Register(QThread):
                     best_registered = registered
                     name = "AstroAlign"
             except Exception as e:
-                print(f"AstroAlign failed: {e}")
+                logger.warning("AstroAlign failed: %s", e)
 
         if (
             best_ncc < 0.5
@@ -466,15 +456,16 @@ class Register(QThread):
                 )
                 ncc_after = calculate_ncc(registered, target)
                 assert ncc_after is not None, "NCC after feature matching is None"
-                print(
-                    f"Feature matching alignment successful, NCC before: {ncc_before}, after: {ncc_after}"
+                logger.debug(
+                    "Feature matching alignment successful, NCC before: %.4f, after: %.4f",
+                    ncc_before, ncc_after,
                 )
                 if ncc_after > best_ncc:
                     best_ncc = ncc_after
                     transf = M
                     name = "SIFT"
                     best_registered = registered
-        if best_ncc < 0.6:  # If still not good, improve with ITK
+        if best_ncc < self.ncc_threshold:  # If still not good, improve with ITK
             itk_transf, s, t = self.try_itk_alignment(best_registered, target)
             if itk_transf is not None:
                 registered = sitk.GetArrayFromImage(
@@ -484,8 +475,9 @@ class Register(QThread):
                 )
                 ncc_after = calculate_ncc(registered, target)
                 assert ncc_after is not None, "NCC after ITK alignment is None"
-                print(
-                    f"ITK alignment successful, NCC before: {best_ncc}, after: {ncc_after}"
+                logger.debug(
+                    "ITK alignment successful, NCC before: %.4f, after: %.4f",
+                    best_ncc, ncc_after,
                 )
                 if ncc_after > best_ncc:
                     best_ncc = ncc_after
@@ -535,8 +527,8 @@ class Register(QThread):
                     source, target, moving_points_cv, fixed_points_cv, **params
                 )
             except cv2.error:
-                print(
-                    f"Could not compute optical flow for this level: {params}")
+                logger.warning(
+                    "Could not compute optical flow for this level: %s", params)
                 continue
             good_indices = (status.flatten() == 1) & (
                 err.flatten() < 50
@@ -607,48 +599,64 @@ class Register(QThread):
 
     def try_itk_alignment(self, source, target):
         """Use ITK for image registration"""
+        try:
+            start = time.time()
+            timeout = self.params.get("itk_timeout", 120)
 
-        # Convert images to SimpleITK format
-        source_itk = sitk.GetImageFromArray(source)
-        target_itk = sitk.GetImageFromArray(target)
+            # Convert images to SimpleITK format
+            source_itk = sitk.GetImageFromArray(source)
+            target_itk = sitk.GetImageFromArray(target)
 
-        # Set pixel type to float
-        source_itk = sitk.Cast(source_itk, sitk.sitkFloat32)
-        target_itk = sitk.Cast(target_itk, sitk.sitkFloat32)
+            # Set pixel type to float
+            source_itk = sitk.Cast(source_itk, sitk.sitkFloat32)
+            target_itk = sitk.Cast(target_itk, sitk.sitkFloat32)
 
-        # Initialize registration method
-        registration_method = sitk.ImageRegistrationMethod()
-        registration_method.SetMetricAsCorrelation()
-        # Set initial transform
-        transform_domain_mesh_size = [
-            8,
-            8,
-        ]  # More control points = more flexible deformation
-        bspline_transform = sitk.BSplineTransformInitializer(
-            target_itk, transform_domain_mesh_size
-        )
+            # Initialize registration method
+            registration_method = sitk.ImageRegistrationMethod()
+            registration_method.SetMetricAsCorrelation()
 
-        registration_method.SetInitialTransform(
-            bspline_transform, inPlace=False)
-        registration_method.SetOptimizerAsLBFGSB(
-            gradientConvergenceTolerance=1e-4,
-            numberOfIterations=30,
-            maximumNumberOfCorrections=5,
-            costFunctionConvergenceFactor=1e6,
-            maximumNumberOfFunctionEvaluations=200,
-        )
-        registration_method.SetInterpolator(sitk.sitkLinear)
-        # Perform registration
-        final_transform = registration_method.Execute(target_itk, source_itk)
+            mesh_size = self.params.get("itk_mesh_size", 8)
+            transform_domain_mesh_size = [mesh_size, mesh_size]
+            bspline_transform = sitk.BSplineTransformInitializer(
+                target_itk, transform_domain_mesh_size
+            )
 
-        return final_transform, source_itk, target_itk
+            registration_method.SetInitialTransform(
+                bspline_transform, inPlace=False)
 
-    def set_alignment_layer(self, channel):
-        match = re.search(r"\d+", channel)
-        if match:
-            number = int(match.group())
-            result = number - 1  # 0 index
-            self.params["alignment_layer"] = result
+            iterations = self.params.get("itk_iterations", 30)
+            registration_method.SetOptimizerAsLBFGSB(
+                gradientConvergenceTolerance=1e-4,
+                numberOfIterations=iterations,
+                maximumNumberOfCorrections=5,
+                costFunctionConvergenceFactor=1e6,
+                maximumNumberOfFunctionEvaluations=200,
+            )
+            registration_method.SetInterpolator(sitk.sitkLinear)
+
+            # Abort callback for timeout protection
+            def check_timeout(reg_method):
+                if time.time() - start > timeout:
+                    logger.warning("ITK alignment timed out after %ds", timeout)
+                    reg_method.StopRegistration()
+
+            registration_method.AddCommand(
+                sitk.sitkIterationEvent,
+                lambda: check_timeout(registration_method),
+            )
+
+            final_transform = registration_method.Execute(target_itk, source_itk)
+
+            return final_transform, source_itk, target_itk
+        except Exception as e:
+            logger.warning("ITK alignment failed: %s", e)
+            return None, None, None
+
+    def set_reference_channel_key(self, channel_key: str) -> None:
+        self.reference_channel_key = channel_key
+
+    def set_moving_channel_key(self, channel_key: str) -> None:
+        self.moving_channel_key = channel_key
 
     def set_cell_layer(self, channel):
         match = re.search(r"\d+", channel)
@@ -673,9 +681,12 @@ class Register(QThread):
     def set_overlap(self, value):
         self.params["overlap"] = value
 
+    def set_ncc_threshold(self, value):
+        self.params["ncc_threshold"] = value
+
     def on_skip(self, param):
         _, _, ymin, xmin, radius, x, y = param
-        return (None, x, y, (None, ymin, xmin, radius, x, y))
+        return [None, None], ymin, xmin, radius, x, y, 0
 
     def adjust_contrast(self, img, contrast_min=2, contrast_max=98):
         # pixvals = np.array(img)
@@ -694,7 +705,6 @@ class Register(QThread):
 
         pos = relu
 
-        # print(pos(cy1x-cy2x), pos(cy1y-cy2y))
         cy2_rescale = np.pad(cy2_rescale,
                              ((int(math.floor(pos(cy1x - cy2x) / 2)),
                                int(math.ceil(pos(cy1x - cy2x) / 2)),
@@ -715,14 +725,14 @@ class Register(QThread):
         self.tifs[1]["image_dict"] = channels
         if self.reference_channels is not None:
             self.image_ready.emit(True)
-            print("moving/protein signal image updated")
+            logger.info("Moving/protein signal image updated")
 
     def update_reference_channels(self, reference_channels) -> None:
         self.reference_channels = reference_channels
         self.tifs[0]["image_dict"] = reference_channels
         if self.protein_channels is not None:
             self.image_ready.emit(True)
-            print("reference image updated")
+            logger.info("Reference image updated")
 
     def cancel(self):
         # self.exit?
@@ -807,7 +817,6 @@ class TileMap:
                                                                                                                                          tile_size), ]
 
     def get_bounds_of_tile(self, x, y):
-        # print("Got ", x, y)
         tile_size = round(self.tile_size) + self.overlap
         ymin = (
             self.overlap
@@ -841,7 +850,6 @@ class TileMap:
     def __iter__(self):
         for i in self.tile_center_points:
             for j in i:
-                # print("THIS IS THE TILE WE TALKIGN ABOUT", j)
                 tile = self.get_tile_by_center(self.image, j[0], j[1])
                 bounds = self.get_bounds_of_tile(j[0], j[1])
 
@@ -861,11 +869,9 @@ class TileMap:
         for i in range(cuts):
             row = []
             for j in range(cuts):
-                # print((i + 1), cuts, (j + 1), cuts)
                 row.append(
                     np.array([(2 * i + 1) / (cuts * 2), (2 * j + 1) / (cuts * 2)])
                 )
-                # print((2*i + 1) / (cuts *2))
 
             centerpoints.append(np.array(row))
 

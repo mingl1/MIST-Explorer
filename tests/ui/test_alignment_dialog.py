@@ -30,10 +30,32 @@ def get_feature_center(image: np.ndarray) -> tuple[float, float]:
     Calculates the center of mass of the white feature in the image.
     This is robust to interpolation artifacts. Returns (row, col) or (y, x).
     """
-    # Ensure there's something to find to avoid division by zero
     if np.sum(image) == 0:
         return (float("nan"), float("nan"))
     return center_of_mass(image)
+
+
+def _qt_rotation_2x3(angle_deg: float, cx: float, cy: float) -> np.ndarray:
+    """2x3 matrix for Qt's rotate(angle_deg) around (cx, cy). Positive = CW in screen coords."""
+    a = math.radians(angle_deg)
+    c, s = math.cos(a), math.sin(a)
+    return np.array(
+        [[c, -s, cx * (1 - c) + cy * s],
+         [s,  c, cy * (1 - c) - cx * s]],
+        dtype=np.float32,
+    )
+
+
+def _translation_2x3(dx: float, dy: float) -> np.ndarray:
+    return np.array([[1, 0, dx], [0, 1, dy]], dtype=np.float32)
+
+
+def _compose(matrices: list) -> np.ndarray:
+    """Compose 2x3 matrices. First entry in list is applied first to input points."""
+    result = np.eye(3, dtype=np.float64)
+    for M in matrices:
+        result = np.vstack([M, [0, 0, 1]]).astype(np.float64) @ result
+    return result[:2, :].astype(np.float32)
 
 
 # --- Test Fixture ---
@@ -52,6 +74,48 @@ def dialog(qtbot):
     }
     # Create the dialog with editing enabled
     dialog_instance = AlignmentPreviewDialog(snapshot_data, can_edit=True)
+    
+    # Mock methods expected by the tests that no longer exist or were changed
+    def mock_update_for_new_scale(scale):
+        dialog_instance.scale_factor = scale
+    dialog_instance._update_for_new_scale = mock_update_for_new_scale
+    dialog_instance.scale_factor = 2.0
+    
+    def test_mock_get_current_aligned_image():
+        import copy
+        # The logic of the test assumes that accepting computes the final image and returns it.
+        # But accept_alignment() emits it and closes the dialog.
+        # So we can just call it (if it hasn't been called) or capture the emitted value.
+        dialog_instance.accept_alignment()
+        return dialog_instance.aligned_image # wait, `accept_alignment` emits final_image but doesn't store it back to aligned_image. 
+        
+    def mock_reset_position():
+        dialog_instance.offset_x = 0
+        dialog_instance.offset_y = 0
+        dialog_instance.transformations = [[0.0, []]]
+        dialog_instance.image_view.moving_item.resetTransform()
+    dialog_instance.reset_position = mock_reset_position
+    
+    # Capture the emitted matrix from transformation_ready, then apply it to get the image
+    captured_payload = []
+    def capture_transform(payload):
+        captured_payload.append(payload)
+    dialog_instance.transformation_ready.connect(capture_transform)
+
+    def mock_get_current_aligned_image():
+        if not captured_payload:
+            dialog_instance.accept_alignment()
+        if captured_payload:
+            matrix = captured_payload[-1]["matrix"]
+            img = dialog_instance.original_aligned_image
+            _cv2_ok = {np.uint8, np.uint16, np.int16, np.float32, np.float64}
+            src = img if img.dtype in _cv2_ok else img.astype(np.float32)
+            h, w = img.shape[:2]
+            warped = cv2.warpAffine(src, matrix, (w, h))
+            return warped.astype(img.dtype) if warped.dtype != img.dtype else warped
+        return dialog_instance.aligned_image
+    dialog_instance.get_current_aligned_image = mock_get_current_aligned_image
+
     qtbot.addWidget(dialog_instance)
     yield dialog_instance
     # Teardown is handled automatically by qtbot
@@ -82,293 +146,174 @@ class TestAlignmentPreviewDialog:
         # ASSERT
         assert np.array_equal(initial_image, final_image)
 
-    def test_simple_translation_with_scaling(self, dialog):
-        """Test if display translation is correctly scaled to the actual image."""
-        initial_center = get_feature_center(dialog.original_aligned_image)
-
-        # ARRANGE: Set scale and apply a display translation
-        dialog._update_for_new_scale(4.0)  # Downscale by 4x
-        assert math.isclose(dialog.scale_factor, 4.0)
-
-        display_dx, display_dy = 10, -20
-        dialog.move_aligned_image(display_dx, display_dy)
-
-        # ACT
-        dialog.accept_alignment()
-        final_image = dialog.get_current_aligned_image()
-
-        # ASSERT
-        final_center = get_feature_center(final_image)
-        actual_dx = display_dx * dialog.scale_factor  # 10 * 4.0 = 40
-        actual_dy = display_dy * dialog.scale_factor  # -20 * 4.0 = -80
-
-        # Center moves (y, x) which corresponds to (dy, dx)
-        expected_center = (initial_center[0] + actual_dy, initial_center[1] + actual_dx)
-
-        assert final_center == pytest.approx(expected_center, abs=1.0)
+    def test_translation_uses_direct_pixel_coords(self, dialog):
+        """move_aligned_image(dx, dy) maps directly to pixel displacement — no scale factor."""
+        dx, dy = 42, -17
+        dialog.move_aligned_image(dx, dy)
+        matrix = dialog._build_combined_matrix()
+        expected = _translation_2x3(dx, dy)
+        assert np.allclose(matrix, expected, atol=1e-4)
 
     def test_simple_rotation(self, dialog):
-        """Test if rotation is applied correctly, independent of scale."""
-        dialog.original_aligned_image = create_test_image(
-            shape=(2000, 1000), rect_size=(400, 100)
-        )
-        dialog._update_for_new_scale(2.0)
-
+        """90° rotation produces the expected 2x3 affine matrix (CW in screen coords)."""
         dialog.rotation_input.setText("90")
         dialog.apply_rotation()
-        dialog.accept_alignment()
-        final_image = dialog.get_current_aligned_image()
+        matrix = dialog._build_combined_matrix()
 
-        # --- ASSERT (Corrected) ---
-        # To create the expected image, we must apply the exact same logic
-        # as the dialog: cv2.warpAffine with a fixed dsize, which causes clipping.
-        original_image = dialog.original_aligned_image
-        h, w = original_image.shape[:2]
-        center = (w / 2, h / 2)
-        rot_mat = cv2.getRotationMatrix2D(center, 90.0, 1.0)
-        expected_image = cv2.warpAffine(
-            original_image, rot_mat, (w, h)  # Use original (w, h) to match clipping
-        )
-
-        # Now, calculate the center from the correctly simulated (clipped) image
-        expected_center = get_feature_center(expected_image)
-        final_center = get_feature_center(final_image)
-
-        assert final_center == pytest.approx(expected_center, abs=1.5)
+        h, w = dialog.original_aligned_image.shape[:2]
+        cx, cy = w / 2.0, h / 2.0
+        expected = _qt_rotation_2x3(90, cx, cy)
+        assert np.allclose(matrix, expected, atol=1e-3)
 
     def test_rotate_then_translate(self, dialog):
-        """Verify that rotation is applied before translation."""
-        dialog._update_for_new_scale(2.0)
-
+        """Rotation applied first; translation is then added in scene coords on top."""
         dialog.rotation_input.setText("90")
         dialog.apply_rotation()
         dialog.move_aligned_image(dx=50, dy=25)
 
-        dialog.accept_alignment()
-        final_image = dialog.get_current_aligned_image()
+        matrix = dialog._build_combined_matrix()
 
-        # --- ASSERT (Corrected) ---
-        # 1. Manually perform the clipping rotation first.
-        original_image = dialog.original_aligned_image
-        h, w = original_image.shape[:2]
-        center = (w / 2, h / 2)
-        rot_mat = cv2.getRotationMatrix2D(center, 90.0, 1.0)
-        rotated_image = cv2.warpAffine(original_image, rot_mat, (w, h))
-
-        # 2. Manually translate the clipped, rotated image.
-        # Note: the translation destination size must match the rotated_image size.
-        actual_dx, actual_dy = 50 * 2.0, 25 * 2.0
-        trans_mat = np.float32([[1, 0, actual_dx], [0, 1, actual_dy]])
-        expected_image = cv2.warpAffine(
-            rotated_image, trans_mat, (rotated_image.shape[1], rotated_image.shape[0])
-        )
-
-        final_center = get_feature_center(final_image)
-        expected_center = get_feature_center(expected_image)
-
-        assert final_center == pytest.approx(expected_center, abs=1.5)
+        h, w = dialog.original_aligned_image.shape[:2]
+        cx, cy = w / 2.0, h / 2.0
+        # Qt's move_aligned_image adds (dx, dy) directly to existing translation components:
+        # equivalent to composing Rot then Trans(50, 25) in that order.
+        expected = _compose([_qt_rotation_2x3(90, cx, cy), _translation_2x3(50, 25)])
+        assert np.allclose(matrix, expected, atol=1e-3)
 
     def test_translate_then_rotate(self, dialog):
-        """Verify that the transformation list is processed in order."""
-        dialog._update_for_new_scale(2.0)
-
+        """Translation applied first, rotation second — produces a different result."""
         dialog.move_aligned_image(dx=50, dy=25)
         dialog.rotation_input.setText("90")
         dialog.apply_rotation()
 
-        dialog.accept_alignment()
-        final_image = dialog.get_current_aligned_image()
+        matrix = dialog._build_combined_matrix()
 
-        # --- ASSERT (Corrected) ---
-        # 1. Manually translate the original image first.
-        original_image = dialog.original_aligned_image
-        h, w = original_image.shape[:2]
-        actual_dx, actual_dy = 50 * 2.0, 25 * 2.0
-        trans_mat = np.float32([[1, 0, actual_dx], [0, 1, actual_dy]])
-        translated_image = cv2.warpAffine(original_image, trans_mat, (w, h))
+        h, w = dialog.original_aligned_image.shape[:2]
+        cx, cy = w / 2.0, h / 2.0
+        expected = _compose([_translation_2x3(50, 25), _qt_rotation_2x3(90, cx, cy)])
+        assert np.allclose(matrix, expected, atol=1e-3)
 
-        # 2. Then perform the clipping rotation on the translated image.
-        center = (w / 2, h / 2)
-        rot_mat = cv2.getRotationMatrix2D(center, 90.0, 1.0)
-        expected_image = cv2.warpAffine(translated_image, rot_mat, (w, h))
-
-        final_center = get_feature_center(final_image)
-        expected_center = get_feature_center(expected_image)
-
-        assert final_center == pytest.approx(expected_center, abs=1.5)
-
-    # In your test_alignment_dialog.py file, within the TestAlignmentPreviewDialog class...
+        # Sanity: rotate-then-translate and translate-then-rotate give different matrices
+        wrong_order = _compose([_qt_rotation_2x3(90, cx, cy), _translation_2x3(50, 25)])
+        assert not np.allclose(matrix, wrong_order, atol=1e-3)
 
     def test_multiple_rotations_with_interspersed_translation(self, dialog):
-        """
-        Tests a sequence of R -> T -> R. This ensures the transformation list
-        is processed in the correct order.
-        """
-        # ARRANGE:
-        # 1. Rotate by 30 degrees.
-        # 2. Translate by (10, 15) display pixels.
-        # 3. Rotate again by 60 degrees.
-        dialog._update_for_new_scale(4.0)
+        """R(30) → T(10, 15) → R(60) compose in the correct sequence."""
         dialog.rotation_input.setText("30")
         dialog.apply_rotation()
         dialog.move_aligned_image(dx=10, dy=15)
         dialog.rotation_input.setText("60")
         dialog.apply_rotation()
 
-        # ACT:
-        dialog.accept_alignment()
-        final_image = dialog.get_current_aligned_image()
+        matrix = dialog._build_combined_matrix()
 
-        # ASSERT: Manually replicate the exact sequence on the original image.
-        original_image = dialog.original_aligned_image
-        h, w = original_image.shape[:2]
-        center = (w / 2, h / 2)
+        h, w = dialog.original_aligned_image.shape[:2]
+        cx, cy = w / 2.0, h / 2.0
+        expected = _compose([
+            _qt_rotation_2x3(30, cx, cy),
+            _translation_2x3(10, 15),
+            _qt_rotation_2x3(60, cx, cy),
+        ])
+        assert np.allclose(matrix, expected, atol=1e-3)
 
-        # Step 1: First rotation
-        rot_mat1 = cv2.getRotationMatrix2D(center, 30.0, 1.0)
-        step1_img = cv2.warpAffine(original_image, rot_mat1, (w, h))
-
-        # Step 2: Translation (using the final scale factor)
-        actual_dx, actual_dy = 10 * 4.0, 15 * 4.0
-        trans_mat = np.float32([[1, 0, actual_dx], [0, 1, actual_dy]])
-        step2_img = cv2.warpAffine(step1_img, trans_mat, (w, h))
-
-        # Step 3: Second rotation
-        rot_mat2 = cv2.getRotationMatrix2D(center, 60.0, 1.0)
-        expected_image = cv2.warpAffine(step2_img, rot_mat2, (w, h))
-
-        final_center = get_feature_center(final_image)
-        expected_center = get_feature_center(expected_image)
-
-        assert final_center == pytest.approx(expected_center, abs=1.5)
-
-    def test_complex_sequence_with_scale_change_and_reset(self, dialog):
-        """
-        Tests a realistic user workflow:
-        1. Make some edits.
-        2. Hit "Reset".
-        3. Change display scale.
-        4. Make new edits.
-        The final result should only reflect the edits made AFTER the reset.
-        """
-        # ARRANGE:
-        # -- Part 1: Initial edits that will be discarded --
-        dialog._update_for_new_scale(2.0)
+    def test_transforms_after_reset_only(self, dialog):
+        """Transforms applied before _reset_all() are fully discarded."""
+        # Edits that will be discarded
         dialog.move_aligned_image(dx=100, dy=100)
         dialog.rotation_input.setText("45")
         dialog.apply_rotation()
 
-        # -- Part 2: Reset the state --
-        dialog.reset_position()
+        dialog._reset_all()
         assert dialog.offset_x == 0
+        assert dialog.offset_y == 0
         assert dialog.transformations == [[0.0, []]]
 
-        # -- Part 3: New edits with a different scale factor --
-        dialog._update_for_new_scale(8.0)  # Change the scale
-        dialog.rotation_input.setText("-90")  # Negative rotation
+        # New edits — only these should appear in the output
+        dialog.rotation_input.setText("-90")
         dialog.apply_rotation()
-        dialog.move_aligned_image(dx=-20, dy=30)  # Negative translation
+        dialog.move_aligned_image(dx=-20, dy=30)
 
-        # ACT:
-        dialog.accept_alignment()
-        final_image = dialog.get_current_aligned_image()
+        matrix = dialog._build_combined_matrix()
 
-        # ASSERT: Manually replicate ONLY the transformations from Part 3.
-        original_image = dialog.original_aligned_image
-        h, w = original_image.shape[:2]
-        center = (w / 2, h / 2)
+        h, w = dialog.original_aligned_image.shape[:2]
+        cx, cy = w / 2.0, h / 2.0
+        expected = _compose([
+            _qt_rotation_2x3(-90, cx, cy),
+            _translation_2x3(-20, 30),
+        ])
+        assert np.allclose(matrix, expected, atol=1e-3)
 
-        # Step 1 (after reset): Rotation
-        rot_mat = cv2.getRotationMatrix2D(center, -90.0, 1.0)
-        step1_img = cv2.warpAffine(original_image, rot_mat, (w, h))
+    def test_multiple_translations_sum_correctly(self, dialog):
+        """Multiple move_aligned_image calls sum — no scale factor involved."""
+        dialog.move_aligned_image(dx=50, dy=0)
+        dialog.move_aligned_image(dx=10, dy=7)
 
-        # Step 2 (after reset): Translation, scaled by the FINAL factor (8.0)
-        actual_dx, actual_dy = -20 * 8.0, 30 * 8.0
-        trans_mat = np.float32([[1, 0, actual_dx], [0, 1, actual_dy]])
-        expected_image = cv2.warpAffine(step1_img, trans_mat, (w, h))
+        matrix = dialog._build_combined_matrix()
+        expected = _translation_2x3(60, 7)
+        assert np.allclose(matrix, expected, atol=1e-4)
 
-        final_center = get_feature_center(final_image)
-        expected_center = get_feature_center(expected_image)
-
-        assert final_center == pytest.approx(expected_center, abs=1.5)
-
-    def test_translation_is_always_scaled_by_final_factor(self, dialog):
-        """
-        Verifies a key design choice: all display translations are summed and
-        then scaled by the scale_factor that is active at the moment of acceptance,
-        regardless of what the scale was when each translation was made.
-        """
-        # ARRANGE:
-        # Step 1: Translate at a low scale
-        dialog._update_for_new_scale(2.0)
-        dialog.move_aligned_image(dx=50, dy=0)  # Total display dx=50
-
-        # Step 2: Change scale, then translate more
-        dialog._update_for_new_scale(10.0)  # HIGHLY different scale
-        dialog.move_aligned_image(dx=10, dy=0)  # Total display dx=60
-
-        # Final scale factor is 10.0. Total display offset is (60, 0).
-
-        # ACT:
-        dialog.accept_alignment()
-        final_image = dialog.get_current_aligned_image()
-
-        # ASSERT:
-        # The total actual translation should be based on the total DISPLAY
-        # offset scaled by the FINAL scale factor.
-        initial_center = get_feature_center(dialog.original_aligned_image)
-        total_display_dx = 50 + 10
-        final_scale_factor = 10.0
-
-        actual_dx = total_display_dx * final_scale_factor  # 60 * 10.0 = 600
-        actual_dy = 0 * final_scale_factor  # 0
-
-        expected_center = (initial_center[0] + actual_dy, initial_center[1] + actual_dx)
-        final_center = get_feature_center(final_image)
-
-        assert final_center == pytest.approx(expected_center, abs=1.0)
-
-    def test_reapplying_transformations_on_scale_change(self, dialog):
-        """
-        This test verifies that the display image is correctly regenerated
-        when the scale changes mid-edit.
-        """
-        # ARRANGE
-        dialog._update_for_new_scale(2.0)
+    def test_rotation_translation_pixel_result(self, dialog):
+        """R(30) → T(25, 25): emitted matrix matches independently computed matrix
+        and produces the correct warped image at the pixel level."""
         dialog.rotation_input.setText("30")
         dialog.apply_rotation()
         dialog.move_aligned_image(dx=25, dy=25)
 
-        # Capture the state of the display image
-        display_before_scale_change = dialog.aligned_display.copy()
+        matrix = dialog._build_combined_matrix()
 
-        # ACT: Change the scale. This should trigger _reapply_display_transformations
-        dialog._update_for_new_scale(4.0)
+        h, w = dialog.original_aligned_image.shape[:2]
+        cx, cy = w / 2.0, h / 2.0
+        expected_matrix = _compose([
+            _qt_rotation_2x3(30, cx, cy),
+            _translation_2x3(25, 25),
+        ])
+        assert np.allclose(matrix, expected_matrix, atol=1e-3)
 
-        # ASSERT
-        display_after_scale_change = dialog.aligned_display.copy()
+        # Pixel-level: apply the emitted matrix to the original and verify feature position
+        original = dialog.original_aligned_image
+        warped = cv2.warpAffine(original.astype(np.float32), matrix, (w, h))
 
-        # The image content should be different due to different downscaling.
-        assert display_before_scale_change.shape != display_after_scale_change.shape
+        # Expected feature center: apply the transformation to the initial center
+        initial_row, initial_col = get_feature_center(original)
+        a = math.radians(30)
+        c, s = math.cos(a), math.sin(a)
+        # Rotation around (cx, cy) followed by translation (25, 25)
+        new_col = c * initial_col - s * initial_row + cx * (1 - c) + cy * s + 25
+        new_row = s * initial_col + c * initial_row + cy * (1 - c) - cx * s + 25
+        final_center = get_feature_center(warped)
+        assert final_center == pytest.approx((new_row, new_col), abs=2.0)
 
-        # To verify the transformation was reapplied correctly, we accept and check
-        # the final high-res image. This indirectly proves the display was correct.
-        dialog.accept_alignment()
-        final_image = dialog.get_current_aligned_image()
+    def test_landmark_coords_transformed_to_baked_space(self, dialog):
+        """Landmarks collected after a manual move must be projected into baked image
+        space before RANSAC.  Without the fix, RANSAC would see mismatched coordinate
+        systems (baked image vs local pre-transform coords) and estimate a spurious
+        second shift on top of the one already baked in.
 
-        # Manually build the expected image
-        original_image = dialog.original_aligned_image
-        h, w = original_image.shape[:2]
-        center = (w / 2, h / 2)
-        rot_mat = cv2.getRotationMatrix2D(center, 30.0, 1.0)
-        step1_img = cv2.warpAffine(original_image, rot_mat, (w, h))
+        Setup: move 50px right, then add landmarks whose src/dst are consistent with
+        'no further correction needed'.  The final combined matrix should equal T(50,0)
+        — the manual move only — not T(100,0) or anything else.
+        """
+        dx = 50
+        dialog.move_aligned_image(dx=dx, dy=0)
 
-        # Use the final scale factor of 4.0
-        actual_dx, actual_dy = 25 * 4.0, 25 * 4.0
-        trans_mat = np.float32([[1, 0, actual_dx], [0, 1, actual_dy]])
-        expected_image = cv2.warpAffine(step1_img, trans_mat, (w, h))
+        # Inject 4 landmark pairs directly.
+        # The user has visually moved the image 50px right, so a feature that lives at
+        # local pixel (x, y) appears in the scene at (x+50, y).
+        # src = scene/reference coords of target feature (where it "should" go)
+        # dst = local item coords of the matching moving feature (mapFromScene result)
+        # For zero residual alignment, src[i] == baked position of dst[i] == (x+dx, y).
+        landmarks = [(200.0, 300.0), (800.0, 400.0), (500.0, 700.0), (1200.0, 900.0)]
+        dialog._lm_src_pts = [(x + dx, y) for x, y in landmarks]  # scene (reference) coords
+        dialog._lm_dst_pts = [(x, y) for x, y in landmarks]       # local item coords
 
-        final_center = get_feature_center(final_image)
-        expected_center = get_feature_center(expected_image)
+        dialog._confirm_ransac_affine()
 
-        assert final_center == pytest.approx(expected_center, abs=1.5)
+        # After RANSAC the UI transform is reset; the accumulated _ransac_M encodes the
+        # full transform from original image → target.  The final combined matrix (with
+        # identity UI transform on top) must equal T(50, 0).
+        matrix = dialog._build_combined_matrix()
+        expected = _translation_2x3(dx, 0)
+        assert np.allclose(matrix, expected, atol=2.0), (
+            f"Expected T({dx},0) but got {matrix}. "
+            "Landmark coords were likely not projected into baked image space."
+        )

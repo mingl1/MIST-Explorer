@@ -42,16 +42,16 @@ class DataModel:
 
     def reprocess_data(self, normalization, features):
         logger.info("=== START reprocess_data ===")
-        logger.info(f"Step 1: Filter columns")
+        logger.info("Step 1: Filter columns")
         cols_to_use = (
             ["Cell_ID"] + features if "Cell_ID" in self.raw_df.columns else features
         )
         subset_df = self.raw_df[cols_to_use].copy()
-        
-        logger.info(f"Step 2: Remove NaNs")
+
+        logger.info("Step 2: Remove NaNs")
         mask = ~subset_df.isna().any(axis=1)
         clean_df = subset_df.loc[mask].reset_index(drop=True)
-        
+
         logger.info(f"Step 3: Create data array - shape: {clean_df.shape}")
 
         self.normalization_method = normalization
@@ -89,14 +89,15 @@ class DataModel:
         logger.info(f"Data range before counts cast: min={xmin}, max={xmax}")
 
         if xmin < 0:
-            logger.warning("Counts contain negatives; 'counts' layer should be non-negative.")
+            logger.warning(
+                "Counts contain negatives; 'counts' layer should be non-negative."
+            )
         if xmax <= 65535 and xmin >= 0:
             self.adata.layers["counts"] = self.adata.X.astype(np.uint16).copy()
         else:
             # safest: preserve exact integers for HVG
             self.adata.layers["counts"] = self.adata.X.astype(np.uint32).copy()
         raw_adata = self.adata.copy()
-        sc.pp.normalize_total(raw_adata)
         sc.pp.log1p(raw_adata)
         self.adata.raw = raw_adata
 
@@ -116,16 +117,13 @@ class DataModel:
         """Applies the specific normalization logic defined in original code"""
         assert isinstance(self.adata, sc.AnnData), "adata is not an AnnData instance"
         if self.normalization_method == "RC":
-            sc.pp.normalize_total(self.adata)
             sc.pp.scale(self.adata, max_value=10)
         elif self.normalization_method == "lognorm":
             logger.info("Applying log Normalization")
-            sc.pp.normalize_total(self.adata, target_sum=1_000)
             sc.pp.log1p(self.adata)
-            sc.pp.scale(self.adata, max_value=3)
+            sc.pp.scale(self.adata, max_value=10)
             # adata = self.adata
             # adata.layers["counts"] = adata.X.copy()
-            # sc.pp.normalize_total(adata, exclude_highly_expressed=False)
             # adata.layers["cpm"] = adata.X.copy()
             # sc.pp.log1p(adata)
             # adata.layers["data"] = adata.X.copy()
@@ -161,12 +159,11 @@ class DataModel:
         self.adata.var["means"] = self.adata.X.mean(axis=0)
         self.adata.var["variances"] = self.adata.X.var(axis=0)
         # based on varriances
-        self.adata.var["highly_variable_rank"] = np.argsort(
-            -self.adata.var["variances"]
-        ).astype(np.int32) + 1  # 1-based ranking
+        self.adata.var["highly_variable_rank"] = (
+            np.argsort(-self.adata.var["variances"]).astype(np.int32) + 1
+        )  # 1-based ranking
 
         self.hvg_rankings = self.adata.var["highly_variable_rank"].copy()
-
 
         # PCA
 
@@ -182,7 +179,7 @@ class DataModel:
     def get_max_pcs(self):
         """Returns the maximum number of PCs available for UMAP selection"""
         assert self.adata is not None, "adata is not initialized"
-        return len(self.adata.varm["PCs"]) if "PCs" in self.adata.varm else 0
+        return len(self.adata.varm["PCs"]) - 1 if "PCs" in self.adata.varm else 0
 
     def get_pca_variance_ratio(self):
         """Returns the variance ratio array for the 'Variance Threshold' UI logic"""
@@ -220,7 +217,7 @@ class DataModel:
         )
         assert isinstance(self.adata, sc.AnnData), "adata is not initialized"
 
-        # 1. Compute Neighbors (using AnnoyTransformer as originally requested) 
+        # 1. Compute Neighbors (using AnnoyTransformer as originally requested)
         sc.pp.neighbors(
             self.adata,
             random_state=random_state,
@@ -243,9 +240,10 @@ class DataModel:
         logger.info("Leiden clustering computed.")
 
         return adata, key
+
+
 import re
 
-import numpy as np
 import pandas as pd
 
 
@@ -260,7 +258,7 @@ def clean_panel_df(df: pd.DataFrame) -> pd.DataFrame:
     def norm(c: str) -> str:
         c = c.strip()
         c = re.sub(r"\s+", "_", c)  # spaces -> _
-        c = c.replace(".", "_")     # dots -> _
+        c = c.replace(".", "_")  # dots -> _
         return c
 
     df.rename(columns={c: norm(c) for c in df.columns}, inplace=True)

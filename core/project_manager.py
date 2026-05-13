@@ -1,16 +1,26 @@
 import json
+import logging
 import platform
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import uuid
 
+import numpy as np
 import tifffile
 
 from models.workspace import ImageMetadata, ProjectMetadata
 
+logger = logging.getLogger(__name__)
+
 
 class ProjectManager:
+    @staticmethod
+    def imagej_compatible_dtype(dtype) -> bool:
+        """Return True when dtype can be written with imagej=True."""
+        resolved = np.dtype(dtype)
+        return resolved in (np.dtype(np.uint8), np.dtype(np.uint16), np.dtype(np.float32))
+
     @staticmethod
     def get_storage_path() -> Path:
         system = platform.system()
@@ -28,12 +38,18 @@ class ProjectManager:
         return ProjectManager.get_storage_path() / "projects"
 
     @staticmethod
+    def get_temp_projects_path() -> Path:
+        return ProjectManager.get_storage_path() / "temp_projects"
+
+    @staticmethod
     def ensure_storage_exists():
         projects_path = ProjectManager.get_projects_path()
         projects_path.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
-    def create_project(name: str, base_path: Optional[Path] = None) -> Path:
+    def create_project(
+        name: str, base_path: Optional[Path] = None, is_temporary: bool = False
+    ) -> Path:
         ProjectManager.ensure_storage_exists()
 
         if base_path is None:
@@ -51,10 +67,32 @@ class ProjectManager:
             path=project_folder,
             created_at=datetime.now(),
             modified_at=datetime.now(),
+            is_temporary=is_temporary,
         )
         ProjectManager._save_metadata(metadata)
 
         return project_folder
+
+    @staticmethod
+    def create_temp_project(base_path: Optional[Path] = None) -> Path:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H-%M-%S")
+        suffix = uuid.uuid4().hex[:6]
+        if base_path is None:
+            base_path = ProjectManager.get_temp_projects_path()
+        return ProjectManager.create_project(
+            f"Temp Project {timestamp} {suffix}",
+            base_path=base_path,
+            is_temporary=True,
+        )
+
+    @staticmethod
+    def _is_temp_project(metadata: ProjectMetadata) -> bool:
+        if metadata.is_temporary:
+            return True
+        # Backward-compat: hide temporary projects created before is_temporary existed.
+        name = metadata.name.strip().lower()
+        folder_stem = metadata.path.stem.strip().lower()
+        return name.startswith("temp project") or folder_stem.startswith("temp project")
 
     @staticmethod
     def _save_metadata(metadata: ProjectMetadata):
@@ -68,9 +106,13 @@ class ProjectManager:
         if not metadata_path.exists():
             return None
 
-        with open(metadata_path, "r") as f:
-            data = json.load(f)
-        return ProjectMetadata.from_dict(data)
+        try:
+            with open(metadata_path, "r") as f:
+                data = json.load(f)
+            return ProjectMetadata.from_dict(data)
+        except Exception as e:
+            logger.error("Failed to load project metadata from '%s': %s", metadata_path, e, exc_info=True)
+            return None
 
     @staticmethod
     def load_project(project_path: Path) -> Optional[ProjectMetadata]:
@@ -89,6 +131,8 @@ class ProjectManager:
             if folder.is_dir() and folder.suffix == ".mist":
                 metadata = ProjectManager.load_metadata(folder)
                 if metadata is not None:
+                    if ProjectManager._is_temp_project(metadata):
+                        continue
                     projects.append(metadata)
 
         return sorted(projects, key=lambda p: p.modified_at, reverse=True)
@@ -102,6 +146,7 @@ class ProjectManager:
         channel_count: int,
         original_filename: str = "",
         contrast_settings: Optional[Dict[str, Tuple[int, int]]] = None,
+        channel_display_names: Optional[Dict[str, str]] = None,
     ) -> ImageMetadata:
         image_folder = project_path / "images" / image_uuid
         image_folder.mkdir(parents=True, exist_ok=True)
@@ -109,21 +154,38 @@ class ProjectManager:
         for channel_name, wrapper in channel_data.items():
             channel_num = channel_name.replace("Channel ", "")
             channel_path = image_folder / f"channel_{channel_num}.tif"
-            tifffile.imwrite(
-                str(channel_path),
-                wrapper.data,
-                photometric="minisblack",
-                imagej=True,
-            )
+            try:
+                array = np.asarray(wrapper.data)
+                tifffile.imwrite(
+                    str(channel_path),
+                    array,
+                    photometric="minisblack",
+                    imagej=ProjectManager.imagej_compatible_dtype(array.dtype),
+                )
+            except Exception as e:
+                logger.error("Failed to save channel '%s' to '%s': %s", channel_name, channel_path, e, exc_info=True)
+                raise
 
-        thumbnail_folder = project_path / "thumbnails"
-        thumbnail_path = thumbnail_folder / f"{image_uuid}.png"
-
-        import numpy as np
-        from core.image_utils import scale_adjust
+        # Remove channel files that are no longer part of the current channel set
+        current_channel_nums = set()
+        for channel_name in channel_data.keys():
+            try:
+                current_channel_nums.add(int(channel_name.replace("Channel ", "")))
+            except ValueError:
+                pass
+        for existing_path in image_folder.glob("channel_*.tif"):
+            suffix = existing_path.stem[len("channel_"):]
+            try:
+                num = int(suffix)
+            except ValueError:
+                continue
+            if num not in current_channel_nums:
+                existing_path.unlink()
 
         if contrast_settings is None:
             contrast_settings = {}
+        if channel_display_names is None:
+            channel_display_names = {}
 
         image_metadata = ImageMetadata(
             uuid=image_uuid,
@@ -131,11 +193,56 @@ class ProjectManager:
             channel_count=channel_count,
             original_filename=original_filename,
             contrast_settings=contrast_settings,
+            channel_display_names=channel_display_names,
         )
 
         metadata = ProjectManager.load_metadata(project_path)
         if metadata is not None:
-            metadata.add_image(image_metadata)
+            existing = metadata.get_image(image_uuid)
+            if existing is None:
+                metadata.add_image(image_metadata)
+            else:
+                metadata.update_image(image_metadata)
+            ProjectManager._save_metadata(metadata)
+
+        return image_metadata
+
+    @staticmethod
+    def save_image_reference(
+        project_path: Path,
+        image_uuid: str,
+        image_name: str,
+        channel_count: int,
+        original_filename: str = "",
+        contrast_settings: Optional[Dict[str, Tuple[int, int]]] = None,
+        channel_display_names: Optional[Dict[str, str]] = None,
+        channel_cmaps: Optional[Dict[str, str]] = None,
+    ) -> ImageMetadata:
+        """Record image metadata in project.json without copying pixel data to disk."""
+        if contrast_settings is None:
+            contrast_settings = {}
+        if channel_display_names is None:
+            channel_display_names = {}
+        if channel_cmaps is None:
+            channel_cmaps = {}
+
+        image_metadata = ImageMetadata(
+            uuid=image_uuid,
+            name=image_name,
+            channel_count=channel_count,
+            original_filename=original_filename,
+            contrast_settings=contrast_settings,
+            channel_display_names=channel_display_names,
+            channel_cmaps=channel_cmaps,
+        )
+
+        metadata = ProjectManager.load_metadata(project_path)
+        if metadata is not None:
+            existing = metadata.get_image(image_uuid)
+            if existing is None:
+                metadata.add_image(image_metadata)
+            else:
+                metadata.update_image(image_metadata)
             ProjectManager._save_metadata(metadata)
 
         return image_metadata
@@ -147,8 +254,85 @@ class ProjectManager:
         channel_path = image_folder / f"channel_{channel_num}.tif"
 
         if channel_path.exists():
-            return tifffile.imread(str(channel_path))
+            try:
+                return tifffile.imread(str(channel_path))
+            except Exception as e:
+                logger.error("Failed to load image from '%s': %s", channel_path, e, exc_info=True)
+                return None
         return None
+
+    @staticmethod
+    def load_channel_from_source(original_filename: str, channel_name: str) -> Optional[np.ndarray]:
+        """Load a specific channel from the original source file (TIFF, PNG, JPEG, etc.).
+
+        For multi-page TIFFs, reads non-blank pages in order and returns the page
+        matching channel_name (e.g. "Channel 2" → the 2nd non-blank page).
+        For single-image formats (PNG, JPEG, etc.), only Channel 1 is available.
+        Returns None on any failure.
+        """
+        if not original_filename:
+            return None
+        source_path = Path(original_filename)
+        if not source_path.exists():
+            return None
+        try:
+            channel_num = int(channel_name.replace("Channel ", ""))
+        except (ValueError, AttributeError):
+            return None
+
+        suffix = source_path.suffix.lower()
+        if suffix in (".tif", ".tiff"):
+            try:
+                with tifffile.TiffFile(str(source_path)) as tif:
+                    valid_idx = 0
+                    for page in tif.pages:
+                        try:
+                            image = page.asarray()
+                        except Exception:
+                            continue
+                        if np.all(image == image.flat[0]):
+                            continue
+                        valid_idx += 1
+                        if valid_idx == channel_num:
+                            return image
+            except Exception as e:
+                logger.error(
+                    "Failed to load channel '%s' from source '%s': %s",
+                    channel_name, original_filename, e, exc_info=True,
+                )
+            return None
+
+        # Non-TIFF formats (PNG, JPEG, etc.) — single channel only
+        if channel_num != 1:
+            return None
+        try:
+            from PIL import Image as PILImage
+            img = PILImage.open(str(source_path))
+            return np.asarray(img)
+        except Exception as e:
+            logger.error(
+                "Failed to load '%s' from source '%s': %s",
+                channel_name, original_filename, e, exc_info=True,
+            )
+        return None
+
+    @staticmethod
+    def list_saved_channels(project_path: Path, image_uuid: str) -> List[str]:
+        image_folder = project_path / "images" / image_uuid
+        if not image_folder.exists():
+            return []
+
+        channels = []
+        for channel_path in image_folder.glob("channel_*.tif"):
+            suffix = channel_path.stem[len("channel_") :]
+            try:
+                channel_num = int(suffix)
+            except ValueError:
+                continue
+            channels.append(channel_num)
+
+        channels.sort()
+        return [f"Channel {channel_num}" for channel_num in channels]
 
     @staticmethod
     def get_image_metadata(
@@ -212,12 +396,15 @@ class ProjectManager:
         import subprocess
 
         system = platform.system()
-        if system == "Darwin":
-            subprocess.run(["open", str(project_path)])
-        elif system == "Linux":
-            subprocess.run(["xdg-open", str(project_path)])
-        elif system == "Windows":
-            subprocess.run(["explorer", str(project_path)])
+        try:
+            if system == "Darwin":
+                subprocess.run(["open", str(project_path)])
+            elif system == "Linux":
+                subprocess.run(["xdg-open", str(project_path)])
+            elif system == "Windows":
+                subprocess.run(["explorer", str(project_path)])
+        except Exception as e:
+            logger.error("Failed to open project folder '%s': %s", project_path, e, exc_info=True)
 
     @staticmethod
     def get_folder_size(path: Path) -> int:

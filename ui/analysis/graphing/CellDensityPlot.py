@@ -1,3 +1,4 @@
+import logging
 import sys
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -5,6 +6,10 @@ import numpy as np
 import seaborn as sns
 from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+
+from core.dataframe_utils import get_marker_columns
+
+logger = logging.getLogger(__name__)
 
 # this seems to be just a style of plot, not exactly a concrete plot.
 
@@ -25,7 +30,7 @@ class CellDensityPlot(QMainWindow):
         self.canvas = FigureCanvas(self.figure)
         layout.addWidget(self.canvas)
 
-        self.plot_cell_density(data, region, data.columns[3:])
+        self.plot_cell_density(data, region, get_marker_columns(data))
 
     def plot_cell_density(self, data, region, markers):
         sns.set_style("ticks")
@@ -144,7 +149,7 @@ class CellDensityPlot(QMainWindow):
         self.canvas.draw()
 
         # Print the results in table format for inspection
-        print(region_df)
+        logger.debug(region_df)
         # plt.savefig('plot.png', dpi=300, bbox_inches='tight')
 
 

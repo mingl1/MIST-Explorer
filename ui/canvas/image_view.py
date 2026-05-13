@@ -1,30 +1,56 @@
 "Image graphics view module."
+
+import logging
 import typing
 
 import numpy as np
 import pyqtgraph as pg
 import tifffile
-from PyQt6.QtCore import QPoint, QRect, QRectF, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import (QBrush, QColor, QCursor, QDragEnterEvent,
-                         QDragMoveEvent, QIcon, QImage, QMouseEvent, QPainter,
-                         QPen, QPixmap)
-from PyQt6.QtWidgets import (QFileDialog, QGraphicsPixmapItem,
-                             QGraphicsRectItem, QGraphicsView, QHBoxLayout,
-                             QLabel, QPushButton, QToolTip, QWidget)
+from PyQt6.QtCore import QPoint, QPointF, QRect, QRectF, QSize, Qt, pyqtSignal
+from PyQt6.QtGui import (
+    QBrush,
+    QColor,
+    QCursor,
+    QDragEnterEvent,
+    QDragMoveEvent,
+    QIcon,
+    QImage,
+    QMouseEvent,
+    QPalette,
+    QPainter,
+    QPen,
+    QPixmap,
+)
+from PyQt6.QtWidgets import (
+    QFileDialog,
+    QGraphicsPixmapItem,
+    QGraphicsRectItem,
+    QGraphicsView,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QWidget,
+)
 
+from core.project_naming import is_segmentation_channel
 from ui.canvas.items import CropRectItem, ResizableRect
 from ui.lassos.CircleLasso import CircleLasso
 from ui.lassos.PolyLasso import PolyLasso
 from ui.lassos.RectLasso import RectLasso
 from utils import resource_path
 
+logger = logging.getLogger(__name__)
+
 if typing.TYPE_CHECKING:
     from ui.app import MainWindow
+
+TOOLTIP_CURSOR_OFFSET = QPoint(16, 24)
+TOOLTIP_BOX_PADDING_PX = 6
 
 pg.setConfigOption("imageAxisOrder", "row-major")
 pg.setConfigOption("useOpenGL", True)
 pg.setConfigOption("useCupy", True)
-pg.setConfigOption("useNumba", True)
+pg.setConfigOption("useNumba", False)
 
 
 # pylint: disable=too-many-instance-attributes, too-many-public-methods
@@ -39,6 +65,24 @@ class ImageGraphicsViewUI(QGraphicsView):
     sigRangeChanged = pyqtSignal(object)  # placeholder for pyqtgraph compatibility
     sigTransformChanged = pyqtSignal()  # placeholder for pyqtgraph compatibility
 
+    @property
+    def select(self):
+        """Get the current selection mode"""
+        return getattr(self, "_select", False)
+
+    @select.setter
+    def select(self, value):
+        """Set the current selection mode and update cursor/drag mode"""
+        self._select = value
+        if value:
+            # Disable drag-panning and show crosshair cursor when in selection mode
+            self.setDragMode(QGraphicsView.DragMode.NoDrag)
+            self.viewport().setCursor(Qt.CursorShape.CrossCursor)
+        else:
+            # Re-enable drag-panning and revert cursor when not in selection mode
+            self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+            self.viewport().unsetCursor()
+
     # pylint: disable=too-many-instance-attributes
     def __init__(self, parent, enc: "MainWindow", show_buttons=True):
         super().__init__(parent)
@@ -49,10 +93,11 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.rubber_band = None
         self.rubber_bands = []
         self.rubber_band_colors = []
+        self.polygon_colors = []
         self.begin_crop = False
         self.origin = None
         self.crop_cursor = QCursor(Qt.CursorShape.CrossCursor)
-        self.select = False
+        self._select = False
         self.zoom = 1
         self.polygons = []
         self.current_polygon = None
@@ -64,10 +109,11 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.crop_start_pos = None
         self.active_crop_rect = None
         self.is_resizing = False
-        
+
         # Move ROI state
         self.moving_lasso = None
         self.last_mouse_pos = None
+        self._roi_origin_scene = None  # Scene-space origin for rect/circle drag
 
         self.reference_view = None
 
@@ -79,8 +125,7 @@ class ImageGraphicsViewUI(QGraphicsView):
 
         # self.get_scene().addItem(self.view_pixmap_item)
         self.view_mode = False
-        
-        
+
         # Attributes initialized
         self.floating_container = None
         self.rect_button = None
@@ -94,6 +139,9 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.initial_crop_rect = None
         self.np_channels = None
         self.pixel_highlight = None
+        self._last_tooltip_text = None
+        self._last_tooltip_pos = None
+        self._tooltip_label = None
         self.setup_ui()
         self.get_scene().addItem(self.pixmap_item)
         self.pixmap_item.show()
@@ -108,14 +156,18 @@ class ImageGraphicsViewUI(QGraphicsView):
         if self.view_pixmaps:
             self._center_image()
 
-        # Show rubberbands when in view/analyze tabs (after centering to ensure correct z-order)
+        # Show rubberbands when in view/analyze tabs
         for rubber_band in self.rubber_bands:
             rubber_band.show()
-            rubber_band.raise_()  # Bring to front
+            rubber_band.setZValue(1)
 
-        # Force viewport update to ensure rubberbands are painted
-        if self.viewport():
-            self.viewport().update()
+        # Show polygons when in view/analyze tabs
+        for polygon in self.polygons:
+            polygon.show()
+            polygon.setZValue(1)
+        if self.current_polygon is not None:
+            self.current_polygon.show()
+            self.current_polygon.setZValue(1)
 
     def show_images_tab_image(self):
         """Show the images tab image."""
@@ -126,6 +178,12 @@ class ImageGraphicsViewUI(QGraphicsView):
         # Also hide rubberbands when switching to Extract tab
         for rubber_band in self.rubber_bands:
             rubber_band.hide()
+
+        # Hide polygons when switching to Extract tab
+        for polygon in self.polygons:
+            polygon.hide()
+        if self.current_polygon is not None:
+            self.current_polygon.hide()
 
     def get_scene(self):
         """Get the scene."""
@@ -169,7 +227,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.setObjectName("canvas")
         self.setAcceptDrops(True)
         self.setScene(pg.GraphicsScene())
-        self.get_scene().setBackgroundBrush(QBrush(QColor("black")))  # black background
+        self.get_scene().setBackgroundBrush(QBrush(QColor("black")))
         self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
         self.setRenderHint(self.renderHints() | self.renderHints().Antialiasing)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
@@ -186,6 +244,10 @@ class ImageGraphicsViewUI(QGraphicsView):
 
     def create_floating_buttons(self):
         """Create floating selection buttons that appear over the canvas"""
+        from ui.theme import ThemeManager
+
+        tc = ThemeManager.instance().get_current()
+
         # Create a container widget for the buttons
         self.floating_container = QWidget(self)
 
@@ -198,7 +260,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         # Add label
         label = QLabel("Select region of interest:", self.floating_container)
         label.setStyleSheet(
-            "QLabel { color: white; padding: 5px; border-radius: 3px; }"
+            f"QLabel {{ color: {tc['text_primary']}; padding: 5px; border-radius: 3px; }}"
         )
         button_layout.addWidget(label)
 
@@ -211,18 +273,18 @@ class ImageGraphicsViewUI(QGraphicsView):
         for button in [self.rect_button, self.circle_button, self.poly_button]:
             button.setFixedSize(40, 40)
             button.setStyleSheet(
-                """
-                QPushButton {
-                    background-color: rgba(255, 255, 255, 0.1);
-                    border: 1px solid #ccc;
+                f"""
+                QPushButton {{
+                    background-color: {tc["bg_hover"]};
+                    border: 1px solid {tc["border"]};
                     border-radius: 5px;
-                }
-                QPushButton:hover {
-                    background-color: rgba(255, 255, 255, 0.2);
-                }
-                QPushButton:pressed {
-                    background-color: rgba(200, 200, 200, 0.2);
-                }
+                }}
+                QPushButton:hover {{
+                    background-color: {tc["bg_pressed"]};
+                }}
+                QPushButton:pressed {{
+                    background-color: {tc["accent_dim"]};
+                }}
             """
             )
 
@@ -286,7 +348,6 @@ class ImageGraphicsViewUI(QGraphicsView):
     def start_crop_mode(self):
         """Start crop mode - called from external crop button"""
         self.crop_mode = True
-        self.begin_crop = True
         self.select = False
         self.current_polygon = None
         self.setFocus()
@@ -303,6 +364,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.crop_mode = False
         self.begin_crop = False
         self.crop_start_pos = None
+        self._roi_origin_scene = None
 
         if self.active_crop_rect:
             self.get_scene().removeItem(self.active_crop_rect)
@@ -310,16 +372,41 @@ class ImageGraphicsViewUI(QGraphicsView):
 
         self.unsetCursor()
 
+    def cancel_roi_operation(self):
+        """Cancel any in-progress ROI drawing without submitting it."""
+        if self.select == "poly" and self.current_polygon:
+            self.get_scene().removeItem(self.current_polygon)
+            self.current_polygon = None
+            if self.polygon_colors:
+                self.polygon_colors.pop()
+            self.select = False
+        elif self.select in ("rect", "circle") and self.origin is not None:
+            # Mid-draw: remove the in-progress rubber band
+            if self.rubber_bands:
+                rb = self.rubber_bands.pop()
+                if self.rubber_band_colors:
+                    self.rubber_band_colors.pop()
+                rb.remove_from_scene()
+            self.rubber_band = None
+            self.origin = None
+            self._roi_origin_scene = None
+            self.select = False
+        elif self.select:
+            # In selection mode but no draw started yet: just exit the mode
+            self.select = False
+
     def is_empty(self) -> bool:
         """Check if canvas is empty."""
-        has_pixmap = self.pixmap_item is not None and not self.pixmap_item.pixmap().isNull()
+        has_pixmap = (
+            self.pixmap_item is not None and not self.pixmap_item.pixmap().isNull()
+        )
         has_view_layers = len(self.view_pixmaps) > 0
         return not (has_pixmap or has_view_layers)
 
     # pylint: disable=invalid-name, unused-argument
     def mouseDoubleClickEvent(self, event):
         """Handle mouse double click."""
-        if not self.is_empty():
+        if not self.is_empty() and self.select != "poly":
             self._center_image()
 
     def update_canvas(self, pixmap: QPixmap):
@@ -364,8 +451,8 @@ class ImageGraphicsViewUI(QGraphicsView):
             self._center_view_tab_image(layer_idx)
             # Button visibility is now controlled by tab changes
         else:
-            print(f"layer {layer_idx}")
-            print(f"pixmap shape {pixmap.shape}")
+            logger.debug(f"layer {layer_idx}")
+            logger.debug(f"pixmap shape {pixmap.shape}")
             # Button visibility is now controlled by tab changes
             if pixmap.shape == (0,):
                 removed_item = self.view_pixmaps.pop(layer_idx)
@@ -387,8 +474,9 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.centerOn(pixmap_item)
 
     def _center_image(self):
-        pixmap_item = \
+        pixmap_item = (
             self.pixmap_item if self.pixmap_item.isVisible() else self.view_pixmaps[0]
+        )
         item_rect = pixmap_item.boundingRect()
         item_rect = QRectF(
             item_rect.x() - item_rect.width() // 2,
@@ -399,6 +487,7 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.setSceneRect(item_rect)
         self.fitInView(pixmap_item, Qt.AspectRatioMode.KeepAspectRatio)
         self.centerOn(pixmap_item)
+        self.zoom = 1  # Reset zoom level when centering
         # if self.reference_view:
         #     self.reference_view.__centerImage()
 
@@ -449,30 +538,8 @@ class ImageGraphicsViewUI(QGraphicsView):
         zoom_factor = 0.9 if zooming_out else 1.1
         self.zoom *= zoom_factor
 
-        # Store rubber band positions before zooming
-        if not self.rubber_band_positions:
-            self.rubber_band_positions = []
-            for rubber_band in self.rubber_bands:
-                rubber_band_geometry = rubber_band.geometry()
-                top_left_scene = self.mapToScene(rubber_band_geometry.topLeft())
-                bottom_right_scene = self.mapToScene(rubber_band_geometry.bottomRight())
-                self.rubber_band_positions.append(
-                    (rubber_band, top_left_scene, bottom_right_scene)
-                )
-
-        # Perform the zoom
+        # Perform the zoom (ROIs are scene items and auto-follow the transform)
         self.scale(zoom_factor, zoom_factor)
-
-        # Update rubber band positions after zooming
-        for (
-            rubber_band,
-            top_left_scene,
-            bottom_right_scene,
-        ) in self.rubber_band_positions:
-            new_top_left_view = self.mapFromScene(top_left_scene)
-            new_bottom_right_view = self.mapFromScene(bottom_right_scene)
-            new_rect = QRect(new_top_left_view, new_bottom_right_view)
-            rubber_band.setGeometry(new_rect)
 
         # Force redraw to update polygon positions
         vp = self.viewport()
@@ -493,6 +560,61 @@ class ImageGraphicsViewUI(QGraphicsView):
         self.image_pos = self.pixmap_item.mapFromScene(scene_pos)
         self.starting_x = int(self.image_pos.x())
         self.starting_y = int(self.image_pos.y())
+
+    def _get_existing_roi_colors(self):
+        """Return all current ROI colors as (r, g, b) tuples for distinctness checks."""
+        return [c.getRgb()[:3] for c in self.rubber_band_colors] + self.polygon_colors
+
+    def _find_top_rubber_band(self, view_pos):
+        """Return the top-most visible ROI under the given view position."""
+        scene_pos = self.mapToScene(view_pos)
+        # Check completed PolyLasso items first (they're scene items, not in rubber_bands)
+        for item in self.get_scene().items(scene_pos):
+            if isinstance(item, PolyLasso) and item.completed:
+                return item
+        for rubber_band in reversed(self.rubber_bands):
+            if rubber_band and rubber_band.isVisible():
+                local_pos = rubber_band.mapFromScene(scene_pos)
+                if rubber_band.shape().contains(local_pos):
+                    return rubber_band
+        return None
+
+    def _get_poly_snap_target(self, view_pos, threshold=15):
+        """Return scene pos of the nearest existing polygon point within threshold screen pixels, else None."""
+        if not self.current_polygon or not self.current_polygon.points:
+            return None
+        vx, vy = view_pos.x(), view_pos.y()
+        for point in self.current_polygon.points:
+            vp = self.mapFromScene(point)
+            dx, dy = vx - vp.x(), vy - vp.y()
+            if (dx * dx + dy * dy) ** 0.5 <= threshold:
+                return point
+        return None
+
+    def _finalize_poly(self):
+        """Complete and submit the current polygon as an ROI."""
+        if not self.current_polygon:
+            return
+        if self.current_polygon.complete():
+            self.current_polygon.set_snap_point(None)
+            self.polygons.append(self.current_polygon)
+            self.enc.analysis_tab.analyze_poly_region(
+                self.current_polygon, ("poly", self.current_polygon.im_points)
+            )
+            self.current_polygon = None
+            self.select = False
+
+    def _cancel_rubber_band_drag(self):
+        """Reset any in-progress ROI drag state."""
+        self.moving_lasso = None
+        self.last_mouse_pos = None
+        for rubber_band in self.rubber_bands:
+            if hasattr(rubber_band, "is_dragging"):
+                rubber_band.is_dragging = False
+            if hasattr(rubber_band, "mouse_press_pos"):
+                rubber_band.mouse_press_pos = None
+            if hasattr(rubber_band, "mouse_move_pos"):
+                rubber_band.mouse_move_pos = None
 
     # pylint: disable=invalid-name, too-many-branches, too-many-statements
     def mousePressEvent(self, event: QMouseEvent | None):
@@ -523,90 +645,106 @@ class ImageGraphicsViewUI(QGraphicsView):
             # Handle Shift+Click to move ROI
             if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
                 # Find the top-most lasso under the mouse
-                for r in reversed(self.rubber_bands):
-                    if r.geometry().contains(event.pos()):
-                        self.moving_lasso = r
-                        self.last_mouse_pos = event.pos()
-                        event.accept()
-                        return
+                top_lasso = self._find_top_rubber_band(event.pos())
+                if top_lasso is not None:
+                    self.moving_lasso = top_lasso
+                    self.last_mouse_pos = event.pos()
+                    event.accept()
+                    return
 
             # Handle regular selection modes
             if self.begin_crop or self.select:
-                print("beginning selection")
+                logger.debug("beginning selection")
                 self.origin = event.pos()
                 self.update_starting_position(event)
                 scene_pos = self.mapToScene(event.pos())
                 image_pos = self.pixmap_item.mapFromScene(scene_pos)
                 self.select_start_pos = image_pos
+                self._roi_origin_scene = scene_pos
                 if self.begin_crop:
                     if not self.rubber_band:
-                        self.rubber_band = RectLasso(self)
+                        self.rubber_band = RectLasso(
+                            pos=(scene_pos.x(), scene_pos.y()),
+                            size=(0, 0),
+                        )
+                        self.get_scene().addItem(self.rubber_band)
                 elif self.select == "rect":
-                    self.rubber_band = RectLasso(self)
-                    self.rubber_band.roi_moved.connect(lambda: self.update_roi_from_lasso(self.rubber_band))
+                    self.rubber_band = RectLasso(
+                        pos=(scene_pos.x(), scene_pos.y()),
+                        size=(0, 0),
+                        existing_colors=self._get_existing_roi_colors(),
+                    )
+                    self.get_scene().addItem(self.rubber_band)
                     self.rubber_bands.append(self.rubber_band)
                     self.rubber_band_colors.append(self.rubber_band.color)
-                    self.rubber_band.setGeometry(QRect(self.origin, QSize()))
-                    self.rubber_band.show()
+                    self.rubber_band.sigRegionChangeFinished.connect(
+                        lambda: self.update_roi_from_lasso(self.rubber_band)
+                    )
                 elif self.select == "circle":
-                    self.center = QPoint(self.starting_x, self.starting_y)
-                    self.rubber_band = CircleLasso(self)
-                    self.rubber_band.roi_moved.connect(lambda: self.update_roi_from_lasso(self.rubber_band))
+                    self.rubber_band = CircleLasso(
+                        pos=(scene_pos.x(), scene_pos.y()),
+                        size=(0, 0),
+                        existing_colors=self._get_existing_roi_colors(),
+                    )
+                    self.get_scene().addItem(self.rubber_band)
                     self.rubber_bands.append(self.rubber_band)
                     self.rubber_band_colors.append(self.rubber_band.color)
-                    self.rubber_band.setGeometry(QRect(self.origin, QSize()))
-                    self.rubber_band.show()
+                    self.rubber_band.sigRegionChangeFinished.connect(
+                        lambda: self.update_roi_from_lasso(self.rubber_band)
+                    )
                 elif self.select == "poly":
                     if not self.current_polygon:
                         self.current_polygon = PolyLasso(
-                            self.pixmap_item
-                        )  # Set pixmapItem as parent
+                            None,
+                            existing_colors=self._get_existing_roi_colors(),
+                        )
+                        self.polygon_colors.append(
+                            self.current_polygon.color.getRgb()[:3]
+                        )
                         self.get_scene().addItem(self.current_polygon)
-                        # Enable mouse tracking for live preview
                         self.setMouseTracking(True)
 
-                    # Add point in scene coordinates, but relative to the image
+                    snap_target = self._get_poly_snap_target(event.pos())
+                    if snap_target is not None:
+                        # Snapping to first point with enough vertices → auto-close
+                        if (
+                            snap_target is self.current_polygon.points[0]
+                            and len(self.current_polygon.points) >= 3
+                        ):
+                            self._finalize_poly()
+                        # Any other snap: skip adding duplicate point
+                        return
 
-                    # Convert image_pos to scene coordinates relative to the image
                     polygon_pos = self.pixmap_item.mapToScene(image_pos)
                     self.current_polygon.add_point(polygon_pos, image_pos)
 
                 if self.begin_crop:
                     self.rubber_bands.append(self.rubber_band)
-                    assert (
-                        self.rubber_band is not None
-                    ), "Rubber band should be initialized"
+                    assert self.rubber_band is not None, (
+                        "Rubber band should be initialized"
+                    )
                     self.rubber_band_colors.append(self.rubber_band.color)
-                    self.rubber_band.setGeometry(QRect(self.origin, QSize()))
-                    self.rubber_band.show()
 
         if not self.is_resizing and not self.select:
             super().mousePressEvent(event)
 
-        # Propagate event to rubber bands
-        for r in self.rubber_bands:
-            r.mousePressEvent(event)
-
     # pylint: disable=invalid-name
     def keyPressEvent(self, event):
         """Handle key press."""
-        # Handle crop confirmation with Enter key
         if event is None:
             return
-        if (
-            (event.key() == Qt.Key.Key_Enter or event.key() == Qt.Key.Key_Return)
-            and self.crop_mode
-            and self.active_crop_rect
-        ):
-            print("confirming")
-            self.confirm_crop()
-            return
-
-        # Handle crop cancellation with Escape key
-        if event.key() == Qt.Key.Key_Escape and self.crop_mode:
-            self.cancel_crop_mode()
-            return
-
+        if event.key() in (Qt.Key.Key_Enter, Qt.Key.Key_Return):
+            if self.crop_mode and self.active_crop_rect:
+                logger.debug("confirming")
+                self.confirm_crop()
+                return
+        if event.key() == Qt.Key.Key_Escape:
+            if self.crop_mode:
+                self.cancel_crop_mode()
+                return
+            if self.select:
+                self.cancel_roi_operation()
+                return
         super().keyPressEvent(event)
 
     def confirm_crop(self):
@@ -730,81 +868,80 @@ class ImageGraphicsViewUI(QGraphicsView):
             r = QRectF(left, top, width, height)
             r = QRectF(left, top, width, height)
             self.active_crop_rect.setRect(r)
-            
+
         # Handle moving lasso
         if self.moving_lasso and self.last_mouse_pos:
-            delta = event.pos() - self.last_mouse_pos
-            self.moving_lasso.move(self.moving_lasso.pos() + delta)
+            old_scene = self.mapToScene(self.last_mouse_pos)
+            new_scene = self.mapToScene(event.pos())
+            cur = self.moving_lasso.pos()
+            new_x = cur.x() + new_scene.x() - old_scene.x()
+            new_y = cur.y() + new_scene.y() - old_scene.y()
+            if isinstance(self.moving_lasso, PolyLasso):
+                # QGraphicsItem.setPos() has no finish parameter
+                self.moving_lasso.setPos(new_x, new_y)
+            else:
+                self.moving_lasso.setPos(new_x, new_y, finish=False)
             self.last_mouse_pos = event.pos()
             event.accept()
 
         # Store current mouse position for polygon preview
         if self.current_polygon and len(self.current_polygon.points) > 0:
-            # Update temp point in scene coordinates relative to the image
             scene_pos = self.mapToScene(event.pos())
             image_pos = self.pixmap_item.mapFromScene(scene_pos)
-            polygon_pos = self.pixmap_item.mapToScene(image_pos)
-            self.current_polygon.set_temp_point(polygon_pos)
+            snap_target = self._get_poly_snap_target(event.pos())
+            if snap_target is not None:
+                self.current_polygon.set_temp_point(snap_target)
+                self.current_polygon.set_snap_point(snap_target)
+                self.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
+            else:
+                polygon_pos = self.pixmap_item.mapToScene(image_pos)
+                self.current_polygon.set_temp_point(polygon_pos)
+                self.current_polygon.set_snap_point(None)
+                self.viewport().setCursor(Qt.CursorShape.CrossCursor)
 
         # # Handle pixel info display
         # Determine reference item for coordinates and bounds
         reference_item = self.pixmap_item
-        has_main_pixmap = self.pixmap_item is not None and not self.pixmap_item.pixmap().isNull()
-        
+        has_main_pixmap = (
+            self.pixmap_item is not None and not self.pixmap_item.pixmap().isNull()
+        )
+
         # If main pixmap is invalid but we have view layers, use the first view layer as reference
         if not has_main_pixmap and self.view_pixmaps:
             reference_item = self.view_pixmaps[0]
 
         if reference_item:
             scene_pos = self.mapToScene(event.pos())
-            
+
             # Map scene position to image coordinates relative to the reference item
             # QGraphicsItem.mapFromScene works for both QGraphicsPixmapItem and pg.ImageItem
             image_pos = reference_item.mapFromScene(scene_pos)
 
             x = int(image_pos.x())
             y = int(image_pos.y())
-            
+
             # Determine dimensions of the reference item
             width = 0
             height = 0
-            
-            if isinstance(reference_item, QGraphicsPixmapItem) and not reference_item.pixmap().isNull():
+
+            if (
+                isinstance(reference_item, QGraphicsPixmapItem)
+                and not reference_item.pixmap().isNull()
+            ):
                 pixmap = reference_item.pixmap()
                 width = pixmap.width()
                 height = pixmap.height()
             elif isinstance(reference_item, pg.ImageItem):
                 # pg.ImageItem stores image data in .image
                 if reference_item.image is not None:
-                    # Shape is usually (h, w) or (w, h) depending on axis order, 
+                    # Shape is usually (h, w) or (w, h) depending on axis order,
                     # but ImageItem exposes width() and height() methods usually
                     width = reference_item.width()
                     height = reference_item.height()
 
             # Check bounds
             if width > 0 and height > 0 and 0 <= x < width and 0 <= y < height:
-                
-                # Create a 1x1 QImage to render the pixel onto
-                img = QImage(1, 1, QImage.Format.Format_ARGB32_Premultiplied)
-                img.fill(Qt.GlobalColor.black)  # Fill with transparent background
-
-                # Create a QPainter to draw on the QImage
-                painter = QPainter(img)
-
-                # Render just the 1x1 pixel area from the scene
-                # The target is the full 1x1 image (0,0,1,1)
-                # The source is the 1x1 rect in scene coordinates
-                scene = self.get_scene()
-                scene.render(painter, QRectF(0, 0, 1, 1), QRectF(scene_pos.x(), scene_pos.y(), 1, 1))
-
-                # End the painter
-                painter.end()
-
-                color = QColor(img.pixel(0, 0))
-                r, g, b = color.red(), color.green(), color.blue()
-
                 global_pos = self.mapToGlobal(event.pos())
-                QToolTip.showText(global_pos, "", self)
 
                 # Get layer values if available
                 if self.enc and self.enc.tool_bar.tabButtonGroup.checkedId() != 0:
@@ -812,14 +949,69 @@ class ImageGraphicsViewUI(QGraphicsView):
                 else:
                     layers = None
 
-                combined_layers = None  # added this so we don't get reference error
+                combined_layers = None
 
                 if layers:
                     layers = [f"{layer}: {value}\n" for layer, value in layers]
                     combined_layers = "".join(layers)[:-1]
-                    QToolTip.showText(global_pos, combined_layers, self)
+                    self._show_tooltip(global_pos, combined_layers)
                 else:
-                    QToolTip.showText(global_pos, f"R: {r}, G: {g}, B: {b}", self)
+                    # Fast path: read intensity directly from model data
+                    raw_intensity_str = None
+                    try:
+                        from controller import Controller
+
+                        ctrl = Controller.get()
+                        if (
+                            self == self.enc.canvas
+                            and ctrl.model_canvas.image_wrapper is not None
+                            and ctrl.model_canvas.image_wrapper.data.size > 0
+                        ):
+                            val = ctrl.model_canvas.image_wrapper.data[y, x]
+                            if is_segmentation_channel(ctrl.model_canvas.image_wrapper):
+                                raw_intensity_str = f"Cell ID: {val}"
+                            else:
+                                seg_labels = ctrl.model_canvas.segmentation_labels
+                                if (
+                                    ctrl.model_canvas.stardist_overlay_enabled
+                                    and seg_labels is not None
+                                    and 0 <= y < seg_labels.shape[0]
+                                    and 0 <= x < seg_labels.shape[1]
+                                ):
+                                    cell_id = seg_labels[y, x]
+                                    raw_intensity_str = (
+                                        f"Cell ID: {cell_id}\nIntensity: {val}"
+                                    )
+                                else:
+                                    raw_intensity_str = f"Intensity: {val}"
+                        elif (
+                            hasattr(self.enc, "small_view")
+                            and self == self.enc.small_view
+                            and ctrl.model_reference_canvas.image_wrapper is not None
+                            and ctrl.model_reference_canvas.image_wrapper.data.size > 0
+                        ):
+                            val = ctrl.model_reference_canvas.image_wrapper.data[y, x]
+                            raw_intensity_str = f"Intensity: {val}"
+                    except Exception:
+                        pass
+
+                    # Slow path: render scene pixel (only when model data is unavailable)
+                    if raw_intensity_str is None:
+                        img = QImage(1, 1, QImage.Format.Format_ARGB32_Premultiplied)
+                        img.fill(Qt.GlobalColor.black)
+                        painter = QPainter(img)
+                        scene = self.get_scene()
+                        scene.render(
+                            painter,
+                            QRectF(0, 0, 1, 1),
+                            QRectF(scene_pos.x(), scene_pos.y(), 1, 1),
+                        )
+                        painter.end()
+                        color = QColor(img.pixel(0, 0))
+                        r, g, b = color.red(), color.green(), color.blue()
+                        raw_intensity_str = f"R: {r}, G: {g}, B: {b}"
+
+                    self._show_tooltip(global_pos, raw_intensity_str)
 
                 # Update position display in main window
                 if combined_layers:
@@ -830,7 +1022,7 @@ class ImageGraphicsViewUI(QGraphicsView):
                     )
                 else:
                     self.enc.update_mouse_position_label(
-                        f"R: {r}, G: {g}, B: {b} X: {x}, Y: {y}"
+                        f"{raw_intensity_str} X: {x}, Y: {y}"
                     )
 
                 # Highlight the pixel under cursor
@@ -839,6 +1031,7 @@ class ImageGraphicsViewUI(QGraphicsView):
                 #     self.reference_view.highlight_pixel(x, y)
             else:
                 self.enc.update_mouse_position_label("")
+                self._hide_tooltip()
                 # Hide pixel highlight when outside image bounds
                 self.hide_pixel_highlight()
                 # if self.reference_view:
@@ -850,34 +1043,42 @@ class ImageGraphicsViewUI(QGraphicsView):
             and self.rubber_band
             and not self.crop_mode
         ):
-            if self.origin is None:
+            if self._roi_origin_scene is None:
                 self.origin = event.pos()
                 self.update_starting_position(event)
-            self.rubber_band.setGeometry(QRect(self.origin, event.pos()))
+                sp = self.mapToScene(event.pos())
+                self._roi_origin_scene = sp
+            cur = self.mapToScene(event.pos())
+            origin = self._roi_origin_scene
+            w = abs(cur.x() - origin.x())
+            h = abs(cur.y() - origin.y())
+            self.rubber_band.setPos(
+                min(cur.x(), origin.x()), min(cur.y(), origin.y()), finish=False
+            )
+            self.rubber_band.setSize((w, h), update=True, finish=False)
 
         if (
             self.select in ("rect", "circle")
             and self.rubber_bands
-            and self.origin is not None
+            and self._roi_origin_scene is not None
         ):
+            cur = self.mapToScene(event.pos())
+            origin = self._roi_origin_scene
             if self.select == "circle":
-                center = self.origin
-                corner = event.pos()
-                size = (
-                    max(abs(center.x() - corner.x()), abs(center.y() - corner.y())) * 2
+                half = max(abs(cur.x() - origin.x()), abs(cur.y() - origin.y()))
+                self.rubber_bands[-1].setPos(
+                    origin.x() - half, origin.y() - half, finish=False
                 )
-                self.rubber_bands[-1].setGeometry(
-                    QRect(center.x() - size // 2, center.y() - size // 2, size, size)
+                self.rubber_bands[-1].setSize(
+                    (half * 2, half * 2), update=True, finish=False
                 )
             else:
-                self.rubber_bands[-1].setGeometry(
-                    QRect(self.origin, event.pos()).normalized()
+                w = abs(cur.x() - origin.x())
+                h = abs(cur.y() - origin.y())
+                self.rubber_bands[-1].setPos(
+                    min(cur.x(), origin.x()), min(cur.y(), origin.y()), finish=False
                 )
-
-        # Propagate event to rubber bands
-        if not self.select:
-            for r in self.rubber_bands:
-                r.mouseMoveEvent(event)
+                self.rubber_bands[-1].setSize((w, h), update=True, finish=False)
 
     # pylint: disable=invalid-name
     def mouseReleaseEvent(self, event: QMouseEvent | None):
@@ -889,63 +1090,7 @@ class ImageGraphicsViewUI(QGraphicsView):
 
         # Handle moving lasso release
         if self.moving_lasso:
-            # Update analysis with new position
-            scene_pos = self.mapToScene(self.moving_lasso.geometry().topLeft())
-            # For CircleLasso, topLeft might not be start_pos in the same sense, but region calc depends on type
-            # We need to reconstruct the region defined by the lasso geometry
-            
-            # Determine region type
-            region_type = "rect"
-            if isinstance(self.moving_lasso, CircleLasso):
-                region_type = "circle"
-            # PolyLasso is not in rubber_bands, so not handled here
-            
-            # Helper to get image pos from view pos
-            def get_img_pos(view_pos):
-                scene_p = self.mapToScene(view_pos)
-                return self.pixmap_item.mapFromScene(scene_p)
-            
-            lasso_rect = self.moving_lasso.geometry()
-            
-            if region_type == "rect":
-                p1 = get_img_pos(lasso_rect.topLeft())
-                p2 = get_img_pos(lasso_rect.bottomRight())
-                x1, y1 = p1.x(), p1.y()
-                x2, y2 = p2.x(), p2.y()
-                image_rect = (
-                    region_type,
-                    (min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2))
-                )
-            elif region_type == "circle":
-                # For circle, we stored (center_x, center_y, edge_x, edge_y) or similar?
-                # Actually existing code uses (start_x, start_y, end_x, end_y) where start is top-left of rect?
-                # No, look at create_rubber_band: center = starting_x, starting_y.
-                # In mouseReleaseEvent (original):
-                # image_pos dist to initial left click pos is radius.
-                # initial pos is self.select_start_pos.
-                
-                # We need to emulate this. The CircleLasso widget is a square/rect bounding the circle.
-                # Center of circle = Center of widget.
-                # Radius = width / 2.
-                
-                center_view = lasso_rect.center()
-                center_img = get_img_pos(center_view)
-                
-                # We need a 2nd point to define radius. (center_x + r, center_y)
-                radius_view = lasso_rect.width() / 2
-                # Assuming isotropic scaling (zoom uniform), we can map a point at radius distance.
-                # But safer to map edge point.
-                edge_view = QPoint(lasso_rect.right(), lasso_rect.center().y())
-                edge_img = get_img_pos(edge_view)
-                
-                image_rect = (
-                    region_type,
-                    (center_img.x(), center_img.y(), edge_img.x(), edge_img.y())
-                )
-
-            # Update the analysis
-            self.enc.analysis_tab.update_roi_region(self.moving_lasso, image_rect)
-
+            self.update_roi_from_lasso(self.moving_lasso)
             self.moving_lasso = None
             self.last_mouse_pos = None
             return
@@ -960,11 +1105,13 @@ class ImageGraphicsViewUI(QGraphicsView):
 
             # pylint: disable=too-many-function-args
             self.active_crop_rect = ResizableRect(
-                self.initial_crop_rect.x(), self.initial_crop_rect.y(),
-                self.initial_crop_rect.width(), self.initial_crop_rect.height(),
+                self.initial_crop_rect.x(),
+                self.initial_crop_rect.y(),
+                self.initial_crop_rect.width(),
+                self.initial_crop_rect.height(),
             )
             self.active_crop_rect.setZValue(10)
-            
+
             self.is_resizing = False
 
             self.get_scene().addItem(self.active_crop_rect)
@@ -972,15 +1119,12 @@ class ImageGraphicsViewUI(QGraphicsView):
         if not self.rubber_bands:
             return
 
-        # Propagate event to rubber bands
-        for r in self.rubber_bands:
-            r.mouseReleaseEvent(event)
-
         if event.button() == Qt.MouseButton.LeftButton:
             rubberband = self.rubber_band if self.begin_crop else self.rubber_bands[-1]
 
             if self.select:
                 self.origin = None
+                self._roi_origin_scene = None
                 assert self.select_start_pos is not None
                 if self.select in ("rect", "circle"):
                     assert rubberband is not None
@@ -989,7 +1133,7 @@ class ImageGraphicsViewUI(QGraphicsView):
                     # if select is circle, then image_pos dist to initial left click pos is radius
                     # if select is rectangle, then initial is top let and image_pos is bottom right
                     # initial pos is self.select_start_pos
-                    print(image_pos)
+                    logger.debug(image_pos)
                     image_rect = (
                         self.select,
                         (
@@ -1004,9 +1148,80 @@ class ImageGraphicsViewUI(QGraphicsView):
                         self.rubber_bands.remove(self.rubber_band)
                         self.rubber_band_colors.pop()
                         if rubberband:
-                            rubberband.deleteLater()
+                            rubberband.remove_from_scene()
                     self.select = False
+                    self._roi_origin_scene = None
                     return
+
+    def _ensure_tooltip_label(self):
+        if self._tooltip_label is not None:
+            return self._tooltip_label
+
+        viewport = self.viewport()
+        tooltip = QLabel(viewport)
+        tooltip.setObjectName("canvasTooltip")
+        tooltip.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        tooltip.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
+        )
+        tooltip.setMargin(TOOLTIP_BOX_PADDING_PX)
+        tooltip.setIndent(0)
+        tooltip.setWordWrap(False)
+        tooltip.hide()
+
+        palette = viewport.palette()
+        bg = palette.color(QPalette.ColorRole.ToolTipBase).name()
+        fg = palette.color(QPalette.ColorRole.ToolTipText).name()
+        border = palette.color(QPalette.ColorRole.Mid).name()
+        tooltip.setStyleSheet(
+            "QLabel#canvasTooltip {"
+            f"background-color: {bg};"
+            f"color: {fg};"
+            f"border: 1px solid {border};"
+            f"padding: {TOOLTIP_BOX_PADDING_PX}px;"
+            "}"
+        )
+        self._tooltip_label = tooltip
+        return tooltip
+
+    def _show_tooltip(self, pos, text):
+        tooltip = self._ensure_tooltip_label()
+        local_pos = self.viewport().mapFromGlobal(pos) + TOOLTIP_CURSOR_OFFSET
+
+        if text == self._last_tooltip_text and local_pos == self._last_tooltip_pos:
+            return
+
+        self._last_tooltip_text = text
+        self._last_tooltip_pos = local_pos
+
+        tooltip.setText(text)
+        tooltip.adjustSize()
+
+        max_x = max(0, self.viewport().width() - tooltip.width())
+        max_y = max(0, self.viewport().height() - tooltip.height())
+        tooltip.move(
+            max(0, min(local_pos.x(), max_x)),
+            max(0, min(local_pos.y(), max_y)),
+        )
+        tooltip.raise_()
+        tooltip.show()
+
+    def _hide_tooltip(self):
+        self._last_tooltip_text = None
+        self._last_tooltip_pos = None
+        if self._tooltip_label is not None:
+            self._tooltip_label.hide()
+
+    def leaveEvent(self, event):
+        """Cancel ROI dragging when pointer leaves the view."""
+        self._cancel_rubber_band_drag()
+        self._hide_tooltip()
+        super().leaveEvent(event)
+
+    # pylint: disable=invalid-name
+    def scrollContentsBy(self, dx, dy):
+        """Scroll the view; ROIs are scene items and auto-follow the transform."""
+        super().scrollContentsBy(dx, dy)
 
     def load_channels(self, np_channels):
         """Load channel data"""
@@ -1029,7 +1244,7 @@ class ImageGraphicsViewUI(QGraphicsView):
             # Ensure it's in the scene
             if self.pixel_highlight.scene() != self.get_scene():
                 self.get_scene().addItem(self.pixel_highlight)
-            
+
             self.pixel_highlight.setRect(scene_rect)
             self.pixel_highlight.show()
         else:
@@ -1054,44 +1269,40 @@ class ImageGraphicsViewUI(QGraphicsView):
         if hasattr(self, "pixel_highlight") and self.pixel_highlight:
             self.pixel_highlight.hide()
 
+    def _roi_scene_to_image_rect(self, roi):
+        """Convert a pg.ROI's scene-space pos/size to an (x1,y1,x2,y2) image-coord tuple."""
+        pos = roi.pos()
+        size = roi.size()
+        tl = self.pixmap_item.mapFromScene(QPointF(pos.x(), pos.y()))
+        br = self.pixmap_item.mapFromScene(
+            QPointF(pos.x() + size.x(), pos.y() + size.y())
+        )
+        return (tl.x(), tl.y(), br.x(), br.y())
+
     def update_roi_from_lasso(self, rubberband):
-        """Update ROI region based on lasso position"""
+        """Update ROI region based on lasso position."""
         if not rubberband or not self.pixmap_item:
             return
 
-        # Get geometry in view coordinates
-        rect = rubberband.geometry()
-        top_left = rect.topLeft()
-        bottom_right = rect.bottomRight()
-
-        # Convert to scene coords
-        top_left_scene = self.mapToScene(top_left)
-        bottom_right_scene = self.mapToScene(bottom_right)
-
-        # Convert to image coords
-        image_top_left = self.pixmap_item.mapFromScene(top_left_scene)
-        image_bottom_right = self.pixmap_item.mapFromScene(bottom_right_scene)
-
-        # Determine shape type
-        shape_type = "rect"
-        if isinstance(rubberband, CircleLasso):
-            shape_type = "circle"
-            center_x = (image_top_left.x() + image_bottom_right.x()) / 2
-            center_y = (image_top_left.y() + image_bottom_right.y()) / 2
-            radius = (image_bottom_right.x() - image_top_left.x()) / 2
-            x2 = center_x + radius
-            y2 = center_y
-            region_coords = (center_x, center_y, x2, y2)
+        if isinstance(rubberband, PolyLasso):
+            new_im_points = []
+            for pt in rubberband.points:
+                scene_pt = rubberband.mapToScene(pt)
+                img_pt = self.pixmap_item.mapFromScene(scene_pt)
+                new_im_points.append(img_pt)
+            rubberband.im_points = new_im_points
+            self.enc.analysis_tab.update_roi_region(rubberband, ("poly", new_im_points))
+        elif isinstance(rubberband, CircleLasso):
+            pos = rubberband.pos()
+            size = rubberband.size()
+            cx = pos.x() + size.x() / 2
+            cy = pos.y() + size.y() / 2
+            ex = pos.x() + size.x()
+            ey = pos.y() + size.y() / 2
+            center = self.pixmap_item.mapFromScene(QPointF(cx, cy))
+            edge = self.pixmap_item.mapFromScene(QPointF(ex, ey))
+            region = ("circle", (center.x(), center.y(), edge.x(), edge.y()))
+            self.enc.analysis_tab.update_roi_region(rubberband, region)
         else:
-            shape_type = "rect"
-            region_coords = (
-                image_top_left.x(),
-                image_top_left.y(),
-                image_bottom_right.x(),
-                image_bottom_right.y(),
-            )
-
-        region = (shape_type, region_coords)
-        
-        # Call into analysis tab to update
-        self.enc.analysis_tab.update_roi_region(rubberband, region)
+            region = ("rect", self._roi_scene_to_image_rect(rubberband))
+            self.enc.analysis_tab.update_roi_region(rubberband, region)

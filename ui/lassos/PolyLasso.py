@@ -1,29 +1,34 @@
+from PyQt6.QtCore import QPoint, QPointF, QRectF, Qt
 from PyQt6.QtGui import (
-    QPainter,
-    QPen,
-    QColor,
-    QPolygon,
     QBrush,
+    QColor,
+    QPainter,
     QPainterPath,
+    QPen,
     QPolygonF,
 )
-from PyQt6.QtCore import Qt, QPoint, QRect, QPointF, QRectF
-from PyQt6.QtWidgets import QGraphicsItem, QGraphicsPolygonItem
-import random
+from PyQt6.QtWidgets import (
+    QGraphicsItem,
+    QGraphicsPolygonItem,
+    QStyleOptionGraphicsItem,
+)
+
+from ui.lassos.Lasso import pick_distinct_color
 
 
 class PolyLasso(QGraphicsPolygonItem):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, existing_colors=None):
         super().__init__(parent)
         self.points = []  # Store scene coordinates
-        col = self._get_random_color()[:3]
+        col = pick_distinct_color(existing_colors or [])[:3]
         self.color = QColor(*col, 100)
         self.line_color = QColor(*col)  # Line color (solid)
         self.point_color = QColor(255, 0, 0)  # Point marker color (red)
         self.completed = False
         self.temp_line_point = None  # To draw a temporary line following the cursor
-        self.point_size = 10  # Size of the point markers
+        self.point_size = 2  # Size of the point markers
         self.im_points = []  # Store image coordinates
+        self.snap_point = None  # Point currently being highlighted as snap target
 
         # Only make it selectable, not movable since it should move with the image
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable)
@@ -34,14 +39,6 @@ class PolyLasso(QGraphicsPolygonItem):
         # Set up the appearance
         self.setPen(QPen(self.line_color, 2))
         self.setBrush(QBrush(self.color))
-
-    def _get_random_color(self):
-        return (
-            random.randint(0, 255),
-            random.randint(0, 255),
-            random.randint(0, 255),
-            50,
-        )
 
     def add_point(self, scene_point, image_point=None):
         """Add a point to the polygon in scene coordinates"""
@@ -60,8 +57,15 @@ class PolyLasso(QGraphicsPolygonItem):
         polygon = QPolygonF(self.points)
         self.setPolygon(polygon)
 
+    def set_snap_point(self, point):
+        """Highlight a point as the current snap target (None to clear)."""
+        self.prepareGeometryChange()
+        self.snap_point = point
+        self.update()
+
     def set_temp_point(self, scene_point):
         """Set temporary point for line preview in scene coordinates"""
+        self.prepareGeometryChange()
         if scene_point:
             if isinstance(scene_point, QPoint):
                 self.temp_line_point = QPointF(scene_point)
@@ -75,9 +79,15 @@ class PolyLasso(QGraphicsPolygonItem):
         """Custom paint implementation"""
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
+        # Compute scene-space radius that stays constant in screen pixels at any zoom
+        lod = QStyleOptionGraphicsItem.levelOfDetailFromTransform(
+            painter.worldTransform()
+        )
+        r = self.point_size / lod
+
         # Draw lines between points
         if len(self.points) > 1:
-            pen = QPen(self.line_color, 2)
+            pen = QPen(self.line_color, 2 / lod)
             painter.setPen(pen)
 
             # Draw connected lines
@@ -95,23 +105,23 @@ class PolyLasso(QGraphicsPolygonItem):
 
             # Draw preview line if we have a temp point
             if not self.completed and self.temp_line_point and self.points:
-                dash_pen = QPen(self.line_color, 2, Qt.PenStyle.DashLine)
+                dash_pen = QPen(self.line_color, 2 / lod, Qt.PenStyle.DashLine)
                 painter.setPen(dash_pen)
                 painter.drawLine(self.points[-1], self.temp_line_point)
 
-        # Draw points
+        # Draw points (constant screen size)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QBrush(self.point_color))
 
         for point in self.points:
-            painter.drawEllipse(point, self.point_size / 2, self.point_size / 2)
+            painter.drawEllipse(point, r, r)
 
-        # Draw temp point
-        if self.temp_line_point and not self.completed:
-            painter.setBrush(QBrush(QColor(255, 165, 0)))  # Orange
-            painter.drawEllipse(
-                self.temp_line_point, self.point_size / 2, self.point_size / 2
-            )
+        # Draw snap indicator ring (constant screen size, 2× the point radius)
+        if self.snap_point is not None and not self.completed:
+            snap_pen = QPen(QColor(255, 255, 255), 2)
+            painter.setPen(snap_pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(self.snap_point, r * 2, r * 2)
 
     def complete(self):
         """Complete the polygon"""
@@ -134,16 +144,7 @@ class PolyLasso(QGraphicsPolygonItem):
         if not self.points:
             return QRectF()
 
-        if len(self.points) == 1:
-            p = self.points[0]
-            return QRectF(
-                p.x() - self.point_size,
-                p.y() - self.point_size,
-                self.point_size * 2,
-                self.point_size * 2,
-            )
-
-        # Calculate the bounding rect of all points including the temp point
+        # Always include temp_line_point so Qt invalidates the full drawn area
         points = self.points.copy()
         if self.temp_line_point:
             points.append(self.temp_line_point)
@@ -151,10 +152,10 @@ class PolyLasso(QGraphicsPolygonItem):
         xs = [p.x() for p in points]
         ys = [p.y() for p in points]
 
-        min_x = min(xs) - self.point_size
-        min_y = min(ys) - self.point_size
-        max_x = max(xs) + self.point_size
-        max_y = max(ys) + self.point_size
+        min_x = min(xs) - self.point_size * 2
+        min_y = min(ys) - self.point_size * 2
+        max_x = max(xs) + self.point_size * 2
+        max_y = max(ys) + self.point_size * 2
 
         return QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
 

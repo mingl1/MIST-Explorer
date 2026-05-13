@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
 )
 from qtrangeslider import QRangeSlider
 
+from core.project_naming import is_segmentation_channel
 from ui.toolbar.Action import Action
 from utils import resource_path
 
@@ -35,6 +36,8 @@ class ToolBarUI(QToolBar):
 
     def __init__(self, parent):
         super().__init__(parent=parent)
+        self.initialized = False
+        self._pending_channel_index: int | None = None
         self._init_tab_buttons()
         self._init_actions(parent)
         # self._init_channel_selector(parent)
@@ -44,7 +47,6 @@ class ToolBarUI(QToolBar):
         self._init_channel_selector(parent)
 
         self._populate_toolbar()
-
         self._retranslateUI()
 
     def _init_tab_buttons(self):
@@ -67,20 +69,22 @@ class ToolBarUI(QToolBar):
         self.tab_buttons[0].setChecked(True)
 
     def _tab_button_style(self):
-        return """
-            QToolButton {
+        from ui.theme import ThemeManager
+        c = ThemeManager.instance().get_current()
+        return f"""
+            QToolButton {{
                 padding: 8px 16px;
                 border: none;
                 background: transparent;
                 font-size: 12px;
-            }
-            QToolButton:hover {
-                background: rgba(0, 0, 0, 0.3);
-            }
-            QToolButton:checked {
-                border-bottom: 2px solid #007AFF;
+            }}
+            QToolButton:hover {{
+                background: {c["bg_hover"]};
+            }}
+            QToolButton:checked {{
+                border-bottom: 2px solid {c["tab_checked"]};
                 font-weight: Bold;
-            }
+            }}
         """
 
     @pyqtSlot(int)
@@ -120,18 +124,45 @@ class ToolBarUI(QToolBar):
 
     def updateChannelSelector(self, channels: dict, clear=False):
         self.initialized = False
-        if clear:
+        was_blocked = self.channelSelector.blockSignals(True)
+        try:
+            # Always rebuild from source-of-truth channels to avoid duplicate entries.
             self.clearChannelSelector()
-        channel_keys = sorted(
-            channels.keys(), key=lambda x: int(x.replace("Channel ", ""))
-        )
-        self.channelSelector.addItems(channel_keys)
+            channel_keys = sorted(
+                channels.keys(), key=lambda x: int(x.replace("Channel ", ""))
+            )
+            for channel_key in channel_keys:
+                wrapper = channels[channel_key]
+                display_name = getattr(wrapper, "name", "") or channel_key
+                if is_segmentation_channel(wrapper):
+                    text = f"{channel_key} ({display_name})"
+                elif display_name != channel_key:
+                    text = f"{channel_key} ({display_name})"
+                else:
+                    text = channel_key
+                self.channelSelector.addItem(text)
+
+            if self._pending_channel_index is not None and self.channelSelector.count() > 0:
+                max_index = self.channelSelector.count() - 1
+                safe_index = max(0, min(self._pending_channel_index, max_index))
+                self.channelSelector.setCurrentIndex(safe_index)
+                self._pending_channel_index = None
+        finally:
+            self.channelSelector.blockSignals(was_blocked)
         return
 
     def setChannelSelector(self, channel: int):
-        self.channelSelector.blockSignals(True)
-        self.channelSelector.setCurrentIndex(channel)
-        self.channelSelector.blockSignals(False)
+        if self.channelSelector.count() == 0:
+            self._pending_channel_index = channel
+            return
+
+        max_index = self.channelSelector.count() - 1
+        safe_index = max(0, min(channel, max_index))
+        was_blocked = self.channelSelector.blockSignals(True)
+        try:
+            self.channelSelector.setCurrentIndex(safe_index)
+        finally:
+            self.channelSelector.blockSignals(was_blocked)
 
     def clearChannelSelector(self):
         self.channelSelector.clear()
@@ -276,28 +307,6 @@ class ToolBarUI(QToolBar):
         self.auto_contrast_button_action = self.addWidget(self.auto_contrast_button)
         self.contrast_slider_action = self.addWidget(self.contrast_slider)
         self.addWidget(self.statusLine)
-
-        self.disable_actions()
-
-    def enable_actions(self):
-        assert self.cmap_action is not None
-        assert self.channel_selector_action is not None
-        assert self.auto_contrast_button_action is not None
-        assert self.contrast_slider_action is not None
-        self.actionReset.setEnabled(True)
-        self.cmap_action.setEnabled(True)
-        self.auto_contrast_button_action.setEnabled(True)
-        self.contrast_slider_action.setEnabled(True)
-
-    def disable_actions(self):
-        assert self.cmap_action is not None
-        assert self.channel_selector_action is not None
-        assert self.auto_contrast_button_action is not None
-        assert self.contrast_slider_action is not None
-        self.actionReset.setEnabled(False)
-        self.cmap_action.setEnabled(False)
-        self.auto_contrast_button_action.setEnabled(False)
-        self.contrast_slider_action.setEnabled(False)
 
     def _retranslateUI(self):
         _translate = QCoreApplication.translate

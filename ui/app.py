@@ -1,23 +1,153 @@
 """
 Main application window module.
 """
+
 import argparse
+import logging
+import os
 import sys
 from pathlib import Path
 from typing import Optional
 
 # pylint: disable=no-name-in-module
-from PyQt6.QtCore import QCoreApplication, QEvent, QMetaObject, QPoint, Qt, QTimer
-from PyQt6.QtGui import QImageReader, QKeySequence, QShortcut
+from PyQt6.QtCore import (QCoreApplication, QMetaObject, QPointF, QSize, Qt)
+from PyQt6.QtGui import (QIcon, QImageReader, QKeySequence, QMouseEvent,
+                         QShortcut)
 from PyQt6.QtWidgets import (QFileDialog, QGroupBox, QHBoxLayout, QLabel,
-                             QMainWindow, QMenu, QProgressBar, QPushButton,
-                             QScrollArea, QSizePolicy, QSplitter, QStackedWidget,
-                             QStatusBar, QTabWidget, QVBoxLayout, QWidget)
+                             QMainWindow, QMessageBox, QProgressBar,
+                             QPushButton, QScrollArea, QSizePolicy, QSplitter,
+                             QSplitterHandle, QStackedWidget, QStatusBar,
+                             QTabWidget, QVBoxLayout, QWidget)
 
 from core import MetaData
 from core.project_manager import ProjectManager
+from core.project_naming import is_segmentation_channel, is_segmentation_name
 from ui.toolbar.menubar_ui import MenuBarUI
 from ui.toolbar.toolbar_ui import ToolBarUI
+from utils import resource_path
+
+logger = logging.getLogger(__name__)
+
+
+def should_use_custom_windows_chrome() -> bool:
+    return False
+
+
+class _ResizeDragButton(QPushButton):
+    """Pill button that forwards mouse events to the SidebarHandle, reusing its drag-to-resize logic."""
+
+    def __init__(self, handle: "SidebarHandle"):
+        super().__init__(handle)
+        self._handle = handle
+        icon_path = resource_path("assets/icons/left_right_indicator.svg")
+        self.setIcon(QIcon(str(icon_path)))
+        self.setIconSize(QSize(12, 12))
+        self.setFixedSize(14, 40)
+        self.setCursor(Qt.CursorShape.SizeHorCursor)
+        self.setToolTip("Drag to resize sidebar")
+        self._apply_theme()
+
+    def _apply_theme(self):
+        from ui.theme import ThemeManager
+        c = ThemeManager.instance().get_current()
+        self.setStyleSheet(
+            f"""
+            QPushButton {{
+                background: {c["handle_bg"]};
+                border: none;
+                border-radius: 4px;
+            }}
+            QPushButton:hover {{ background: {c["handle_hover"]}; }}
+        """
+        )
+
+    def _forward(self, event, method_name):
+        pos = QPointF(self.mapTo(self._handle, event.position().toPoint()))
+        new_ev = QMouseEvent(
+            event.type(),
+            pos,
+            event.globalPosition(),
+            event.button(),
+            event.buttons(),
+            event.modifiers(),
+        )
+        getattr(self._handle, method_name)(new_ev)
+
+    def mousePressEvent(self, event):
+        mw = self._handle.window()
+        if hasattr(mw, "side_panel") and not mw.side_panel.isVisible():
+            mw.toggle_side_panel()
+        self._forward(event, "mousePressEvent")
+
+    def mouseMoveEvent(self, event):
+        self._forward(event, "mouseMoveEvent")
+
+    def mouseReleaseEvent(self, event):
+        self._forward(event, "mouseReleaseEvent")
+
+
+class SidebarHandle(QSplitterHandle):
+    """Custom splitter handle: visible 16px strip with a collapse/expand pill button."""
+
+    def __init__(self, orientation, parent):
+        super().__init__(orientation, parent)
+        self.setFixedWidth(16)
+        self.setStyleSheet("background: transparent;")
+
+        self._btn = QPushButton("‹", self)
+        self._btn.setFixedSize(14, 40)
+        self._btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn.setToolTip("Collapse/expand sidebar")
+        self._apply_btn_theme()
+
+        self._resize_btn = _ResizeDragButton(handle=self)
+
+        self._container = QWidget(self)
+        self._container.setStyleSheet("background: transparent;")
+        self._container.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, False
+        )
+        layout = QVBoxLayout(self._container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        layout.addWidget(self._btn)
+        layout.addWidget(self._resize_btn)
+        self._container.adjustSize()
+
+    def _apply_btn_theme(self):
+        from ui.theme import ThemeManager
+        c = ThemeManager.instance().get_current()
+        self._btn.setStyleSheet(
+            f"""
+            QPushButton {{
+                background: {c["handle_bg"]};
+                border: none;
+                border-radius: 4px;
+                font-size: 11px;
+                color: {c["handle_text"]};
+            }}
+            QPushButton:hover {{ background: {c["handle_hover"]}; }}
+        """
+        )
+
+    def set_collapsed(self, collapsed: bool):
+        self._btn.setText("›" if collapsed else "‹")
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._container.adjustSize()
+        x = (self.width() - self._container.width()) // 2
+        y = (self.height() - self._container.height()) // 2
+        self._container.move(x, y)
+
+
+class CollapsibleSplitter(QSplitter):
+    """QSplitter that uses SidebarHandle for its divider."""
+
+    def createHandle(self):
+        handle = SidebarHandle(self.orientation(), self)
+        handle._btn.clicked.connect(lambda: self.window().toggle_side_panel())
+        return handle
 
 
 class MainWindow(QMainWindow):
@@ -26,7 +156,7 @@ class MainWindow(QMainWindow):
     """
 
     # pylint: disable=too-many-instance-attributes, attribute-defined-outside-init
-    def __init__(self, parent=None, project_path: Optional[Path] = None):
+    def __init__(self, parent=None, project_path: Optional[Path] = None, cli_args=None):
         QImageReader.setAllocationLimit(0)
         super().__init__(parent)
 
@@ -34,12 +164,10 @@ class MainWindow(QMainWindow):
 
         self.current_project_path = project_path
 
-        if sys.platform == "win32":
-            self.drag_pos = QPoint()
-
-        self.args = (
-            self._parse_arguments()
-        )  # Enables passing in image & reference as cli arguments
+        self.args = argparse.Namespace(
+            image=getattr(cli_args, "image", None),
+            reference=getattr(cli_args, "reference", None),
+        )
 
         self._setup_main_window()
         self._add_shortcuts()
@@ -65,9 +193,12 @@ class MainWindow(QMainWindow):
         if self.current_project_path:
             self._load_project(self.current_project_path)
 
+        if cli_args is not None:
+            self._apply_cli_args(cli_args)
+
     def _init_attributes(self):
         """Initialize instance attributes."""
-        self.drag_pos: Optional[QPoint] = None
+        self.custom_windows_chrome_enabled: bool = False
         self.menu_bar: Optional[MenuBarUI] = None
         self.tool_bar: Optional[ToolBarUI] = None
         self.central_widget_layout: Optional[QHBoxLayout] = None
@@ -75,7 +206,6 @@ class MainWindow(QMainWindow):
         self.side_panel_container: Optional[QWidget] = None
         self.side_panel: Optional[QWidget] = None
         self.side_panel_layout: Optional[QVBoxLayout] = None
-        self.toggle_button: Optional[QPushButton] = None
         self.stacked_widget: Optional[QStackedWidget] = None
         self.canvas: Optional[ImageGraphicsViewUI] = None
         self.small_view: Optional[ReferenceGraphicsViewUI] = None
@@ -102,35 +232,66 @@ class MainWindow(QMainWindow):
         self.splitter: Optional[QSplitter] = None
         self.last_sidebar_width: int = 400
         self.current_project_path: Optional[Path] = None
+        self.log_dialog = None
 
-    def _parse_arguments(self):
-        """Parse command line arguments"""
-        parser = argparse.ArgumentParser(
-            prog="MIST-Explorer",
-            description="Working on it...",
-            epilog="Intended for testing",
+    def _apply_cli_args(self, cli_args) -> None:
+        seg_path = getattr(cli_args, "segmentation", None)
+        cell_data_path = getattr(cli_args, "cell_data", None)
+        if seg_path and cell_data_path:
+            self._apply_view_tab_args(seg_path, cell_data_path)
+
+    def _apply_view_tab_args(self, seg_path: str, cell_data_path: str) -> None:
+        from pathlib import Path
+
+        import pandas as pd
+
+        if not Path(seg_path).is_file():
+            logger.warning("CLI -s path not found: %s", seg_path)
+            return
+        if not Path(cell_data_path).is_file():
+            logger.warning("CLI -c path not found: %s", cell_data_path)
+            return
+
+        view = self.view_tab
+
+        view.im_path = seg_path
+        view.open_image_label.setText(
+            f"File: {view.less_than_15_chars(os.path.basename(seg_path))}"
         )
-        parser.add_argument("-i", "--image")  # image path
-        parser.add_argument("-r", "--reference")  # reference path
-        return parser.parse_args()
+        view.open_image_label.setVisible(True)
+
+        view.df_path = cell_data_path
+        view.open_df_label.setText(
+            f"File: {view.less_than_15_chars(os.path.basename(cell_data_path))}"
+        )
+        view.open_df_label.setVisible(True)
+
+        try:
+            if cell_data_path.endswith("csv"):
+                df = pd.read_csv(cell_data_path)
+            elif cell_data_path.endswith("xlsx"):
+                df = pd.read_excel(cell_data_path)
+            else:
+                logger.warning("CLI -c: unsupported format %s", cell_data_path)
+                return
+            df = df[df.columns.drop(list(df.filter(regex="N/A")))]
+            view.loaded_df = df
+        except Exception as exc:
+            logger.error("CLI -c load failed: %s", exc)
+            return
+
+        self.stacked_widget.setCurrentIndex(1)
+        self.tool_bar.tab_buttons[1].setChecked(True)
+        self.tool_bar.onTabButtonClicked(1)
 
     def _setup_main_window(self):
         """Setup main window properties"""
-        if sys.platform == "win32":
-            self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        self.setWindowIcon(QIcon(resource_path("assets/final_icon.png")))
         self.resize(1440, 1000)
         self.setMinimumSize(1200, 800)
 
-    def toggle_maximize(self):
-        """Toggle between maximized and normal window state"""
-        if self.isMaximized():
-            self.showNormal()
-        else:
-            self.showMaximized()
-
     def _load_project(self, project_path: Path):
         """Load an existing project."""
-        from models.workspace import ImageMetadata
         from core.canvas import ImageWrapper
 
         self.current_project_path = project_path
@@ -146,32 +307,53 @@ class MainWindow(QMainWindow):
 
         for image_meta in metadata.images:
             image_data = {}
-            for channel_num in range(1, image_meta.channel_count + 1):
-                channel_name = f"Channel {channel_num}"
+            channel_names = ProjectManager.list_saved_channels(
+                project_path, image_meta.uuid
+            )
+            if not channel_names:
+                channel_names = [
+                    f"Channel {channel_num}"
+                    for channel_num in range(1, image_meta.channel_count + 1)
+                ]
+
+            for channel_name in channel_names:
                 channel_array = ProjectManager.load_image(
                     project_path, image_meta.uuid, channel_name
                 )
+                if channel_array is None:
+                    # Fallback: load from original source file (reference-only save)
+                    channel_array = ProjectManager.load_channel_from_source(
+                        image_meta.original_filename, channel_name
+                    )
                 if channel_array is not None:
                     contrast = image_meta.contrast_settings.get(channel_name, (0, 255))
+                    display_name = image_meta.channel_display_names.get(
+                        channel_name, channel_name
+                    )
+                    stored_cmap = image_meta.channel_cmaps.get(channel_name)
+                    channel_cmap = stored_cmap or (
+                        "label_image" if is_segmentation_name(display_name) else "gray"
+                    )
                     wrapper = ImageWrapper(
                         channel_array,
-                        name=channel_name,
-                        cmap="gray",
+                        name=display_name,
+                        cmap=channel_cmap,
                     )
                     wrapper.contrast_min = contrast[0]
                     wrapper.contrast_max = contrast[1]
+                    if channel_cmap == "label_image":
+                        wrapper.is_virtual_segmentation = True
                     image_data[channel_name] = wrapper
 
             if image_data:
-                from uuid import UUID
-                image_uuid = UUID(image_meta.uuid)
+                image_uuid = str(image_meta.uuid)
                 self.images_tab.storage.add_data(
-                    str(image_uuid),
+                    image_uuid,
                     {
                         "name": image_meta.name,
                         "data": image_data,
                         "original_filename": image_meta.original_filename,
-                    }
+                    },
                 )
                 self.images_tab.add_item(image_uuid)
 
@@ -180,28 +362,59 @@ class MainWindow(QMainWindow):
         if self.current_project_path:
             ProjectManager.open_project_folder(self.current_project_path)
 
+    def _prompt_save_unsaved_created(self) -> bool:
+        """Prompt the user to save unsaved created images if any exist.
+
+        Returns True to proceed (save or discard), False if the user cancelled.
+        """
+        if self.images_tab is None or not self.images_tab.has_unsaved_created_images():
+            return True
+        if not self.images_tab._can_save_project():
+            # Temp project or no project path — skip silently
+            return True
+        reply = QMessageBox.question(
+            self,
+            "Unsaved Work",
+            "You have unsaved images created in this session (e.g. crops).\n\n"
+            "Save them to the project before exiting?",
+            QMessageBox.StandardButton.Save
+            | QMessageBox.StandardButton.Discard
+            | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Save,
+        )
+        if reply == QMessageBox.StandardButton.Cancel:
+            return False
+        if reply == QMessageBox.StandardButton.Save:
+            self.images_tab.save_created_images_to_project()
+        return True
+
+    def closeEvent(self, event):  # type: ignore
+        if self.images_tab is not None:
+            self.images_tab.save_all_images(copy_data=False)
+        if self._prompt_save_unsaved_created():
+            event.accept()
+        else:
+            event.ignore()
+
+    def save_all_images_to_folder(self):
+        """Open a folder picker and export all workspace images as TIFFs there."""
+        if self.images_tab is None:
+            return
+        folder = QFileDialog.getExistingDirectory(
+            self, "Select Folder to Save All Images"
+        )
+        if folder:
+            self.images_tab.save_all_images_to(folder)
+
+    def switch_project(self):
+        """Cleanly restart the application to return to the project launcher."""
+        logger.info("Switching project. Restarting application...")
+        if not self._prompt_save_unsaved_created():
+            return
+        os.execl(sys.executable, sys.executable, *sys.argv)
+
     # pylint: disable=invalid-name
-    def eventFilter(self, obj, event): # type: ignore
-        """Event filter for handling window dragging"""
-        if sys.platform == "win32":
-            if obj == self.menu_bar:
-                if event.type() == QEvent.Type.MouseButtonPress:
-                    self.drag_pos = event.globalPosition().toPoint()
-                    return False  # Allow the event to propagate for clicks
-                if event.type() == QEvent.Type.MouseMove:
-                    if (
-                        event.buttons() == Qt.MouseButton.LeftButton
-                        and hasattr(self, "drag_pos")
-                        and self.drag_pos is not None
-                    ):
-                        self.move(
-                            self.pos() + event.globalPosition().toPoint() - self.drag_pos
-                        )
-                        self.drag_pos = event.globalPosition().toPoint()
-                        return True  # Consume the event if dragging
-                if event.type() == QEvent.Type.MouseButtonRelease:
-                    self.drag_pos = QPoint()  # Reset dragPos
-                    return False  # Allow the event to propagate
+    def eventFilter(self, obj, event):  # type: ignore
         return super().eventFilter(obj, event)
 
     def _add_shortcuts(self):
@@ -209,9 +422,9 @@ class MainWindow(QMainWindow):
 
         # Can add more shortcuts by adding tuple in form: (key_press_string, function)
         shortcuts = [
-            ("Ctrl+R", self.select),
-            ("Ctrl+C", self.circle_select),
-            ("Ctrl+P", self.poly_select),
+            ("R", self.select),
+            ("C", self.circle_select),
+            ("L", self.poly_select),
         ]
 
         for key_sequence, slot in shortcuts:
@@ -230,8 +443,6 @@ class MainWindow(QMainWindow):
         self.tool_bar = ToolBarUI(self)
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.tool_bar)
         self.setMenuBar(self.menu_bar)
-        if sys.platform == "win32":
-            self.menu_bar.installEventFilter(self)
 
     def _setup_side_panel(self):
         """Setup the collapsible side panel"""
@@ -239,26 +450,15 @@ class MainWindow(QMainWindow):
         self.side_panel_container = QWidget(self.centralWidget())
         container_layout = QHBoxLayout(self.side_panel_container)
         container_layout.setContentsMargins(0, 0, 0, 0)
-        container_layout.setSpacing(10)
+        container_layout.setSpacing(0)
 
         self.side_panel = QWidget(self.side_panel_container)
         self.side_panel_layout = QVBoxLayout(self.side_panel)
         # self.sidePanelLayout.setSpacing(10)
         self.side_panel.setMinimumWidth(400)
-        
+
         self.side_panel.setSizePolicy(
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding
-        )
-
-        self.toggle_button = QPushButton("◀", self.side_panel_container)
-        self.toggle_button.setFixedSize(20, 60)
-        self.toggle_button.clicked.connect(self.toggle_side_panel)
-        self.toggle_button.setStyleSheet(
-            """
-            QPushButton:hover {
-                background-color: #e0e0e0;
-            }
-        """
         )
 
         # Create stacked widget for tabs
@@ -267,7 +467,6 @@ class MainWindow(QMainWindow):
 
         # Add to container
         container_layout.addWidget(self.side_panel)
-        container_layout.addWidget(self.toggle_button)
 
     def _setup_canvas(self):
         """Setup the main canvas and reference view"""
@@ -298,14 +497,20 @@ class MainWindow(QMainWindow):
         if self.current_project_path:
             self.images_tab.set_project_path(self.current_project_path)
 
-        # Processing Tabs
+        # "Extract" page setup
         self.processing_tabs = QTabWidget(self.side_panel)
-        # processing_tab_layout = QVBoxLayout(self.processing_tabs) # unused
-        # Create a splitter to allow resizing of the image manager and processing tabs
         splitter = QSplitter(Qt.Orientation.Vertical, self.side_panel)
         splitter.addWidget(self.images_tab)
-        splitter.setStretchFactor(0, 1)
         splitter.addWidget(self.processing_tabs)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 0)
+        splitter.setCollapsible(0, False)
+
+        self.processing_tabs.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,  # height = sizeHint, won't grab extra space
+        )
+        self.processing_tabs.setMinimumHeight(200)
 
         # Add splitter to layout
         images_tab_layout.addWidget(splitter)
@@ -321,13 +526,14 @@ class MainWindow(QMainWindow):
 
     def _setup_transform_tab(self):
         """Sets up the 'Transform' tab with Crop, Rotate, and Flip tools."""
+        from ui.alignment.cell_layer_alignment_ui import CellLayerAlignmentUI
         from ui.processing.crop_ui import CropUI
         from ui.processing.rotation_ui import RotateUI
-        from ui.alignment.cell_layer_alignment_ui import CellLayerAlignmentUI
 
         transform_tab = QWidget()
         transform_layout = QVBoxLayout(transform_tab)
         transform_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        transform_layout.setContentsMargins(4, 4, 4, 4)
 
         # Crop and Rotate
         self.crop_groupbox = CropUI(transform_tab)
@@ -354,15 +560,15 @@ class MainWindow(QMainWindow):
             self.images_tab.storage,
             transform_tab,
         )
-        self.images_tab.image_tree_view.tissue_target_selected.connect(
-            self.cell_layer_alignment.set_target_image
-        )
-        self.images_tab.image_tree_view.tissue_unaligned_selected.connect(
-            self.cell_layer_alignment.set_unaligned_image
-        )
         self.cell_layer_alignment.aligner.progress.connect(self.update_progress_bar)
 
-        self.processing_tabs.addTab(transform_tab, "Transform")
+        transform_scroll = QScrollArea()
+        transform_scroll.setWidget(transform_tab)
+        transform_scroll.setWidgetResizable(True)
+        transform_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.processing_tabs.addTab(transform_scroll, "Transform")
 
     def _setup_alignment_tab(self):
         """Sets up the 'Alignment' tab with Register tools."""
@@ -371,28 +577,49 @@ class MainWindow(QMainWindow):
         alignment_tab = QWidget()
         alignment_layout = QVBoxLayout(alignment_tab)
         alignment_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        alignment_layout.setContentsMargins(4, 4, 4, 4)
 
         # Register UI
         self.register_groupbox = RegisterUI(alignment_tab, alignment_layout)
 
-        self.processing_tabs.addTab(alignment_tab, "Alignment")
+        alignment_scroll = QScrollArea()
+        alignment_scroll.setWidget(alignment_tab)
+        alignment_scroll.setWidgetResizable(True)
+        alignment_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.processing_tabs.addTab(alignment_scroll, "Alignment")
 
     def _setup_segmentation_tab(self):
         """Sets up the 'Segmentation' tab with Gaussian Blur and StarDist."""
         from ui.processing.gaussian_blur import GaussianBlur
+        from ui.processing.segmentation_image_selector import \
+            SegmentationImageSelector
         from ui.stardist.stardist_ui import StarDistUI
 
         segmentation_tab = QWidget()
         segmentation_layout = QVBoxLayout(segmentation_tab)
         segmentation_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        segmentation_layout.setContentsMargins(4, 4, 4, 4)
+
+        # Shared image + channel selector
+        self.segmentation_image_selector = SegmentationImageSelector(segmentation_tab)
+        segmentation_layout.addWidget(self.segmentation_image_selector)
 
         # Gaussian Blur
         self.gaussian_blur = GaussianBlur(segmentation_tab, segmentation_layout)
 
         # StarDist
         self.stardist_groupbox = StarDistUI(segmentation_tab, segmentation_layout)
+        self.stardist_groupbox.hide_channel_selector_row()
 
-        self.processing_tabs.addTab(segmentation_tab, "Segmentation")
+        segmentation_scroll = QScrollArea()
+        segmentation_scroll.setWidget(segmentation_tab)
+        segmentation_scroll.setWidgetResizable(True)
+        segmentation_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.processing_tabs.addTab(segmentation_scroll, "Segmentation")
 
     def _setup_quantification_tab(self):
         """Sets up the 'Quantification' tab with Cell Intensity."""
@@ -401,12 +628,19 @@ class MainWindow(QMainWindow):
         quantification_tab = QWidget()
         quantification_layout = QVBoxLayout(quantification_tab)
         quantification_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        quantification_layout.setContentsMargins(4, 4, 4, 4)
 
         self.cell_intensity_groupbox = CellIntensityUI(
             quantification_tab, quantification_layout
         )
 
-        self.processing_tabs.addTab(quantification_tab, "Generation")
+        quantification_scroll = QScrollArea()
+        quantification_scroll.setWidget(quantification_tab)
+        quantification_scroll.setWidgetResizable(True)
+        quantification_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.processing_tabs.addTab(quantification_scroll, "Generation")
 
     def _setup_view_tab(self):
         """Setup the view tab"""
@@ -475,32 +709,23 @@ class MainWindow(QMainWindow):
 
         self.statusbar.addPermanentWidget(container)
 
-        # Style the progress bar
-        progress_bar_style = """
-            QProgressBar {
-                border: 2px solid grey;
-                border-radius: 2px;
-                text-align: right;
-                height: 5px;
-                margin-right: 30px;
-            }
-            QProgressBar::chunk {
-                background-color: green;
-                width: 20px;
-            }
-        """
-        self.progress_bar.setStyleSheet(progress_bar_style)
+        # Progress bar height/margin — colors come from the global theme QSS
+        self.progress_bar.setStyleSheet(
+            "QProgressBar { height: 5px; margin-right: 30px; }"
+        )
 
     def _setup_layout(self):
         """Setup the final layout structure"""
         # Create a horizontal splitter
-        self.splitter = QSplitter(Qt.Orientation.Horizontal)
-        
+        self.splitter = CollapsibleSplitter(Qt.Orientation.Horizontal)
+
         # Add sidebar container and canvas to splitter
-        # Note: side_panel_container now contains both the panel and the toggle button
         self.splitter.addWidget(self.side_panel_container)
         self.splitter.addWidget(self.canvas)
-        
+
+        self.splitter.setCollapsible(0, False)
+        self.splitter.setCollapsible(1, False)
+
         # Set stretch factors so canvas takes available space
         self.splitter.setStretchFactor(1, 1)
 
@@ -522,6 +747,22 @@ class MainWindow(QMainWindow):
         # Start with Images tab
         self.stacked_widget.setCurrentIndex(0)
 
+        # Modular save coordinator (kept for internal use)
+        self._save_handlers = [self.images_tab.save_all_images]
+
+        # Theme change: refresh non-QSS elements
+        from ui.theme import ThemeManager
+        ThemeManager.instance().theme_changed.connect(self._on_theme_changed)
+
+    def _on_theme_changed(self, mode: str):
+        """Refresh elements that the global QSS cannot reach."""
+        from ui.theme import ThemeManager
+        c = ThemeManager.instance().get_current()
+        # Sidebar handle buttons
+        handle = self.splitter.handle(1) if self.splitter.count() > 1 else None
+        if handle and hasattr(handle, "_apply_btn_theme"):
+            handle._apply_btn_theme()
+            handle._resize_btn._apply_theme()
 
     def _retranslate_ui(self):
         """Set UI text and translations"""
@@ -546,12 +787,12 @@ class MainWindow(QMainWindow):
 
     def select(self):
         """Set rectangle selection mode"""
-        print("selecting")
+        logger.debug("selecting")
         self.canvas.select = "rect"
 
     def circle_select(self):
         """Set circle selection mode"""
-        print("selecting")
+        logger.debug("selecting")
         self.canvas.select = "circle"
 
     def poly_select(self):
@@ -561,6 +802,12 @@ class MainWindow(QMainWindow):
             return
         self.canvas.select = "poly"
 
+    def _sync_handle_button(self):
+        """Update the handle pill button direction after a toggle."""
+        handle = self.splitter.handle(1)
+        if isinstance(handle, SidebarHandle):
+            handle.set_collapsed(not self.side_panel.isVisible())
+
     def toggle_side_panel(self):
         """Toggle side panel visibility"""
         if self.side_panel.isVisible():
@@ -568,23 +815,32 @@ class MainWindow(QMainWindow):
             current_sizes = self.splitter.sizes()
             if current_sizes[0] > 100:
                 self.last_sidebar_width = current_sizes[0]
-            
+
             self.side_panel.hide()
-            self.toggle_button.setText("▶")
-            
-            # Collapse splitter to just the button width
-            # We add a small buffer for margins/spacing
-            btn_width = self.toggle_button.width() + 15 
-            self.splitter.setSizes([btn_width, sum(current_sizes) - btn_width])
+
+            # Collapse splitter to just the handle width
+            hw = self.splitter.handleWidth()
+            total = sum(current_sizes)
+            self.splitter.setSizes([hw, total - hw])
         else:
             self.side_panel.show()
-            self.toggle_button.setText("◀")
-            
+
             # Restore previous width
             current_sizes = self.splitter.sizes()
             total = sum(current_sizes)
             target = getattr(self, "last_sidebar_width", 400)
             self.splitter.setSizes([target, total - target])
+
+        self._sync_handle_button()
+
+    def show_log_dialog(self) -> None:
+        """Show the application log dialog."""
+        from ui.log_dialog import LogDialog
+
+        if self.log_dialog is None:
+            self.log_dialog = LogDialog(self)
+        self.log_dialog.show()
+        self.log_dialog.raise_()
 
     def get_metadata(self, metadata: dict):
         """Update metadata tab with new metadata"""

@@ -1,17 +1,34 @@
 """
 Reference graphics view module.
 """
+
+import logging
+
 import pyqtgraph as pg
+
 # pylint: disable=no-name-in-module, missing-final-newline, fixme
 from PyQt6.QtCore import QPoint, QPointF, QRectF, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import (QBrush, QColor, QDragEnterEvent, QDragMoveEvent,
-                         QDropEvent, QPen, QPixmap)
-from PyQt6.QtWidgets import (QGraphicsPixmapItem, QGraphicsRectItem,
-                             QGraphicsView, QSizeGrip)
+from PyQt6.QtGui import (
+    QBrush,
+    QColor,
+    QDragEnterEvent,
+    QDragMoveEvent,
+    QDropEvent,
+    QPen,
+    QPixmap,
+)
+from PyQt6.QtWidgets import (
+    QGraphicsPixmapItem,
+    QGraphicsRectItem,
+    QGraphicsView,
+    QSizeGrip,
+)
 
 import utils
 from ui.canvas.items import ArrowItem
 from utils import resource_path
+
+logger = logging.getLogger(__name__)
 
 
 # pylint: disable=too-many-instance-attributes
@@ -19,6 +36,7 @@ class ReferenceGraphicsViewUI(QGraphicsView):
     """Reference view for displaying images with navigation arrows"""
 
     image_dropped = pyqtSignal(str)
+    channel_changed = pyqtSignal(int)
 
     def __init__(self, parent):
         super().__init__(parent)
@@ -51,34 +69,39 @@ class ReferenceGraphicsViewUI(QGraphicsView):
 
     def init_ui(self):
         """Initialize the UI"""
-        self.setMinimumSize(QSize(50, 50))
+        self.setMinimumSize(QSize(0, 0))
         # self.setMaximumSize(QSize(300, 300))
         self.resize(300, 300)
         self.setScene(pg.GraphicsScene())
         self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
         self.setRenderHint(self.renderHints() | self.renderHints().Antialiasing)
-        self.setStyleSheet("QGraphicsView { border: 1px solid black; }")
+        from ui.theme import ThemeManager
+        tc = ThemeManager.instance().get_current()
+        self.setStyleSheet(f"QGraphicsView {{ border: 1px solid {tc['border']}; }}")
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setMouseTracking(True)
-        
+
         # Add size grip for visual handle only - we'll override its behavior
         self.size_grip = QSizeGrip(self)
-        self.size_grip.setStyleSheet("""
-            QSizeGrip {
-                background-color: rgba(128, 128, 128, 150);
-                width: 16px;
-                height: 16px;
-            }
+        self.size_grip.setStyleSheet(f"""
+            QSizeGrip {{
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+            stop:0.5 transparent,
+            stop:0.5 {tc["size_grip_color"]});
+            width: 16px;
+            height: 16px;
+            }}
         """)
+        self.size_grip.setCursor(Qt.CursorShape.SizeFDiagCursor)
         # Install event filter to intercept size grip events
         self.size_grip.installEventFilter(self)
-        
+
         # self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         # self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
 
     def eventFilter(self, obj, event):
         """Filter events from the size grip to handle resize manually"""
-        if hasattr(self, 'size_grip') and obj == self.size_grip:
+        if hasattr(self, "size_grip") and obj == self.size_grip:
             if event.type() == event.Type.MouseButtonPress:
                 self._resizing = True
                 self._resize_start_pos = event.globalPosition().toPoint()
@@ -91,12 +114,7 @@ class ReferenceGraphicsViewUI(QGraphicsView):
                 delta = event.globalPosition().toPoint() - self._resize_start_pos
                 new_width = max(50, self._initial_size.width() + delta.x())
                 new_height = max(50, self._initial_size.height() + delta.y())
-                
-                if new_width < self._hide_threshold or new_height < self._hide_threshold:
-                    self.hide()
-                    self._resizing = False
-                    return True
-                
+
                 # Manually resize without affecting parent layout
                 self.setFixedSize(new_width, new_height)
                 return True
@@ -190,12 +208,14 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         if self.current_index > 1:
             self.current_index -= 1
             self.update_slide()
+            self.channel_changed.emit(self.current_index)
 
     def next_slide(self):
         """Show next slide"""
         if self.current_index < len(self.np_channels.keys()):
             self.current_index += 1
             self.update_slide()
+            self.channel_changed.emit(self.current_index)
 
     def arrow_visibility(self):
         """Update visibility of arrows based on current index"""
@@ -216,14 +236,14 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         # scene.removeItem(self.pixmap_item)  # Clear previous image
         self.pixmap = QPixmap(
             utils.numpy_to_qimage(
-                self.np_channels[f"Channel {self.current_index}"].data
+                utils.to_uint8(self.np_channels[f"Channel {self.current_index}"].data)
             )
         )
         self.pixmap_item.setPixmap(self.pixmap)
         assert isinstance(self.pixmap_item, QGraphicsPixmapItem)
         item_rect = self.pixmap_item.boundingRect()
         self.setSceneRect(item_rect)
-        self.fitInView(self.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+        self.fitInView(item_rect, Qt.AspectRatioMode.KeepAspectRatio)
         self.arrow_visibility()
 
     def _center_image(self):
@@ -231,8 +251,9 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         self.setSceneRect(item_rect)
         self.fitInView(self.pixmap_item, Qt.AspectRatioMode.KeepAspectRatio)
         self.centerOn(self.pixmap_item)
+        self.zoom = 1  # Reset zoom level when centering
 
-    def display(self, pixmap: QPixmap):
+    def display(self, pixmap: QPixmap, channel_index: int = 1):
         """Display the given pixmap"""
         self.show()
         # self.raise_()
@@ -240,7 +261,7 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         assert scene is not None, "Scene should be initialized"
         scene.clear()  # Clear previous image
         # reset
-        self.current_index = 1
+        self.current_index = channel_index
 
         # if not hasattr(self, "right_arrow"):
         # self.slideshow()  # Initialize arrows
@@ -249,13 +270,13 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         self.pixmap_item = QGraphicsPixmapItem(self.pixmap)
         scene.addItem(self.pixmap_item)
 
-        print("has np channels")
+        logger.debug("has np channels")
         # TODO: Scale and reposition arrows dynamically
 
         # Setup scene
         item_rect = self.pixmap_item.boundingRect()
         self.setSceneRect(item_rect)
-        self.fitInView(self.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+        self.fitInView(item_rect, Qt.AspectRatioMode.KeepAspectRatio)
         if self.pixmap.width() > 0:
             self.add_arrows()
             self.position_arrows()
@@ -282,15 +303,18 @@ class ReferenceGraphicsViewUI(QGraphicsView):
     def resizeEvent(self, event):
         """Handle resize event"""
         super().resizeEvent(event)
-        
+
         # Position the size grip in the bottom-right corner
         grip_size = self.size_grip.sizeHint()
         self.size_grip.move(
-            self.width() - grip_size.width(),
-            self.height() - grip_size.height()
+            self.width() - grip_size.width(), self.height() - grip_size.height()
         )
-        
-        # Reposition arrows when resized
+
+        # Re-fit image and reposition arrows when resized
+        if not self.is_empty():
+            self.fitInView(
+                self.pixmap_item.boundingRect(), Qt.AspectRatioMode.KeepAspectRatio
+            )
         self.position_arrows()
 
     def get_scene(self):

@@ -1,19 +1,18 @@
-import os
-
 import numpy as np
 import pandas as pd
-from PyQt6.QtCore import QCoreApplication, QMetaObject, pyqtSignal
+from PyQt6.QtCore import QCoreApplication, QMetaObject, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
-    QComboBox,
-    QFileDialog,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSlider,
     QSpinBox,
     QVBoxLayout,
     QWidget,
 )
+
+from ui.processing.segmentation_image_selector import SegmentationImageSelector
 
 
 class RegisterUI(QWidget):
@@ -33,29 +32,17 @@ class RegisterUI(QWidget):
         self.register_components_vlayout.setSpacing(0)
         self.register_components_vlayout.setContentsMargins(0, 0, 0, 0)
 
-        # ALIGNMENT LAYER
-        self.alignment_layer_layout = QHBoxLayout()
-        self.alignment_layer = QComboBox(self.register_groupbox)
-        self.alignment_layer_label = QLabel()
-        self.alignment_layer_layout.addWidget(self.alignment_layer_label)
-        self.alignment_layer_layout.addWidget(self.alignment_layer)
-        self.register_components_vlayout.addLayout(self.alignment_layer_layout)
+        # Reference image selector
+        self.reference_label = QLabel("Reference Image:")
+        self.register_components_vlayout.addWidget(self.reference_label)
+        self.reference_selector = SegmentationImageSelector(self.register_groupbox)
+        self.register_components_vlayout.addWidget(self.reference_selector)
 
-        # cell layer
-        self.protein_cell_layer_layout = QHBoxLayout()
-        self.protein_cell_layer = QComboBox(self.register_groupbox)
-        self.protein_cell_layer_label = QLabel()
-        self.protein_cell_layer_layout.addWidget(self.protein_cell_layer_label)
-        self.protein_cell_layer_layout.addWidget(self.protein_cell_layer)
-        self.register_components_vlayout.addLayout(self.protein_cell_layer_layout)
-
-        # intensity layer
-        self.intensity_layer_layout = QHBoxLayout()
-        self.intensity_layer = QComboBox(self.register_groupbox)
-        self.intensity_layer_label = QLabel()
-        self.intensity_layer_layout.addWidget(self.intensity_layer_label)
-        self.intensity_layer_layout.addWidget(self.intensity_layer)
-        self.register_components_vlayout.addLayout(self.intensity_layer_layout)
+        # Moving image selector
+        self.moving_label = QLabel("Moving Image:")
+        self.register_components_vlayout.addWidget(self.moving_label)
+        self.image_selector = SegmentationImageSelector(self.register_groupbox)
+        self.register_components_vlayout.addWidget(self.image_selector)
 
         # max size
         self.max_size_layout = QHBoxLayout()
@@ -90,6 +77,25 @@ class RegisterUI(QWidget):
         self.overlap_layout.addWidget(self.overlap)
         self.register_components_vlayout.addLayout(self.overlap_layout)
 
+        # NCC threshold
+        self.ncc_threshold_layout = QHBoxLayout()
+        self.ncc_threshold_label = QLabel(self.register_groupbox)
+        self.ncc_threshold_layout.addWidget(self.ncc_threshold_label)
+        self.ncc_threshold = QSlider(Qt.Orientation.Horizontal, self.register_groupbox)
+        self.ncc_threshold.setMinimum(85)
+        self.ncc_threshold.setMaximum(100)
+        self.ncc_threshold.setValue(85)
+        self.ncc_threshold.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.ncc_threshold.setTickInterval(10)
+        self.ncc_threshold_value_label = QLabel("0.85", self.register_groupbox)
+        self.ncc_threshold_value_label.setFixedWidth(30)
+        self.ncc_threshold.valueChanged.connect(
+            lambda v: self.ncc_threshold_value_label.setText(f"{v / 100:.2f}")
+        )
+        self.ncc_threshold_layout.addWidget(self.ncc_threshold)
+        self.ncc_threshold_layout.addWidget(self.ncc_threshold_value_label)
+        self.register_components_vlayout.addLayout(self.ncc_threshold_layout)
+
         # run button
         self.run_button = QPushButton(self.register_groupbox)
         self.register_components_vlayout.addWidget(self.run_button)
@@ -103,33 +109,12 @@ class RegisterUI(QWidget):
         self.__retranslate_UI()
         QMetaObject.connectSlotsByName(self)
 
-    def updateChannelSelector(self, channels: dict):
-        """Update the channel selectors with available channels."""
-        self.alignment_layer.clear()
-        self.protein_cell_layer.clear()
-        self.intensity_layer.clear()
-        channel_keys = sorted(
-            channels.keys(), key=lambda x: int(x.replace("Channel ", ""))
-        )
-
-        self.alignment_layer.addItems(channel_keys)
-        self.protein_cell_layer.addItems(channel_keys)
-        self.intensity_layer.addItems(channel_keys)
-        if len(channels) >= 3:
-            self.alignment_layer.setCurrentIndex(0)
-            self.protein_cell_layer.setCurrentIndex(1)
-            self.intensity_layer.setCurrentIndex(2)
-
     def __retranslate_UI(self):
         _translate = QCoreApplication.translate
         self.register_groupbox.setTitle(_translate("MainWindow", "Align Arrays"))
-        self.alignment_layer_label.setText(_translate("MainWindow", "Reference Layer"))
-        self.protein_cell_layer_label.setText(_translate("MainWindow", "Cell Layer"))
-        self.intensity_layer_label.setText(
-            _translate("MainWindow", "Protein Detection Layer")
-        )
-        self.max_size_label.setText(_translate("MainWindow", "Max Size"))
+        self.max_size_label.setText(_translate("MainWindow", "Max Size (px)"))
         self.num_tiles_label.setText(_translate("MainWindow", "Number of Tiles"))
-        self.overlap_label.setText(_translate("MainWindow", "Overlap"))
-        self.run_button.setText(_translate("MainWindow", "Run"))
+        self.overlap_label.setText(_translate("MainWindow", "Overlap (px)"))
+        self.ncc_threshold_label.setText(_translate("MainWindow", "NCC Threshold"))
+        self.run_button.setText(_translate("MainWindow", "Run Full Image"))
         self.cancel_button.setText(_translate("MainWindow", "Cancel"))

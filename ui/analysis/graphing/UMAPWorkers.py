@@ -8,8 +8,6 @@ from ui.analysis.graphing.UMAPDataModel import DataModel
 
 matplotlib.use("QtAgg")
 
-# Configure Logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("MIST_UMAP")
 
 
@@ -33,6 +31,10 @@ class AnalysisWorker(QThread):
         self.n_components = n_components
         self.random_state = random_state
         self.resolution = resolution
+        self._cancelled = False
+
+    def cancel(self):
+        self._cancelled = True
 
     def run(self):
         try:
@@ -44,10 +46,16 @@ class AnalysisWorker(QThread):
                 random_state=self.random_state,
                 resolution=self.resolution,
             )
+            if self._cancelled:
+                logger.info("Worker: Cancelled, discarding results.")
+                return
             logger.info("Worker: Pipeline calculation successful.")
             self.finished.emit(adata, key)
 
         except Exception as e:
+            if self._cancelled:
+                logger.info("Worker: Cancelled during exception.")
+                return
             logger.exception("Worker failed during UMAP pipeline.")
             tb = traceback.format_exc()
             self.error.emit(f"Worker Error: {str(e)}\n\n{tb}")
@@ -61,6 +69,10 @@ class ClusteringWorker(QThread):
         super().__init__()
         self.model = model
         self.resolution = resolution
+        self._cancelled = False
+
+    def cancel(self):
+        self._cancelled = True
 
     def run(self):
         try:
@@ -84,10 +96,17 @@ class ClusteringWorker(QThread):
             if f"{key}_colors" in self.model.adata.uns:
                 del self.model.adata.uns[f"{key}_colors"]
 
+            if self._cancelled:
+                logger.info("Worker: Cancelled, discarding results.")
+                return
+
             logger.info("Worker: Re-clustering successful.")
             self.finished.emit(self.model.adata, key)
 
         except Exception as e:
+            if self._cancelled:
+                logger.info("Worker: Cancelled during exception.")
+                return
             logger.exception("Worker failed during clustering.")
             tb = traceback.format_exc()
             self.error.emit(f"Clustering Error: {str(e)}\n\n{tb}")

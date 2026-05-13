@@ -1,7 +1,10 @@
+import logging
 import os
 import xml.etree.ElementTree as ET
 
 import tifffile as tiff
+
+logger = logging.getLogger(__name__)
 
 
 def parse_metadata(filename):
@@ -39,14 +42,14 @@ def parse_metadata(filename):
                     "DimensionOrder": pixels.attrib.get("DimensionOrder"),
                 }
             else:
-                print("Pixels element not found.")
+                logger.warning("Pixels element not found.")
         else:
-            print("ImageDescription tag not found.")
+            logger.warning("ImageDescription tag not found.")
 
     except ET.ParseError as e:
-        print("Parse error has occurred:", e)
+        logger.error("Parse error has occurred: %s", e)
     except Exception as e:
-        print(f"Metadata parsing error: {e}")
+        logger.error(f"Metadata parsing error: {e}")
 
     if not metadata:
         metadata["Name"] = name
