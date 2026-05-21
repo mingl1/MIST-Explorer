@@ -14,7 +14,7 @@ release = "March 2025"
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
-extensions = ["sphinx_design"]
+extensions = ["sphinx_design", "sphinx_copybutton"]
 
 templates_path = ["_templates"]
 exclude_patterns = []

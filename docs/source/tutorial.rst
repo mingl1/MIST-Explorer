@@ -145,7 +145,7 @@ A full pipeline walkthrough: loading images → aligning and registering → seg
    <p><em>Video coming soon.</em></p>
 
 Cell Segmentation with StarDist and CellProfiler
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Covers selecting the right channel for segmentation, when to use Gaussian blur, and how to tune the probability and overlap threshold parameters for different cell types and image qualities.
 

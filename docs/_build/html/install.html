@@ -9,6 +9,7 @@
   <title>Installation &mdash; MIST-Explorer March 2025 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
       <link rel="stylesheet" type="text/css" href="_static/sphinx-design.min.css?v=95c83b7e" />
 
   
@@ -17,6 +18,8 @@
       <script src="_static/documentation_options.js?v=30eb7d5b"></script>
       <script src="_static/doctools.js?v=9bcbadda"></script>
       <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="_static/copybutton.js?v=f281be69"></script>
       <script src="_static/design-tabs.js?v=f930bc37"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
@@ -79,34 +82,28 @@
   <section id="installation">
 <h1>Installation<a class="headerlink" href="#installation" title="Link to this heading"></a></h1>
 <p>To install MIST-Explorer, follow these steps:</p>
-<ol class="arabic simple">
-<li><dl class="simple">
-<dt>Clone the repository:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">`bash</span>
-<span class="pre">git</span> <span class="pre">clone</span> <span class="pre">https://github.com/MIST-Explorer/MIST-Explorer.git</span>
-<span class="pre">`</span></code></p>
-</dd>
-</dl>
+<ol class="arabic">
+<li><p>Clone the repository:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/MIST-Explorer/MIST-Explorer.git
+</pre></div>
+</div>
 </li>
-<li><dl class="simple">
-<dt>Navigate to the project directory:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">`bash</span>
-<span class="pre">cd</span> <span class="pre">MIST-Explorer</span>
-<span class="pre">`</span></code></p>
-</dd>
-</dl>
+<li><p>Navigate to the project directory:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>MIST-Explorer
+</pre></div>
+</div>
 </li>
-<li><dl class="simple">
-<dt>Install the required dependencies:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">`bash</span>
-<span class="pre">uv</span> <span class="pre">sync</span>
-<span class="pre">`</span></code></p>
-</dd>
-</dl>
+<li><p>Install the required dependencies:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>sync
+</pre></div>
+</div>
 </li>
 </ol>
-<p>Alternatively, prebuilt executable binaries can be downloaded directly from the GitHub Actions artifacts page for the latest successful workflow run.</p>
-<p>To start the application, run:
-<code class="docutils literal notranslate"><span class="pre">`bash</span>
-<span class="pre">uv</span> <span class="pre">run</span> <span class="pre">main.py</span>
-<span class="pre">`</span></code></p>
+<p>Alternatively, prebuilt executable binaries can be downloaded directly from the <strong>GitHub Actions</strong> artifacts page for the latest successful workflow run.</p>
+<p>To start the application, run:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>main.py
+</pre></div>
+</div>
 </section>
 
 
