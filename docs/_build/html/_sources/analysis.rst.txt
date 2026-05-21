@@ -1,141 +1,131 @@
-Analysis
-========
+Analysis Tab
+============
 
-The Analysis tab provides advanced statistical and visual analysis tools for exploring protein expression data within specific regions of interest. This interface allows researchers to select areas of the image, analyze protein expression patterns, and generate a variety of visualizations to gain deeper insights.
+The Analysis tab provides statistical and visual analysis tools for exploring protein expression data within specific regions of interest (ROIs). Draw regions on the canvas, select proteins, and generate a range of visualizations — all without leaving the application.
 
 .. note::
-   To include the analysis tab image in this documentation, save a screenshot of the analysis tab to the docs/source/_static directory with the filename "analysis_tab.png".
+   Save a screenshot of the Analysis tab to ``docs/source/_static/analysis_tab.png`` to display it here.
 
 .. image:: _static/analysis_tab.png
    :width: 600
    :alt: Analysis tab interface
 
 Interface Overview
+------------------
+
+The Analysis tab has two main sections:
+
+1. **Navigation Controls**: Back/Next buttons for moving between ROIs, plus Save Plot.
+2. **Content Area**: Scrollable panel showing the current ROI's visualizations and controls.
+
+Region of Interest (ROI) Selection
+------------------------------------
+
+ROIs are drawn directly on the canvas in the View tab using the selection tools. Each drawn region becomes a separate analysis view navigable within the Analysis tab.
+
+**Selection tools** (also accessible via keyboard shortcuts):
+
+* **Rectangle** — ``R``
+* **Circle/Ellipse** — ``C``
+* **Polygon/Lasso** — ``L``
+
+Each ROI is shown with a color indicator and displays its spatial bounds. Use the **Delete** button to remove the current ROI.
+
+.. dropdown:: How region filtering works
+
+   When a region is drawn, cells whose centroids fall within the region geometry are selected:
+
+   * **Rectangle**: cells within the coordinate bounding box.
+   * **Circle/Ellipse**: cells satisfying the elliptical equation ``(x-cx)²/a² + (y-cy)²/b² ≤ 1``.
+   * **Polygon**: cells tested using a ray casting algorithm — a ray is cast from the centroid; an odd number of boundary crossings means the point is inside.
+
+Navigating Multiple ROIs
+------------------------
+
+* **Back / Next**: Step through all drawn ROIs.
+* **Save Plot**: Save the currently displayed visualization as an image file.
+
+Protein Selection
 -----------------
 
-The Analysis tab consists of two main sections:
+For each ROI, choose which proteins to include in the analysis:
 
-1. **Navigation Controls**: Buttons for navigating between different regions of interest and saving plots
-2. **Content Area**: A scrollable area displaying the current region analysis and associated visualizations
+* **Protein Selection Dropdown**: Multi-select — choose any combination of available protein channels.
+* **Select All / Deselect All**: Quickly toggle all proteins.
+* Click **Apply** to regenerate all visualizations for the selected protein set.
 
-Region of Interest (ROI) Management
-----------------------------------
+Visualizations
+--------------
 
-The Analysis tab allows you to define and analyze specific regions within your image. Each region becomes a separate analysis view that you can navigate between.
+Six visualization types are available for each ROI. Each can be expanded into a separate window for side-by-side comparison.
 
-Region Selection Tools
-^^^^^^^^^^^^^^^^^^^^^
+Box Plot
+^^^^^^^^
 
-The View tab provides selection tools that integrate with the Analysis tab:
+Shows the distribution of expression levels for each selected protein within the ROI:
 
-* **Rectangle Selection**: Select rectangular regions for analysis
-* **Circle/Ellipse Selection**: Select circular/oval regions for analysis
-* **Polygon Selection**: Draw custom shapes to isolate complex structures
+* Center line: median expression
+* Box: interquartile range (IQR, 25th–75th percentile)
+* Whiskers: 1.5× IQR
+* Points: outliers beyond the whiskers
 
-Data Selection
-^^^^^^^^^^^^^
-
-For each region of interest, you can select which proteins to include in your analysis:
-
-* **Protein Selection Dropdown**: Multi-select dropdown that allows you to choose specific proteins for analysis
-* **Select All/Deselect All**: Quickly select or deselect all proteins
-* **Apply Button**: Update visualizations based on your protein selection
-
-Navigation Between Regions
--------------------------
-
-The Analysis tab provides intuitive navigation controls for working with multiple regions:
-
-* **Back Button**: Navigate to the previous region of interest
-* **Next Button**: Navigate to the next region of interest
-* **Save Plot**: Save the current visualization as an image file
-
-Each region of interest shows:
-* Region bounds information
-* Color indicator representing the region selection
-* Delete button to remove the current region
-
-Visualization Options
--------------------
-
-The Analysis tab provides multiple visualization types for analyzing protein expression data:
-
-Boxplot
-^^^^^^^
-
-Displays the distribution of protein expression levels within the selected region. This visualization shows:
-
-* Median expression level (center line)
-* Interquartile range (box)
-* Outliers (points)
-* Range of non-outlier data (whiskers)
-
-Z-Scores Heatmap
+Z-Score Heatmap
 ^^^^^^^^^^^^^^^
 
-Visualizes standardized expression values (z-scores) across proteins and cells within the selected region. This helps identify proteins with unusually high or low expression.
+Displays standardized expression values across proteins and cells. Each value is the number of standard deviations from the protein's mean across all cells in the ROI. Useful for identifying proteins with unusually high or low relative expression.
 
 Spatial Heatmap
-^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^
 
-Maps the spatial distribution of protein expression within the selected region, helping to identify localized expression patterns and hotspots.
+Maps the spatial distribution of protein expression within the ROI. Custom intensity thresholds can be set per protein to highlight expression hotspots and spatial gradients.
 
 Pie Chart
-^^^^^^^^
+^^^^^^^^^
 
-Shows the relative proportion of cells expressing different proteins within the selected region, helping to understand the cellular composition.
+Shows the proportion of cells exceeding an expression threshold for each selected protein. Useful for understanding the cellular composition of a region in terms of which proteins are most broadly expressed.
 
 Histogram
-^^^^^^^^
+^^^^^^^^^
 
-Displays the frequency distribution of expression values for selected proteins, revealing expression patterns and populations.
+Displays the frequency distribution of expression values for each selected protein. Outlier trimming is applied to focus on the main distribution. Useful for identifying bimodal populations or skewed expression.
 
 UMAP
 ^^^^
 
-Implements Uniform Manifold Approximation and Projection for dimensionality reduction, allowing visualization of high-dimensional protein expression data in a 2D plot. This can reveal clusters of cells with similar expression profiles.
+Projects the high-dimensional protein expression data into 2D using Uniform Manifold Approximation and Projection (UMAP). Each point is a cell; proximity in the plot reflects similarity in expression profile. Clusters in the UMAP often correspond to cell subtypes or states.
+
+The UMAP launcher is also accessible from the :doc:`view` tab.
+
+.. dropdown:: How it works
+
+   UMAP constructs a high-dimensional graph of cell-to-cell similarities based on their protein expression vectors, then optimizes a low-dimensional (2D) layout that preserves the local and global structure of that graph. The result is a 2D scatter plot where cells with similar expression profiles appear close together. Unlike PCA, UMAP preserves non-linear structure and is well-suited for identifying discrete cell populations.
 
 Working with Visualizations
---------------------------
+---------------------------
 
-Each visualization offers additional capabilities:
+* **Expand to New Window**: Open any visualization in a separate window for detailed viewing or side-by-side comparison.
+* **Return to Graph List**: Go back to the main list of available visualizations for the current ROI.
+* **Add New Charts**: Create additional visualization instances.
 
-* **Expand to New Window**: Open any visualization in a separate window for detailed viewing
-* **Return to Graph List**: Go back to the main list of available visualizations
-* **Add New Charts**: Create additional custom visualizations
+Full Image Analysis
+-------------------
 
-Data Analysis Workflow
---------------------
+In addition to ROI-based analysis, the Analysis tab supports analysis across the entire loaded dataset — not just a drawn region. This mode uses all cells in the loaded cell data file, making it useful for global expression profiles and whole-image UMAP projections.
 
-A typical workflow for using the Analysis tab includes:
-
-1. **Select Region**: Use the selection tools in the View tab to define a region of interest
-2. **Choose Proteins**: Select which proteins to include in your analysis
-3. **Explore Visualizations**: Navigate through the different visualization types
-4. **Compare Regions**: Use Back and Next buttons to compare analyses across different regions
-5. **Save Results**: Save important visualizations for reporting or further analysis
-
-Technical Details
+Typical Workflow
 ----------------
 
-The Analysis tab implements several advanced techniques for data analysis:
-
-1. **Region Filtering**: Implements geometric algorithms to precisely extract cell data from defined regions:
-   * Rectangle filtering using coordinate bounds
-   * Circle/oval filtering using elliptical equations
-   * Polygon filtering using ray casting algorithm
-
-2. **Lazy Loading**: Visualizations are generated on-demand to improve performance with large datasets.
-
-3. **Interactive Visualizations**: Matplotlib integration provides high-quality, interactive scientific visualizations.
-
-4. **Multi-window Support**: The ability to pop out visualizations into separate windows allows for detailed examination and side-by-side comparison.
+1. In the View tab, draw one or more ROIs using the selection tools.
+2. Switch to the Analysis tab and select the proteins of interest.
+3. Click **Apply** to generate visualizations.
+4. Step through ROIs with **Back / Next** to compare regions.
+5. Expand plots into separate windows for publication-quality side-by-side comparison.
+6. Click **Save Plot** to export key findings.
 
 Usage Tips
----------
+----------
 
-* **Strategic Region Selection**: Select regions that contain interesting features or contrasting cell populations
-* **Protein Comparison**: Select related proteins to compare their expression patterns within the same region
-* **Save Visualizations**: Use the Save Plot button to capture important findings for publications or presentations
-* **Multiple Windows**: Use the expand feature to compare multiple visualizations side by side
-* **Region Navigation**: Create multiple regions to systematically analyze different areas of your image
+* Use the polygon lasso to trace irregular tissue structures or specific anatomical compartments.
+* Select related protein pairs to compare co-expression patterns within the same region.
+* Create multiple ROIs of similar size in different areas to systematically survey the tissue.
+* Use UMAP on the full image first to identify major cell populations, then draw ROIs around spatial clusters to examine them in detail.

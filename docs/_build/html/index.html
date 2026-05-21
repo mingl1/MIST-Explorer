@@ -7,8 +7,9 @@
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>MIST-Explorer &mdash; MIST-Explorer March 2025 documentation</title>
-      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
-      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="_static/sphinx-design.min.css?v=95c83b7e" />
 
   
       <script src="_static/jquery.js?v=5d32c60e"></script>
@@ -16,6 +17,7 @@
       <script src="_static/documentation_options.js?v=30eb7d5b"></script>
       <script src="_static/doctools.js?v=9bcbadda"></script>
       <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="_static/design-tabs.js?v=f930bc37"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
@@ -44,9 +46,9 @@
               <ul>
 <li class="toctree-l1"><a class="reference internal" href="install.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorial.html">Tutorial</a></li>
-<li class="toctree-l1"><a class="reference internal" href="preprocessing.html">Preprocessing</a></li>
-<li class="toctree-l1"><a class="reference internal" href="view.html">View</a></li>
-<li class="toctree-l1"><a class="reference internal" href="analysis.html">Analysis</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extract.html">Extract Tab</a></li>
+<li class="toctree-l1"><a class="reference internal" href="view.html">View Tab</a></li>
+<li class="toctree-l1"><a class="reference internal" href="analysis.html">Analysis Tab</a></li>
 </ul>
 
         </div>
@@ -75,70 +77,58 @@
              
   <section id="mist-explorer">
 <h1>MIST-Explorer<a class="headerlink" href="#mist-explorer" title="Link to this heading"></a></h1>
-<p>Our application is a powerful and intuitive tool designed for researchers and scientists in the field of single-cell proteomics. It allows users to load, visualize, and analyze protein distribution at the single-cell level. By providing a user-friendly interface, the app enables seamless exploration of protein expression data, helping to uncover insights into cellular functions, interactions, and heterogeneity.</p>
+<p>MIST-Explorer is a tool for researchers and scientists working in single-cell proteomics. It lets you load, process, visualize, and analyze protein distribution at the single-cell level — from raw multi-cycle microscopy images through to statistical and spatial analysis of individual cells.</p>
 <section id="key-features">
 <h2>Key Features<a class="headerlink" href="#key-features" title="Link to this heading"></a></h2>
 <ul class="simple">
-<li><p><strong>Easy Viewer</strong>: Easily import protein expression data of any size, and interactively explore detailed protein distributions within specific regions of interest at both single-cell and group levels.</p></li>
-<li><p><strong>Alignment &amp; Registration</strong>: Align and register protein expression data across multiple layers/cycles within a few pixels of accuracy by using our registration pipeline.</p></li>
-<li><p><strong>Microbead Decoding</strong>:  Decode aligned microbeads to determine protein readout from tissue sample in a computationally efficient way.</p></li>
-<li><p><strong>Interactive Visualization</strong>: View protein distribution and expression levels across individual cells with the view tab.</p></li>
-<li><p><strong>Customizable Graphs</strong>: Create customizable graphs to visualize protein expression trends over time, in different experimental conditions, or across cell types. (TBD, somewhat)</p></li>
-<li><p><strong>Clustering &amp; Classification</strong>: Utilize clustering algorithms to group cells based on protein expression profiles for more targeted analysis. (TDB)</p></li>
-</ul>
-</section>
-<section id="advanced-analytics">
-<h2>Advanced Analytics<a class="headerlink" href="#advanced-analytics" title="Link to this heading"></a></h2>
-<ul class="simple">
-<li><p><strong>Statistical Analysis</strong>: Perform basic statistical operations on protein expression data to detect significant differences.</p></li>
-<li><p><strong>Machine Learning Integration</strong>: Integrate machine learning models for advanced pattern recognition and prediction of protein interactions.</p></li>
+<li><p><strong>Extract Tab</strong>: Crop, rotate, flip, and manually or automatically register multi-cycle images. Segment cells with StarDist or CellProfiler, then quantify per-cell protein intensities.</p></li>
+<li><p><strong>View Tab</strong>: Visualize multi-channel protein expression data as layered overlays with independent opacity, contrast, and color tinting per channel. Export to PNG or multi-channel TIFF.</p></li>
+<li><p><strong>Analysis Tab</strong>: Draw regions of interest (rectangle, circle, polygon) and generate box plots, z-score heatmaps, spatial heatmaps, pie charts, histograms, and UMAP projections.</p></li>
+<li><p><strong>Alignment &amp; Registration</strong>: Align fluorescence channels and brightfield layers to within a few pixels using optical flow with ORB feature detection.</p></li>
 </ul>
 </section>
 <section id="requirements">
 <h2>Requirements<a class="headerlink" href="#requirements" title="Link to this heading"></a></h2>
 <ul class="simple">
-<li><p><strong>Operating System</strong>: Windows, macOS tested</p></li>
-<li><p><strong>Minimum Hardware</strong>: 8 GB RAM, 2 GHz Processor</p></li>
-<li><p><strong>Dependencies</strong>: Python (with libraries such as NumPy, Pandas, Matplotlib), JavaScript (for web-based interfaces), and cloud-based storage options (if applicable).</p></li>
+<li><p><strong>Operating System</strong>: Windows, macOS (tested)</p></li>
+<li><p><strong>Minimum Hardware</strong>: 8 GB RAM, 2 GHz processor</p></li>
 </ul>
 <div class="toctree-wrapper compound">
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="install.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorial.html">Tutorial</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="tutorial.html#getting-started">Getting Started</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorial.html#preprocessing-your-images">Preprocessing Your Images</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorial.html#extracting-and-processing-your-images">Extracting and Processing Your Images</a></li>
 <li class="toctree-l2"><a class="reference internal" href="tutorial.html#visualizing-protein-expression">Visualizing Protein Expression</a></li>
 <li class="toctree-l2"><a class="reference internal" href="tutorial.html#analyzing-regions-of-interest">Analyzing Regions of Interest</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorial.html#analysis">Analysis</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorial.html#video-tutorials">Video Tutorials</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="preprocessing.html">Preprocessing</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="preprocessing.html#basic-image-manipulation">Basic Image Manipulation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="preprocessing.html#image-alignment">Image Alignment</a></li>
-<li class="toctree-l2"><a class="reference internal" href="preprocessing.html#smoothing">Smoothing</a></li>
-<li class="toctree-l2"><a class="reference internal" href="preprocessing.html#cell-segmentation">Cell Segmentation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="preprocessing.html#technical-details">Technical Details</a></li>
-<li class="toctree-l2"><a class="reference internal" href="preprocessing.html#usage-tips">Usage Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extract.html">Extract Tab</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="extract.html#transform">Transform</a></li>
+<li class="toctree-l2"><a class="reference internal" href="extract.html#alignment">Alignment</a></li>
+<li class="toctree-l2"><a class="reference internal" href="extract.html#segmentation">Segmentation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="extract.html#quantification">Quantification</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="view.html">View</a><ul>
+<li class="toctree-l1"><a class="reference internal" href="view.html">View Tab</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="view.html#interface-overview">Interface Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="view.html#loading-data">Loading Data</a></li>
 <li class="toctree-l2"><a class="reference internal" href="view.html#layer-management">Layer Management</a></li>
-<li class="toctree-l2"><a class="reference internal" href="view.html#layer-controls">Layer Controls</a></li>
-<li class="toctree-l2"><a class="reference internal" href="view.html#visualization-canvas">Visualization Canvas</a></li>
-<li class="toctree-l2"><a class="reference internal" href="view.html#data-loading-and-processing">Data Loading and Processing</a></li>
-<li class="toctree-l2"><a class="reference internal" href="view.html#technical-details">Technical Details</a></li>
+<li class="toctree-l2"><a class="reference internal" href="view.html#export">Export</a></li>
+<li class="toctree-l2"><a class="reference internal" href="view.html#umap-launcher">UMAP Launcher</a></li>
 <li class="toctree-l2"><a class="reference internal" href="view.html#usage-tips">Usage Tips</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="analysis.html">Analysis</a><ul>
+<li class="toctree-l1"><a class="reference internal" href="analysis.html">Analysis Tab</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="analysis.html#interface-overview">Interface Overview</a></li>
-<li class="toctree-l2"><a class="reference internal" href="analysis.html#region-of-interest-roi-management">Region of Interest (ROI) Management</a></li>
-<li class="toctree-l2"><a class="reference internal" href="analysis.html#navigation-between-regions">Navigation Between Regions</a></li>
-<li class="toctree-l2"><a class="reference internal" href="analysis.html#visualization-options">Visualization Options</a></li>
+<li class="toctree-l2"><a class="reference internal" href="analysis.html#region-of-interest-roi-selection">Region of Interest (ROI) Selection</a></li>
+<li class="toctree-l2"><a class="reference internal" href="analysis.html#navigating-multiple-rois">Navigating Multiple ROIs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="analysis.html#protein-selection">Protein Selection</a></li>
+<li class="toctree-l2"><a class="reference internal" href="analysis.html#visualizations">Visualizations</a></li>
 <li class="toctree-l2"><a class="reference internal" href="analysis.html#working-with-visualizations">Working with Visualizations</a></li>
-<li class="toctree-l2"><a class="reference internal" href="analysis.html#data-analysis-workflow">Data Analysis Workflow</a></li>
-<li class="toctree-l2"><a class="reference internal" href="analysis.html#technical-details">Technical Details</a></li>
+<li class="toctree-l2"><a class="reference internal" href="analysis.html#full-image-analysis">Full Image Analysis</a></li>
+<li class="toctree-l2"><a class="reference internal" href="analysis.html#typical-workflow">Typical Workflow</a></li>
 <li class="toctree-l2"><a class="reference internal" href="analysis.html#usage-tips">Usage Tips</a></li>
 </ul>
 </li>

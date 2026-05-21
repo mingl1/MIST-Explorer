@@ -38,6 +38,8 @@ dependencies = [
     "openvino>=2026.0.0",
     "rpy2>=3.6.7",
     "scikit-misc>=0.5.2",
+    "sphinx-design>=0.6.1",
+    "sphinx-rtd-theme>=3.1.0",
 ]
 
 [project.optional-dependencies]

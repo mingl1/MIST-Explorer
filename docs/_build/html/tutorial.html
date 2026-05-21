@@ -7,8 +7,9 @@
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Tutorial &mdash; MIST-Explorer March 2025 documentation</title>
-      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
-      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="_static/sphinx-design.min.css?v=95c83b7e" />
 
   
       <script src="_static/jquery.js?v=5d32c60e"></script>
@@ -16,10 +17,11 @@
       <script src="_static/documentation_options.js?v=30eb7d5b"></script>
       <script src="_static/doctools.js?v=9bcbadda"></script>
       <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="_static/design-tabs.js?v=f930bc37"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Preprocessing" href="preprocessing.html" />
+    <link rel="next" title="Extract Tab" href="extract.html" />
     <link rel="prev" title="Installation" href="install.html" /> 
 </head>
 
@@ -46,15 +48,24 @@
 <li class="toctree-l1"><a class="reference internal" href="install.html">Installation</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Tutorial</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#getting-started">Getting Started</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#preprocessing-your-images">Preprocessing Your Images</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#extracting-and-processing-your-images">Extracting and Processing Your Images</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#visualizing-protein-expression">Visualizing Protein Expression</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#analyzing-regions-of-interest">Analyzing Regions of Interest</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#analysis">Analysis</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#video-tutorials">Video Tutorials</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#how-to-manually-register-images">How to Manually Register Images</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#how-to-visualize-generated-cell-data">How to Visualize Generated Cell Data</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#how-to-run-umap">How to Run UMAP</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#end-to-end-workflow">End-to-End Workflow</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#cell-segmentation-with-stardist-and-cellprofiler">Cell Segmentation with StarDist and CellProfiler</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#drawing-rois-and-comparing-regions">Drawing ROIs and Comparing Regions</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#exporting-results">Exporting Results</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="preprocessing.html">Preprocessing</a></li>
-<li class="toctree-l1"><a class="reference internal" href="view.html">View</a></li>
-<li class="toctree-l1"><a class="reference internal" href="analysis.html">Analysis</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="extract.html">Extract Tab</a></li>
+<li class="toctree-l1"><a class="reference internal" href="view.html">View Tab</a></li>
+<li class="toctree-l1"><a class="reference internal" href="analysis.html">Analysis Tab</a></li>
 </ul>
 
         </div>
@@ -83,51 +94,152 @@
              
   <section id="tutorial">
 <h1>Tutorial<a class="headerlink" href="#tutorial" title="Link to this heading"></a></h1>
-<p>This tutorial will guide you through the essential features of the MIST-Explorer application, helping you to quickly become proficient in analyzing protein expression data.</p>
+<p>This tutorial walks through the end-to-end MIST-Explorer workflow — from loading raw images to generating visualizations and statistical analysis of protein expression data.</p>
 <section id="getting-started">
 <h2>Getting Started<a class="headerlink" href="#getting-started" title="Link to this heading"></a></h2>
 <ol class="arabic simple">
-<li><p><strong>Installation</strong>: First, ensure you have the application installed on your system. Refer to the <a class="reference internal" href="install.html"><span class="doc">Installation</span></a> page for detailed installation instructions.</p></li>
-<li><p><strong>Loading Data</strong>: Launch the application and load your microscopy image data by clicking on the “File” menu and selecting “Open”.</p></li>
+<li><p><strong>Installation</strong>: Ensure the application is installed. See the <a class="reference internal" href="install.html"><span class="doc">Installation</span></a> page for instructions.</p></li>
+<li><p><strong>Loading Data</strong>: Launch the application and load your microscopy images via <strong>File → Open</strong> or dropping them onto the canvas/sidebar.</p></li>
 </ol>
 </section>
-<section id="preprocessing-your-images">
-<h2>Preprocessing Your Images<a class="headerlink" href="#preprocessing-your-images" title="Link to this heading"></a></h2>
-<p>Before analysis, your images often need to be preprocessed. The preprocessing tab offers essential tools for this purpose.</p>
+<section id="extracting-and-processing-your-images">
+<h2>Extracting and Processing Your Images<a class="headerlink" href="#extracting-and-processing-your-images" title="Link to this heading"></a></h2>
+<p>The Extract tab prepares raw multi-cycle images for visualization and analysis.</p>
 <ol class="arabic simple">
-<li><p><strong>Crop and Rotate</strong>: Use the cropping and rotation tools to prepare your images.</p></li>
-<li><p><strong>Image Alignment</strong>: Align multiple image channels for accurate overlay and analysis.</p></li>
-<li><p><strong>Cell Segmentation</strong>: Use the StarDist segmentation to identify individual cells.</p></li>
+<li><p><strong>Crop and Rotate</strong>: Use the Transform sub-tab to crop to your region of interest and correct image orientation. You can also flip images if needed.</p></li>
+<li><p><strong>Manual Alignment</strong>: Before running automatic registration, use the manual alignment tool in the Transform sub-tab to roughly position your images. This step is optional but strongly recommended.</p></li>
+<li><p><strong>Automatic Registration</strong>: Run the registration pipeline to register images automatically. You will have a chance to manually align the output of the registeration pipeline.</p></li>
+<li><p><strong>Brightfield Alignment</strong>: Use the Alignment sub-tab if you need to align a brightfield layer to your fluorescence channels.</p></li>
+<li><p><strong>Cell Segmentation</strong>: In the Segmentation sub-tab, run StarDist (or CellProfiler) to identify individual cells.</p></li>
+<li><p><strong>Quantification</strong>: Run Cell Intensity Extraction in the Quantification sub-tab to produce a per-cell CSV of protein expression values.</p></li>
 </ol>
-<p>For detailed information on all preprocessing options, see the <a class="reference internal" href="preprocessing.html"><span class="doc">Preprocessing</span></a> page.</p>
+<p>For detailed information on all options and parameters, see the <a class="reference internal" href="extract.html"><span class="doc">Extract Tab</span></a> page.</p>
 </section>
 <section id="visualizing-protein-expression">
 <h2>Visualizing Protein Expression<a class="headerlink" href="#visualizing-protein-expression" title="Link to this heading"></a></h2>
-<p>After preprocessing your images, you can visualize and explore protein expression patterns using the View tab.</p>
+<p>After saving cell segmentation mask and cell data, use the View tab to explore protein expression patterns.</p>
 <ol class="arabic simple">
-<li><p><strong>Loading Data</strong>: Load your cell segmentation image and corresponding protein expression data.</p></li>
-<li><p><strong>Adding Layers</strong>: Add protein channels of interest as separate visualization layers.</p></li>
-<li><p><strong>Adjusting Display</strong>: Use opacity, contrast, and color tinting to highlight specific features and patterns.</p></li>
-<li><p><strong>Region Selection</strong>: Select specific regions of interest for detailed examination.</p></li>
+<li><p><strong>Loading Data</strong>: Load your segmentation image and the protein expression CSV produced by Quantification.</p></li>
+<li><p><strong>Adding Layers</strong>: Click <strong>Add Layer</strong> to add protein channels of interest. Each channel appears as an independent layer.</p></li>
+<li><p><strong>Adjusting Display</strong>: Use the per-layer controls to set opacity, contrast, and tint color. Assign complementary colors to co-localizing proteins.</p></li>
+<li><p><strong>Region Selection</strong>: Draw regions of interest (rectangle, circle, or polygon) directly on the canvas to prepare for analysis.</p></li>
+<li><p><strong>Exporting</strong>: Export the current view as a PNG or multi-channel TIFF using the Export controls.</p></li>
 </ol>
-<p>For comprehensive information on visualization features, refer to the <a class="reference internal" href="view.html"><span class="doc">View</span></a> page.</p>
+<p>For comprehensive information on visualization features, refer to the <a class="reference internal" href="view.html"><span class="doc">View Tab</span></a> page.</p>
 </section>
 <section id="analyzing-regions-of-interest">
 <h2>Analyzing Regions of Interest<a class="headerlink" href="#analyzing-regions-of-interest" title="Link to this heading"></a></h2>
-<p>Once you’ve visualized your data and identified interesting regions, you can perform advanced analysis using the Analysis tab.</p>
+<p>Once you have drawn regions of interest, switch to the Analysis tab to explore the data.</p>
 <ol class="arabic simple">
-<li><p><strong>Region Selection</strong>: Use the selection tools in the View tab to define regions of interest for analysis.</p></li>
-<li><p><strong>Protein Selection</strong>: Choose which proteins to include in your analysis using the multi-select dropdown.</p></li>
-<li><p><strong>Exploring Visualizations</strong>: Navigate through different visualization options (boxplots, heatmaps, etc.) to gain insights.</p></li>
-<li><p><strong>Comparing Regions</strong>: Use the navigation controls to compare analyses across different regions of interest.</p></li>
-<li><p><strong>Saving Results</strong>: Save important visualizations for reporting or publication.</p></li>
+<li><p><strong>Select Proteins</strong>: Use the multi-select dropdown to choose which proteins to include. Click <strong>Apply</strong>.</p></li>
+<li><p><strong>Explore Visualizations</strong>: Step through the available plot types — box plots, z-score heatmaps, spatial heatmaps, pie charts, histograms, and UMAP.</p></li>
+<li><p><strong>Compare Regions</strong>: Use the <strong>Back</strong> and <strong>Next</strong> buttons to navigate between your drawn ROIs and compare expression patterns.</p></li>
+<li><p><strong>Full Image Analysis</strong>: For a global view, use the full image analysis mode to run UMAP.</p></li>
+<li><p><strong>Save Results</strong>: Use <strong>Save Plot</strong> to export visualizations for reporting or publication.</p></li>
 </ol>
-<p>For in-depth information on analysis capabilities, see the <a class="reference internal" href="analysis.html"><span class="doc">Analysis</span></a> page.</p>
+<p>For in-depth information on analysis capabilities, see the <a class="reference internal" href="analysis.html"><span class="doc">Analysis Tab</span></a> page.</p>
 </section>
-<section id="analysis">
-<h2>Analysis<a class="headerlink" href="#analysis" title="Link to this heading"></a></h2>
-<p>After preprocessing and visualizing your images, you can proceed to deeper analysis…</p>
-<p>[Additional tutorial content will be added here]</p>
+<section id="video-tutorials">
+<h2>Video Tutorials<a class="headerlink" href="#video-tutorials" title="Link to this heading"></a></h2>
+<p>The following videos walk through common workflows in MIST-Explorer.</p>
+<section id="how-to-manually-register-images">
+<h3>How to Manually Register Images<a class="headerlink" href="#how-to-manually-register-images" title="Link to this heading"></a></h3>
+<p>Covers the full registration workflow: using manual alignment in the Transform sub-tab to remove gross offsets, running automatic registration, and fine-tuning the result in the post-registration modal.</p>
+<!-- TODO: Replace with YouTube embed once video is published
+<iframe width="560" height="315"
+  src="https://www.youtube.com/embed/VIDEO_ID_1"
+  title="How to Manually Register Images"
+  frameborder="0"
+  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+  allowfullscreen>
+</iframe>
+-->
+
+<p><em>Video coming soon.</em></p></section>
+<section id="how-to-visualize-generated-cell-data">
+<h3>How to Visualize Generated Cell Data<a class="headerlink" href="#how-to-visualize-generated-cell-data" title="Link to this heading"></a></h3>
+<p>Covers loading the Quantification CSV output, adding protein layers in the View tab, adjusting contrast and tint colors, and using complementary colors for co-localization.</p>
+<!-- TODO: Replace with YouTube embed once video is published
+<iframe width="560" height="315"
+  src="https://www.youtube.com/embed/VIDEO_ID_2"
+  title="How to Visualize Generated Cell Data"
+  frameborder="0"
+  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+  allowfullscreen>
+</iframe>
+-->
+
+<p><em>Video coming soon.</em></p></section>
+<section id="how-to-run-umap">
+<h3>How to Run UMAP<a class="headerlink" href="#how-to-run-umap" title="Link to this heading"></a></h3>
+<p>Covers launching the UMAP visualizer, interpreting the 2D projection, and identifying cell clusters based on protein expression profiles.</p>
+<!-- TODO: Replace with YouTube embed once video is published
+<iframe width="560" height="315"
+  src="https://www.youtube.com/embed/VIDEO_ID_3"
+  title="How to Run UMAP"
+  frameborder="0"
+  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+  allowfullscreen>
+</iframe>
+-->
+
+<p><em>Video coming soon.</em></p></section>
+<section id="end-to-end-workflow">
+<h3>End-to-End Workflow<a class="headerlink" href="#end-to-end-workflow" title="Link to this heading"></a></h3>
+<p>A full pipeline walkthrough: loading images → aligning and registering → segmenting cells → quantifying intensity → visualizing layers → drawing ROIs → analyzing expression patterns.</p>
+<!-- TODO: Replace with YouTube embed once video is published
+<iframe width="560" height="315"
+  src="https://www.youtube.com/embed/VIDEO_ID_4"
+  title="End-to-End Workflow"
+  frameborder="0"
+  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+  allowfullscreen>
+</iframe>
+-->
+
+<p><em>Video coming soon.</em></p></section>
+<section id="cell-segmentation-with-stardist-and-cellprofiler">
+<h3>Cell Segmentation with StarDist and CellProfiler<a class="headerlink" href="#cell-segmentation-with-stardist-and-cellprofiler" title="Link to this heading"></a></h3>
+<p>Covers selecting the right channel for segmentation, when to use Gaussian blur, and how to tune the probability and overlap threshold parameters for different cell types and image qualities.</p>
+<!-- TODO: Replace with YouTube embed once video is published
+<iframe width="560" height="315"
+  src="https://www.youtube.com/embed/VIDEO_ID_5"
+  title="Cell Segmentation with StarDist"
+  frameborder="0"
+  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+  allowfullscreen>
+</iframe>
+-->
+
+<p><em>Video coming soon.</em></p></section>
+<section id="drawing-rois-and-comparing-regions">
+<h3>Drawing ROIs and Comparing Regions<a class="headerlink" href="#drawing-rois-and-comparing-regions" title="Link to this heading"></a></h3>
+<p>Covers using rectangle, circle, and polygon lasso tools to define regions of interest, navigating between multiple ROIs in the Analysis tab, and comparing box plots and heatmaps across regions.</p>
+<!-- TODO: Replace with YouTube embed once video is published
+<iframe width="560" height="315"
+  src="https://www.youtube.com/embed/VIDEO_ID_6"
+  title="Drawing ROIs and Comparing Regions"
+  frameborder="0"
+  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+  allowfullscreen>
+</iframe>
+-->
+
+<p><em>Video coming soon.</em></p></section>
+<section id="exporting-results">
+<h3>Exporting Results<a class="headerlink" href="#exporting-results" title="Link to this heading"></a></h3>
+<p>Covers exporting the canvas view as PNG or multi-channel TIFF from the View tab, and saving individual analysis plots from the Analysis tab.</p>
+<!-- TODO: Replace with YouTube embed once video is published
+<iframe width="560" height="315"
+  src="https://www.youtube.com/embed/VIDEO_ID_7"
+  title="Exporting Results"
+  frameborder="0"
+  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+  allowfullscreen>
+</iframe>
+-->
+
+<p><em>Video coming soon.</em></p></section>
 </section>
 </section>
 
@@ -136,7 +248,7 @@
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
         <a href="install.html" class="btn btn-neutral float-left" title="Installation" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="preprocessing.html" class="btn btn-neutral float-right" title="Preprocessing" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="extract.html" class="btn btn-neutral float-right" title="Extract Tab" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>

@@ -106,7 +106,7 @@ The Preprocessing tab leverages several advanced algorithms:
 Usage Tips
 ---------
 
-* For optimal results, ensure that the alignment channel has clear, distinct features.
-* When working with large datasets, consider reducing the Max Size parameter to speed up processing.
-* Adjust segmentation parameters based on your specific cell type and image quality.
+* For optimal results, ensure that you first manually center the images, via the manually align button.
+* When working with large datasets, consider cropping or reducing the Max Size parameter to speed up processing.
+* Adjust segmentation parameters based on your specific cell type and image quality. Cellprofiler option may be better for larger ROIs.
 * For noisy images, apply smoothing before segmentation to improve detection accuracy.

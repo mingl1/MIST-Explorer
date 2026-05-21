@@ -7,8 +7,9 @@
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Installation &mdash; MIST-Explorer March 2025 documentation</title>
-      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
-      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="_static/sphinx-design.min.css?v=95c83b7e" />
 
   
       <script src="_static/jquery.js?v=5d32c60e"></script>
@@ -16,6 +17,7 @@
       <script src="_static/documentation_options.js?v=30eb7d5b"></script>
       <script src="_static/doctools.js?v=9bcbadda"></script>
       <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="_static/design-tabs.js?v=f930bc37"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
@@ -45,8 +47,9 @@
               <ul class="current">
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorial.html">Tutorial</a></li>
-<li class="toctree-l1"><a class="reference internal" href="preprocessing.html">Preprocessing</a></li>
-<li class="toctree-l1"><a class="reference internal" href="view.html">View</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extract.html">Extract Tab</a></li>
+<li class="toctree-l1"><a class="reference internal" href="view.html">View Tab</a></li>
+<li class="toctree-l1"><a class="reference internal" href="analysis.html">Analysis Tab</a></li>
 </ul>
 
         </div>
@@ -75,36 +78,35 @@
              
   <section id="installation">
 <h1>Installation<a class="headerlink" href="#installation" title="Link to this heading"></a></h1>
-<p>To install the MIST-Explorer, follow these steps:</p>
+<p>To install MIST-Explorer, follow these steps:</p>
 <ol class="arabic simple">
 <li><dl class="simple">
-<dt>Clone the repository:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">`</span>
-<span class="pre">git</span> <span class="pre">clone</span> <span class="pre">https://github.com/yourusername/protein_visualization_app.git</span>
+<dt>Clone the repository:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">`bash</span>
+<span class="pre">git</span> <span class="pre">clone</span> <span class="pre">https://github.com/MIST-Explorer/MIST-Explorer.git</span>
 <span class="pre">`</span></code></p>
 </dd>
 </dl>
 </li>
 <li><dl class="simple">
-<dt>Navigate to the project directory:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">`</span>
-<span class="pre">cd</span> <span class="pre">protein_visualization_app</span>
+<dt>Navigate to the project directory:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">`bash</span>
+<span class="pre">cd</span> <span class="pre">MIST-Explorer</span>
 <span class="pre">`</span></code></p>
 </dd>
 </dl>
 </li>
 <li><dl class="simple">
-<dt>Install the required dependencies:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">`</span>
-<span class="pre">pip</span> <span class="pre">install</span> <span class="pre">-r</span> <span class="pre">requirements.txt</span>
+<dt>Install the required dependencies:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">`bash</span>
+<span class="pre">uv</span> <span class="pre">sync</span>
 <span class="pre">`</span></code></p>
 </dd>
 </dl>
 </li>
 </ol>
-<dl class="simple">
-<dt>To start the application, run:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">`</span>
-<span class="pre">python</span> <span class="pre">main.py</span>
+<p>Alternatively, prebuilt executable binaries can be downloaded directly from the GitHub Actions artifacts page for the latest successful workflow run.</p>
+<p>To start the application, run:
+<code class="docutils literal notranslate"><span class="pre">`bash</span>
+<span class="pre">uv</span> <span class="pre">run</span> <span class="pre">main.py</span>
 <span class="pre">`</span></code></p>
-</dd>
-</dl>
 </section>
 
 

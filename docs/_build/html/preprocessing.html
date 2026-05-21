@@ -7,8 +7,9 @@
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Preprocessing &mdash; MIST-Explorer March 2025 documentation</title>
-      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
-      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="_static/sphinx-design.min.css?v=95c83b7e" />
 
   
       <script src="_static/jquery.js?v=5d32c60e"></script>
@@ -16,11 +17,10 @@
       <script src="_static/documentation_options.js?v=30eb7d5b"></script>
       <script src="_static/doctools.js?v=9bcbadda"></script>
       <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="_static/design-tabs.js?v=f930bc37"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
-    <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="View" href="view.html" />
-    <link rel="prev" title="Tutorial" href="tutorial.html" /> 
+    <link rel="search" title="Search" href="search.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -42,35 +42,12 @@
   </form>
 </div>
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
-              <ul class="current">
+              <ul>
 <li class="toctree-l1"><a class="reference internal" href="install.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorial.html">Tutorial</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Preprocessing</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#basic-image-manipulation">Basic Image Manipulation</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="#crop">Crop</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#rotate">Rotate</a></li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="#image-alignment">Image Alignment</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="#align-with-blue-color">Align with Blue Color</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#alignment-layer">Alignment Layer</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#cell-layer">Cell Layer</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#protein-detection-layer">Protein Detection Layer</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#alignment-settings">Alignment Settings</a></li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="#smoothing">Smoothing</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#cell-segmentation">Cell Segmentation</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="#select-channel">Select Channel</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#pre-trained-2d-model">Pre-trained 2D Model</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#segmentation-parameters">Segmentation Parameters</a></li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="#technical-details">Technical Details</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#usage-tips">Usage Tips</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="view.html">View</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extract.html">Extract Tab</a></li>
+<li class="toctree-l1"><a class="reference internal" href="view.html">View Tab</a></li>
+<li class="toctree-l1"><a class="reference internal" href="analysis.html">Analysis Tab</a></li>
 </ul>
 
         </div>
@@ -191,9 +168,9 @@
 <section id="usage-tips">
 <h2>Usage Tips<a class="headerlink" href="#usage-tips" title="Link to this heading"></a></h2>
 <ul class="simple">
-<li><p>For optimal results, ensure that the alignment channel has clear, distinct features.</p></li>
-<li><p>When working with large datasets, consider reducing the Max Size parameter to speed up processing.</p></li>
-<li><p>Adjust segmentation parameters based on your specific cell type and image quality.</p></li>
+<li><p>For optimal results, ensure that you first manually center the images, via the manually align button.</p></li>
+<li><p>When working with large datasets, consider cropping or reducing the Max Size parameter to speed up processing.</p></li>
+<li><p>Adjust segmentation parameters based on your specific cell type and image quality. Cellprofiler option may be better for larger ROIs.</p></li>
 <li><p>For noisy images, apply smoothing before segmentation to improve detection accuracy.</p></li>
 </ul>
 </section>
@@ -202,10 +179,7 @@
 
            </div>
           </div>
-          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="tutorial.html" class="btn btn-neutral float-left" title="Tutorial" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="view.html" class="btn btn-neutral float-right" title="View" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
-    </div>
+          <footer>
 
   <hr/>
 

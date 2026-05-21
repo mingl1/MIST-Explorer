@@ -1,24 +1,26 @@
 Installation
 =====
 
-To install the MIST-Explorer, follow these steps:
+To install MIST-Explorer, follow these steps:
 
 1. Clone the repository:
+    ```bash
+    git clone https://github.com/MIST-Explorer/MIST-Explorer.git
     ```
-    git clone https://github.com/yourusername/protein_visualization_app.git
-    ```
+
 2. Navigate to the project directory:
+    ```bash
+    cd MIST-Explorer
     ```
-    cd protein_visualization_app
-    ```
+
 3. Install the required dependencies:
-    ```
-    pip install -r requirements.txt
+    ```bash
+    uv sync
     ```
 
-
+Alternatively, prebuilt executable binaries can be downloaded directly from the GitHub Actions artifacts page for the latest successful workflow run.
 
 To start the application, run:
-    ```
-    python main.py
-    ```
+```bash
+uv run main.py
+```
