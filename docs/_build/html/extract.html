@@ -66,7 +66,7 @@
 <li class="toctree-l2"><a class="reference internal" href="#segmentation">Segmentation</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#gaussian-blur-optional">Gaussian Blur (Optional)</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#stardist">StarDist</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#cellprofiler">CellProfiler</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#cellprofiler-like">CellProfiler-like</a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#quantification">Quantification</a><ul>
@@ -110,7 +110,7 @@
 <p class="admonition-title">Note</p>
 <p>Save a screenshot of the Extract tab to <code class="docutils literal notranslate"><span class="pre">docs/source/_static/extract_tab.png</span></code> to display it here.</p>
 </div>
-<a class="reference internal image-reference" href="_static/extract_tab.png"><img alt="Extract tab interface" src="_static/extract_tab.png" style="width: 600px;" />
+<a class="reference internal image-reference" href="_images/extract_tab.png"><img alt="Extract tab interface" src="_images/extract_tab.png" style="width: 600px;" />
 </a>
 <section id="transform">
 <h2>Transform<a class="headerlink" href="#transform" title="Link to this heading"></a></h2>
@@ -138,8 +138,76 @@
 <section id="manual-alignment">
 <h3>Manual Alignment<a class="headerlink" href="#manual-alignment" title="Link to this heading"></a></h3>
 <p>Manually translate images to remove gross positional offsets before running automatic registration. This step is optional but strongly recommended — it gives the registration algorithm a better starting point and significantly improves accuracy.</p>
+<p><strong>Parameters</strong>:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 30.0%" />
+<col style="width: 15.0%" />
+<col style="width: 55.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Parameter</p></th>
+<th class="head"><p>Default</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Scaling Factor X</p></td>
+<td><p>1.0</p></td>
+<td><p>Horizontal scale correction for pixel size differences between images. Set to the ratio of pixel sizes if the source and target images were acquired at different resolutions.</p></td>
+</tr>
+<tr class="row-odd"><td><p>Scaling Factor Y</p></td>
+<td><p>1.0</p></td>
+<td><p>Vertical scale correction. Adjust independently of X if pixel aspect ratio differs between acquisitions.</p></td>
+</tr>
+<tr class="row-even"><td><p>Fine Alignment Scale</p></td>
+<td><p>0.5</p></td>
+<td><p>Resolution factor for the fine-tuning alignment pass. Lower values downsample more aggressively for speed; increase toward 1.0 for higher precision on well-initialized images.</p></td>
+</tr>
+<tr class="row-odd"><td><p>Skip Centering Images</p></td>
+<td><p>On</p></td>
+<td><p>When enabled, skips the centering pre-step in ITK coarse alignment. Disable if images are severely off-center.</p></td>
+</tr>
+<tr class="row-even"><td><p>Skip Gradient Descent</p></td>
+<td><p>Off</p></td>
+<td><p>When enabled, skips the ITK gradient descent step entirely, using only the initial coarse alignment. Enable to speed up alignment when the images are already roughly aligned.</p></td>
+</tr>
+<tr class="row-odd"><td><p>Use Contrasted Image (Target)</p></td>
+<td><p>Off</p></td>
+<td><p>Use the canvas contrast-adjusted version of the target image for alignment instead of the raw image.</p></td>
+</tr>
+<tr class="row-even"><td><p>Use Contrasted Image (Unaligned)</p></td>
+<td><p>Off</p></td>
+<td><p>Use the canvas contrast-adjusted version of the unaligned image for alignment instead of the raw image.</p></td>
+</tr>
+</tbody>
+</table>
 <p>After automatic registration completes, a <strong>post-registration modal</strong> displays the result. You can manually fine-tune the output in this modal before confirming.</p>
-</section>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">Post-registration modal — advanced settings</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<p class="sd-card-text">The post-registration modal provides landmark-based manual refinement via RANSAC affine correction.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 30.0%" />
+<col style="width: 15.0%" />
+<col style="width: 55.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p class="sd-card-text">Parameter</p></th>
+<th class="head"><p class="sd-card-text">Default</p></th>
+<th class="head"><p class="sd-card-text">Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p class="sd-card-text">RANSAC Threshold (px)</p></td>
+<td><p class="sd-card-text">5.0</p></td>
+<td><p class="sd-card-text">Inlier threshold in pixels for the landmark RANSAC affine computation. Lower values apply stricter outlier rejection (only landmarks that fit the affine model within this many pixels are kept). Increase if too few landmarks are being accepted; decrease for more precise fits.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</details></section>
 <section id="automatic-registration">
 <h3>Automatic Registration<a class="headerlink" href="#automatic-registration" title="Link to this heading"></a></h3>
 <p>Precisely aligns multi-cycle images using a feature-based registration pipeline.</p>
@@ -170,16 +238,20 @@
 </thead>
 <tbody>
 <tr class="row-even"><td><p>Max Size</p></td>
-<td><p>23000 px</p></td>
+<td><p>10000 px</p></td>
 <td><p>Maximum image dimension during processing. Images larger than this are downsampled first to reduce memory usage.</p></td>
 </tr>
 <tr class="row-odd"><td><p>Number of Tiles</p></td>
-<td><p>5</p></td>
+<td><p>10</p></td>
 <td><p>How many tiles the image is divided into for alignment. More tiles improves accuracy for images with local deformations but increases processing time.</p></td>
 </tr>
 <tr class="row-even"><td><p>Overlap</p></td>
-<td><p>500 px</p></td>
+<td><p>250 px</p></td>
 <td><p>Pixel overlap between adjacent tiles. Sufficient overlap ensures seamless stitching of tile alignment results.</p></td>
+</tr>
+<tr class="row-odd"><td><p>NCC Threshold</p></td>
+<td><p>0.85</p></td>
+<td><p>Normalized Cross-Correlation quality threshold per tile. If a tile’s alignment score falls below this value after ORB/SIFT registration, the algorithm falls back to the more expensive B-spline ITK transformation for that tile. Lower values reduce the chance of the ITK fallback being triggered; higher values apply it more aggressively.</p></td>
 </tr>
 </tbody>
 </table>
@@ -202,8 +274,9 @@
 <h3>StarDist<a class="headerlink" href="#stardist" title="Link to this heading"></a></h3>
 <p>StarDist uses a pre-trained convolutional neural network to detect and outline individual cells using star-convex polygon representations.</p>
 <p><strong>Select Channel</strong>: Choose the image channel to use for cell detection. A channel that clearly shows cell boundaries or nuclei gives the best results.</p>
-<p><strong>Pre-trained 2D Model</strong>: The default <code class="docutils literal notranslate"><span class="pre">2D_versatile_fluo</span></code> model works well for most fluorescence microscopy images.</p>
-<p><strong>Parameters</strong>:</p>
+<p><strong>Use Contrasted Image</strong>: When enabled, the segmentation runs on the contrast-adjusted image as set by the toolbar sliders on the canvas, rather than the raw pixel values. Useful when the raw image has poor signal-to-noise and the contrast-adjusted view looks significantly better.</p>
+<p><strong>Dilation</strong>: Expands each detected cell mask outward by a specified radius after segmentation. Enabled by default (radius = 5 px). Dilation fills gaps between the cell boundary detected by StarDist and the actual cell edge, but does <strong>not</strong> merge overlapping cells — each cell retains its individual mask.</p>
+<p><strong>Basic Parameters</strong> (Advanced tab):</p>
 <table class="docutils align-default">
 <colgroup>
 <col style="width: 30.0%" />
@@ -217,29 +290,51 @@
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p>Percentile Low</p></td>
+<tr class="row-even"><td><p>Pre-trained 2D Model</p></td>
+<td><p>2D_versatile_fluo</p></td>
+<td><p>The StarDist model used for detection. <code class="docutils literal notranslate"><span class="pre">2D_versatile_fluo</span></code> works well for most fluorescence images. <code class="docutils literal notranslate"><span class="pre">2D_paper_dsb2018</span></code> is suited for DSB-style nucleus images. <code class="docutils literal notranslate"><span class="pre">2D_versatile_he</span></code> is for H&amp;E histology images.</p></td>
+</tr>
+<tr class="row-odd"><td><p>Percentile Low</p></td>
 <td><p>3.00</p></td>
 <td><p>Lower percentile used for image intensity normalization before segmentation.</p></td>
 </tr>
-<tr class="row-odd"><td><p>Percentile High</p></td>
+<tr class="row-even"><td><p>Percentile High</p></td>
 <td><p>99.80</p></td>
 <td><p>Upper percentile used for intensity normalization. Decrease if bright artifacts are suppressing cell signal.</p></td>
 </tr>
-<tr class="row-even"><td><p>Probability Threshold</p></td>
+<tr class="row-odd"><td><p>Probability Threshold</p></td>
 <td><p>0.48</p></td>
 <td><p>Confidence threshold for accepting a cell detection. Increase to reduce false positives; decrease to capture more cells at the cost of more false positives.</p></td>
 </tr>
-<tr class="row-odd"><td><p>Overlap Threshold</p></td>
+<tr class="row-even"><td><p>NMS Threshold</p></td>
 <td><p>0.30</p></td>
-<td><p>Maximum allowed IoU overlap between adjacent cell predictions. Lower values are more permissive about overlapping cells.</p></td>
+<td><p>Maximum allowed IoU overlap between adjacent cell predictions (Non-Maximum Suppression). Lower values are more permissive about overlapping cells.</p></td>
+</tr>
+<tr class="row-odd"><td><p>Scale Factor</p></td>
+<td><p>1.0</p></td>
+<td><p>Rescales the image before passing it to the model. Use <code class="docutils literal notranslate"><span class="pre">cell_diameter</span> <span class="pre">/</span> <span class="pre">training_cell_diameter</span></code> to correct for images where cells are significantly larger or smaller than those used during model training. Values above 1.0 enlarge the image (for small cells); values below 1.0 shrink it (for large cells).</p></td>
+</tr>
+<tr class="row-even"><td><p>Number of Tiles</p></td>
+<td><p>0</p></td>
+<td><p>Splits the image into tiles for inference, which reduces peak memory usage on large images. <code class="docutils literal notranslate"><span class="pre">0</span></code> lets StarDist infer an appropriate tile count automatically. Only increase this manually if you encounter out-of-memory errors.</p></td>
 </tr>
 </tbody>
 </table>
 <p>For a full explanation of the model architecture and parameter tuning guidance, see the <a class="reference external" href="https://github.com/stardist/stardist">StarDist documentation</a>.</p>
 </section>
-<section id="cellprofiler">
-<h3>CellProfiler<a class="headerlink" href="#cellprofiler" title="Link to this heading"></a></h3>
-<p>An alternative segmentation pipeline suited for larger regions of interest or cell types where StarDist performs poorly. Configure and run a CellProfiler pipeline, then load the resulting segmentation masks into MIST-Explorer.</p>
+<section id="cellprofiler-like">
+<h3>CellProfiler-like<a class="headerlink" href="#cellprofiler-like" title="Link to this heading"></a></h3>
+<p>An alternative segmentation pipeline suited for larger regions of interest or cell types where StarDist performs poorly. Select <strong>CellProfiler-like</strong> from the method dropdown in the Segmentation tab.</p>
+<p><strong>Use Contrasted Image</strong>: Same as StarDist — when enabled, segmentation uses the contrast-adjusted canvas image rather than raw pixel values.</p>
+<p><strong>Dilation</strong>: Same behavior as StarDist. Enabled by default (radius = 5 px). Expands cell masks without merging overlapping cells.</p>
+<p><strong>Invert Image</strong>: Inverts pixel intensities before segmentation. Enable this when your image has a bright background and dark cells (e.g. brightfield images), as the pipeline expects dark background and bright foreground by default.</p>
+<p><strong>Sample &amp; Test</strong>: Lets you draw a small crop of the canvas and run the segmentation pipeline on just that region. Use this to quickly test and tune parameters without waiting for the full image to process.</p>
+<p><strong>Save / Load Configuration</strong>: Export the current CellProfiler-like settings to a JSON file and reload them in a future session. Useful for reproducibility across datasets.</p>
+<p>For a full description of the segmentation parameters, see the <a class="reference external" href="https://cellprofiler-manual.s3.amazonaws.com/CPmanual/IdentifyPrimaryObjects.html">CellProfiler IdentifyPrimaryObjects documentation</a>.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>A useful starting point: open <strong>Advanced Settings</strong>, use <strong>Sample &amp; Test</strong> on a representative region, and iteratively tune the threshold method and smoothing parameters until detections look correct before running on the full image.</p>
+</div>
 </section>
 </section>
 <section id="quantification">
@@ -247,12 +342,12 @@
 <p>The Quantification sub-tab extracts per-cell protein intensity values from your segmented images.</p>
 <section id="cell-intensity-extraction">
 <h3>Cell Intensity Extraction<a class="headerlink" href="#cell-intensity-extraction" title="Link to this heading"></a></h3>
-<p>For each cell identified by segmentation, the pipeline computes the mean fluorescence intensity of each protein channel within the cell mask.</p>
+<p>For each cell identified by segmentation, the pipeline computes the median fluorescence intensity of each protein channel within the cell mask.</p>
 <p><strong>Output</strong>: A CSV file with one row per cell and one column per protein channel, plus spatial metadata (cell centroid coordinates). This file is used as input for the View and Analysis tabs.</p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">How it works</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">For each segmented cell mask, the pixel intensities of every protein channel are sampled and aggregated (mean by default). The cell centroid and bounding box are computed from the mask geometry. The result is a cell × protein expression matrix — the primary data structure used by the View and Analysis tabs.</p>
+<p class="sd-card-text">For each segmented cell mask, the pixel intensities of every protein channel are sampled and the median is computed. The cell centroid and bounding box are computed from the mask geometry. The result is a cell × protein expression matrix — the primary data structure used by the View and Analysis tabs.</p>
 </div>
 </details></section>
 </section>

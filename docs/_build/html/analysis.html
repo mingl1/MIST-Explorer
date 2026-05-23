@@ -122,7 +122,7 @@
 <p><strong>Selection tools</strong> (also accessible via keyboard shortcuts):</p>
 <ul class="simple">
 <li><p><strong>Rectangle</strong> — <code class="docutils literal notranslate"><span class="pre">R</span></code></p></li>
-<li><p><strong>Circle/Ellipse</strong> — <code class="docutils literal notranslate"><span class="pre">C</span></code></p></li>
+<li><p><strong>Circle</strong> — <code class="docutils literal notranslate"><span class="pre">C</span></code></p></li>
 <li><p><strong>Polygon/Lasso</strong> — <code class="docutils literal notranslate"><span class="pre">L</span></code></p></li>
 </ul>
 <p>Each ROI is shown with a color indicator and displays its spatial bounds. Use the <strong>Delete</strong> button to remove the current ROI.</p>
@@ -132,7 +132,7 @@
 <p class="sd-card-text">When a region is drawn, cells whose centroids fall within the region geometry are selected:</p>
 <ul class="simple">
 <li><p class="sd-card-text"><strong>Rectangle</strong>: cells within the coordinate bounding box.</p></li>
-<li><p class="sd-card-text"><strong>Circle/Ellipse</strong>: cells satisfying the elliptical equation <code class="docutils literal notranslate"><span class="pre">(x-cx)²/a²</span> <span class="pre">+</span> <span class="pre">(y-cy)²/b²</span> <span class="pre">≤</span> <span class="pre">1</span></code>.</p></li>
+<li><p class="sd-card-text"><strong>Circle</strong>: cells satisfying <code class="docutils literal notranslate"><span class="pre">(x-cx)²</span> <span class="pre">+</span> <span class="pre">(y-cy)²</span> <span class="pre">≤</span> <span class="pre">r²</span></code> (circular distance from center).</p></li>
 <li><p class="sd-card-text"><strong>Polygon</strong>: cells tested using a ray casting algorithm — a ray is cast from the centroid; an odd number of boundary crossings means the point is inside.</p></li>
 </ul>
 </div>
@@ -201,7 +201,47 @@
 <span class="sd-summary-text">How it works</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
 <p class="sd-card-text">UMAP constructs a high-dimensional graph of cell-to-cell similarities based on their protein expression vectors, then optimizes a low-dimensional (2D) layout that preserves the local and global structure of that graph. The result is a 2D scatter plot where cells with similar expression profiles appear close together. Unlike PCA, UMAP preserves non-linear structure and is well-suited for identifying discrete cell populations.</p>
 </div>
-</details></section>
+</details><p><strong>Parameters</strong>:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 30.0%" />
+<col style="width: 15.0%" />
+<col style="width: 55.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Parameter</p></th>
+<th class="head"><p>Default</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Normalization Method</p></td>
+<td><p>Log1p</p></td>
+<td><p>Pre-processing applied to expression values before UMAP. <strong>Log1p</strong> applies log(1+x) to compress dynamic range. <strong>Z-Score</strong> standardizes each protein to zero mean and unit variance.</p></td>
+</tr>
+<tr class="row-odd"><td><p>PCA Components</p></td>
+<td><p>5</p></td>
+<td><p>Number of principal components used to reduce dimensionality before UMAP. Increase for datasets with many proteins; decrease if overfitting noise.</p></td>
+</tr>
+<tr class="row-even"><td><p>UMAP Neighbors</p></td>
+<td><p>15</p></td>
+<td><p>Number of neighboring cells considered when constructing the high-dimensional graph. Lower values emphasize local structure; higher values capture more global relationships.</p></td>
+</tr>
+<tr class="row-odd"><td><p>Min Distance</p></td>
+<td><p>0.10</p></td>
+<td><p>Minimum distance between points in the 2D embedding. Lower values allow tighter clusters; higher values spread points more evenly.</p></td>
+</tr>
+<tr class="row-even"><td><p>Clustering Resolution</p></td>
+<td><p>0.30</p></td>
+<td><p>Granularity of Leiden clustering. Higher values produce more, smaller clusters; lower values produce fewer, broader clusters.</p></td>
+</tr>
+<tr class="row-odd"><td><p>Top Proteins Count</p></td>
+<td><p>5</p></td>
+<td><p>Number of top differentially expressed proteins shown per cluster in the cluster summary view.</p></td>
+</tr>
+</tbody>
+</table>
+</section>
 </section>
 <section id="typical-workflow">
 <h2>Typical Workflow<a class="headerlink" href="#typical-workflow" title="Link to this heading"></a></h2>

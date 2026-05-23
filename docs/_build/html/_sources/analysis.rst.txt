@@ -26,7 +26,7 @@ ROIs are drawn directly on the canvas in the View tab using the selection tools.
 **Selection tools** (also accessible via keyboard shortcuts):
 
 * **Rectangle** — ``R``
-* **Circle/Ellipse** — ``C``
+* **Circle** — ``C``
 * **Polygon/Lasso** — ``L``
 
 Each ROI is shown with a color indicator and displays its spatial bounds. Use the **Delete** button to remove the current ROI.
@@ -36,7 +36,7 @@ Each ROI is shown with a color indicator and displays its spatial bounds. Use th
    When a region is drawn, cells whose centroids fall within the region geometry are selected:
 
    * **Rectangle**: cells within the coordinate bounding box.
-   * **Circle/Ellipse**: cells satisfying the elliptical equation ``(x-cx)²/a² + (y-cy)²/b² ≤ 1``.
+   * **Circle**: cells satisfying ``(x-cx)² + (y-cy)² ≤ r²`` (circular distance from center).
    * **Polygon**: cells tested using a ray casting algorithm — a ray is cast from the centroid; an odd number of boundary crossings means the point is inside.
 
 Navigating Multiple ROIs
@@ -109,6 +109,34 @@ Projects the high-dimensional protein expression data into 2D using Uniform Mani
 .. dropdown:: How it works
 
    UMAP constructs a high-dimensional graph of cell-to-cell similarities based on their protein expression vectors, then optimizes a low-dimensional (2D) layout that preserves the local and global structure of that graph. The result is a 2D scatter plot where cells with similar expression profiles appear close together. Unlike PCA, UMAP preserves non-linear structure and is well-suited for identifying discrete cell populations.
+
+**Parameters**:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 15 55
+
+   * - Parameter
+     - Default
+     - Description
+   * - Normalization Method
+     - Log1p
+     - Pre-processing applied to expression values before UMAP. **Log1p** applies log(1+x) to compress dynamic range. **Z-Score** standardizes each protein to zero mean and unit variance.
+   * - PCA Components
+     - 5
+     - Number of principal components used to reduce dimensionality before UMAP. Increase for datasets with many proteins; decrease if overfitting noise.
+   * - UMAP Neighbors
+     - 15
+     - Number of neighboring cells considered when constructing the high-dimensional graph. Lower values emphasize local structure; higher values capture more global relationships.
+   * - Min Distance
+     - 0.10
+     - Minimum distance between points in the 2D embedding. Lower values allow tighter clusters; higher values spread points more evenly.
+   * - Clustering Resolution
+     - 0.30
+     - Granularity of Leiden clustering. Higher values produce more, smaller clusters; lower values produce fewer, broader clusters.
+   * - Top Proteins Count
+     - 5
+     - Number of top differentially expressed proteins shown per cluster in the cluster summary view.
 
 Typical Workflow
 ----------------

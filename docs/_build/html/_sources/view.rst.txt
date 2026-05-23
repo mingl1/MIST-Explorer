@@ -69,7 +69,7 @@ Region Selection Tools
 In the top-right corner of the canvas, selection tools let you define regions of interest that feed into the Analysis tab:
 
 * **Rectangle Selection** (shortcut: ``R``)
-* **Circle/Ellipse Selection** (shortcut: ``C``)
+* **Circle Selection** (shortcut: ``C``)
 * **Polygon/Lasso Selection** (shortcut: ``L``)
 
 Export
