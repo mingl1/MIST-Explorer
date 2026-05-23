@@ -15,8 +15,8 @@ Interface Overview
 
 The Analysis tab has two main sections:
 
-1. **Navigation Controls**: Back/Next buttons for moving between ROIs, plus Save Plot.
-2. **Content Area**: Scrollable panel showing the current ROI's visualizations and controls.
+1. **Navigation Controls**: Back/Next buttons for moving between ROIs, plus removing ROIs.
+2. **Content Area**: For each ROI, you are able to filter and visualize a variety of different plots.
 
 Region of Interest (ROI) Selection
 ------------------------------------
@@ -89,28 +89,26 @@ Histogram
 
 Displays the frequency distribution of expression values for each selected protein. Outlier trimming is applied to focus on the main distribution. Useful for identifying bimodal populations or skewed expression.
 
-UMAP
-^^^^
-
-Projects the high-dimensional protein expression data into 2D using Uniform Manifold Approximation and Projection (UMAP). Each point is a cell; proximity in the plot reflects similarity in expression profile. Clusters in the UMAP often correspond to cell subtypes or states.
-
-The UMAP launcher is also accessible from the :doc:`view` tab.
-
-.. dropdown:: How it works
-
-   UMAP constructs a high-dimensional graph of cell-to-cell similarities based on their protein expression vectors, then optimizes a low-dimensional (2D) layout that preserves the local and global structure of that graph. The result is a 2D scatter plot where cells with similar expression profiles appear close together. Unlike PCA, UMAP preserves non-linear structure and is well-suited for identifying discrete cell populations.
 
 Working with Visualizations
 ---------------------------
 
 * **Expand to New Window**: Open any visualization in a separate window for detailed viewing or side-by-side comparison.
 * **Return to Graph List**: Go back to the main list of available visualizations for the current ROI.
-* **Add New Charts**: Create additional visualization instances.
 
 Full Image Analysis
 -------------------
 
-In addition to ROI-based analysis, the Analysis tab supports analysis across the entire loaded dataset — not just a drawn region. This mode uses all cells in the loaded cell data file, making it useful for global expression profiles and whole-image UMAP projections.
+In addition to ROI-based analysis, the Analysis tab supports analysis across the entire loaded dataset — not just a drawn region. This mode uses all cells in the loaded cell data file, making it useful for whole-image UMAP projections.
+
+UMAP
+^^^^
+
+Projects the high-dimensional protein expression data into 2D using Uniform Manifold Approximation and Projection (UMAP). Each point is a cell; proximity in the plot reflects similarity in expression profile. Clusters in the UMAP often correspond to cell subtypes or states.
+
+.. dropdown:: How it works
+
+   UMAP constructs a high-dimensional graph of cell-to-cell similarities based on their protein expression vectors, then optimizes a low-dimensional (2D) layout that preserves the local and global structure of that graph. The result is a 2D scatter plot where cells with similar expression profiles appear close together. Unlike PCA, UMAP preserves non-linear structure and is well-suited for identifying discrete cell populations.
 
 Typical Workflow
 ----------------
@@ -119,13 +117,10 @@ Typical Workflow
 2. Switch to the Analysis tab and select the proteins of interest.
 3. Click **Apply** to generate visualizations.
 4. Step through ROIs with **Back / Next** to compare regions.
-5. Expand plots into separate windows for publication-quality side-by-side comparison.
-6. Click **Save Plot** to export key findings.
+5. Expand plots into separate windows for readability.
+6. Click **Save Plot** to export graph.
 
 Usage Tips
 ----------
 
 * Use the polygon lasso to trace irregular tissue structures or specific anatomical compartments.
-* Select related protein pairs to compare co-expression patterns within the same region.
-* Create multiple ROIs of similar size in different areas to systematically survey the tissue.
-* Use UMAP on the full image first to identify major cell populations, then draw ROIs around spatial clusters to examine them in detail.

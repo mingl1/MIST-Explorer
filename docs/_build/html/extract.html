@@ -1,0 +1,292 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Extract Tab &mdash; MIST-Explorer March 2025 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
+      <link rel="stylesheet" type="text/css" href="_static/sphinx-design.min.css?v=95c83b7e" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=30eb7d5b"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="_static/copybutton.js?v=f281be69"></script>
+      <script src="_static/design-tabs.js?v=f930bc37"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="View Tab" href="view.html" />
+    <link rel="prev" title="Tutorial" href="tutorial.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            MIST-Explorer
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="install.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial.html">Tutorial</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Extract Tab</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#transform">Transform</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#crop">Crop</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rotate">Rotate</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#flip">Flip</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#manual-alignment">Manual Alignment</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#automatic-registration">Automatic Registration</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#alignment">Alignment</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#settings">Settings</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#segmentation">Segmentation</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#gaussian-blur-optional">Gaussian Blur (Optional)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#stardist">StarDist</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#cellprofiler">CellProfiler</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#quantification">Quantification</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#cell-intensity-extraction">Cell Intensity Extraction</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="view.html">View Tab</a></li>
+<li class="toctree-l1"><a class="reference internal" href="analysis.html">Analysis Tab</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">MIST-Explorer</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Extract Tab</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/extract.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="extract-tab">
+<h1>Extract Tab<a class="headerlink" href="#extract-tab" title="Link to this heading"></a></h1>
+<p>The Extract tab handles all image preparation and processing steps before visualization and analysis. It is organized into four sub-tabs: <strong>Transform</strong>, <strong>Alignment</strong>, <strong>Segmentation</strong>, and <strong>Quantification</strong>.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Save a screenshot of the Extract tab to <code class="docutils literal notranslate"><span class="pre">docs/source/_static/extract_tab.png</span></code> to display it here.</p>
+</div>
+<a class="reference internal image-reference" href="_static/extract_tab.png"><img alt="Extract tab interface" src="_static/extract_tab.png" style="width: 600px;" />
+</a>
+<section id="transform">
+<h2>Transform<a class="headerlink" href="#transform" title="Link to this heading"></a></h2>
+<p>The Transform sub-tab provides tools for basic image manipulation and multi-cycle image registration.</p>
+<section id="crop">
+<h3>Crop<a class="headerlink" href="#crop" title="Link to this heading"></a></h3>
+<p>Select a rectangular region to keep from the current image:</p>
+<ul class="simple">
+<li><p><strong>Image Selection Tool</strong>: Click the image icon to draw a crop region on the canvas.</p></li>
+<li><p><strong>Clear Selection</strong>: Click the X icon to discard the current selection.</p></li>
+</ul>
+</section>
+<section id="rotate">
+<h3>Rotate<a class="headerlink" href="#rotate" title="Link to this heading"></a></h3>
+<p>Adjust the rotation angle using the slider, then click <strong>Ok</strong> to apply.</p>
+</section>
+<section id="flip">
+<h3>Flip<a class="headerlink" href="#flip" title="Link to this heading"></a></h3>
+<p>Mirror the image along either axis:</p>
+<ul class="simple">
+<li><p><strong>Flip Horizontal</strong>: Mirror the image left-to-right.</p></li>
+<li><p><strong>Flip Vertical</strong>: Mirror the image top-to-bottom.</p></li>
+</ul>
+</section>
+<section id="manual-alignment">
+<h3>Manual Alignment<a class="headerlink" href="#manual-alignment" title="Link to this heading"></a></h3>
+<p>Manually translate images to remove gross positional offsets before running automatic registration. This step is optional but strongly recommended — it gives the registration algorithm a better starting point and significantly improves accuracy.</p>
+<p>After automatic registration completes, a <strong>post-registration modal</strong> displays the result. You can manually fine-tune the output in this modal before confirming.</p>
+</section>
+<section id="automatic-registration">
+<h3>Automatic Registration<a class="headerlink" href="#automatic-registration" title="Link to this heading"></a></h3>
+<p>Precisely aligns multi-cycle images using a feature-based registration pipeline.</p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">How it works</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<p class="sd-card-text">The pipeline uses <strong>optical flow</strong> with <strong>ORB (Oriented FAST and Rotated BRIEF)</strong> feature detection as the primary method. If ORB cannot find sufficient correspondences (e.g. low-texture regions), <strong>SIFT (Scale-Invariant Feature Transform)</strong> is used as a fallback.</p>
+<p class="sd-card-text">To handle large images efficiently, the image is divided into overlapping tiles. Each tile is registered independently and the results are composited. The tiled approach accounts for local deformations — such as stage drift or sample distortion — that a single global transform would miss.</p>
+</div>
+</details></section>
+</section>
+<section id="alignment">
+<h2>Alignment<a class="headerlink" href="#alignment" title="Link to this heading"></a></h2>
+<p>The Alignment sub-tab aligns the brightfield (transmitted light) layer to the fluorescence channels. This is separate from multi-cycle registration in the Transform sub-tab.</p>
+<section id="settings">
+<h3>Settings<a class="headerlink" href="#settings" title="Link to this heading"></a></h3>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 25.0%" />
+<col style="width: 15.0%" />
+<col style="width: 60.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Parameter</p></th>
+<th class="head"><p>Default</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Max Size</p></td>
+<td><p>23000 px</p></td>
+<td><p>Maximum image dimension during processing. Images larger than this are downsampled first to reduce memory usage.</p></td>
+</tr>
+<tr class="row-odd"><td><p>Number of Tiles</p></td>
+<td><p>5</p></td>
+<td><p>How many tiles the image is divided into for alignment. More tiles improves accuracy for images with local deformations but increases processing time.</p></td>
+</tr>
+<tr class="row-even"><td><p>Overlap</p></td>
+<td><p>500 px</p></td>
+<td><p>Pixel overlap between adjacent tiles. Sufficient overlap ensures seamless stitching of tile alignment results.</p></td>
+</tr>
+</tbody>
+</table>
+<p>Click <strong>Run</strong> to perform the alignment, or <strong>Cancel</strong> to abort.</p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">How it works</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<p class="sd-card-text">Brightfield-to-fluorescence alignment uses the same optical flow pipeline as multi-cycle registration: ORB feature detection with SIFT fallback, applied tile-by-tile. The overlapping tile strategy is critical for large images where a single global homography cannot capture local stage drift or sample distortion.</p>
+</div>
+</details></section>
+</section>
+<section id="segmentation">
+<h2>Segmentation<a class="headerlink" href="#segmentation" title="Link to this heading"></a></h2>
+<p>The Segmentation sub-tab identifies individual cells in your images. The resulting segmentation masks are used by the View and Analysis tabs to associate pixel intensities with specific cells.</p>
+<section id="gaussian-blur-optional">
+<h3>Gaussian Blur (Optional)<a class="headerlink" href="#gaussian-blur-optional" title="Link to this heading"></a></h3>
+<p>A pre-processing blur that reduces high-frequency noise before segmentation. In most cases this is <strong>not needed</strong> — only apply it if significant noise is causing false detections.</p>
+</section>
+<section id="stardist">
+<h3>StarDist<a class="headerlink" href="#stardist" title="Link to this heading"></a></h3>
+<p>StarDist uses a pre-trained convolutional neural network to detect and outline individual cells using star-convex polygon representations.</p>
+<p><strong>Select Channel</strong>: Choose the image channel to use for cell detection. A channel that clearly shows cell boundaries or nuclei gives the best results.</p>
+<p><strong>Pre-trained 2D Model</strong>: The default <code class="docutils literal notranslate"><span class="pre">2D_versatile_fluo</span></code> model works well for most fluorescence microscopy images.</p>
+<p><strong>Parameters</strong>:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 30.0%" />
+<col style="width: 15.0%" />
+<col style="width: 55.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Parameter</p></th>
+<th class="head"><p>Default</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Percentile Low</p></td>
+<td><p>3.00</p></td>
+<td><p>Lower percentile used for image intensity normalization before segmentation.</p></td>
+</tr>
+<tr class="row-odd"><td><p>Percentile High</p></td>
+<td><p>99.80</p></td>
+<td><p>Upper percentile used for intensity normalization. Decrease if bright artifacts are suppressing cell signal.</p></td>
+</tr>
+<tr class="row-even"><td><p>Probability Threshold</p></td>
+<td><p>0.48</p></td>
+<td><p>Confidence threshold for accepting a cell detection. Increase to reduce false positives; decrease to capture more cells at the cost of more false positives.</p></td>
+</tr>
+<tr class="row-odd"><td><p>Overlap Threshold</p></td>
+<td><p>0.30</p></td>
+<td><p>Maximum allowed IoU overlap between adjacent cell predictions. Lower values are more permissive about overlapping cells.</p></td>
+</tr>
+</tbody>
+</table>
+<p>For a full explanation of the model architecture and parameter tuning guidance, see the <a class="reference external" href="https://github.com/stardist/stardist">StarDist documentation</a>.</p>
+</section>
+<section id="cellprofiler">
+<h3>CellProfiler<a class="headerlink" href="#cellprofiler" title="Link to this heading"></a></h3>
+<p>An alternative segmentation pipeline suited for larger regions of interest or cell types where StarDist performs poorly. Configure and run a CellProfiler pipeline, then load the resulting segmentation masks into MIST-Explorer.</p>
+</section>
+</section>
+<section id="quantification">
+<h2>Quantification<a class="headerlink" href="#quantification" title="Link to this heading"></a></h2>
+<p>The Quantification sub-tab extracts per-cell protein intensity values from your segmented images.</p>
+<section id="cell-intensity-extraction">
+<h3>Cell Intensity Extraction<a class="headerlink" href="#cell-intensity-extraction" title="Link to this heading"></a></h3>
+<p>For each cell identified by segmentation, the pipeline computes the mean fluorescence intensity of each protein channel within the cell mask.</p>
+<p><strong>Output</strong>: A CSV file with one row per cell and one column per protein channel, plus spatial metadata (cell centroid coordinates). This file is used as input for the View and Analysis tabs.</p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">How it works</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<p class="sd-card-text">For each segmented cell mask, the pixel intensities of every protein channel are sampled and aggregated (mean by default). The cell centroid and bounding box are computed from the mask geometry. The result is a cell × protein expression matrix — the primary data structure used by the View and Analysis tabs.</p>
+</div>
+</details></section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="tutorial.html" class="btn btn-neutral float-left" title="Tutorial" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="view.html" class="btn btn-neutral float-right" title="View Tab" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Clark Fischer, Jason Chen, Jun Wang.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -62,11 +62,13 @@
 <li class="toctree-l3"><a class="reference internal" href="#spatial-heatmap">Spatial Heatmap</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#pie-chart">Pie Chart</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#histogram">Histogram</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#umap">UMAP</a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#working-with-visualizations">Working with Visualizations</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#full-image-analysis">Full Image Analysis</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#full-image-analysis">Full Image Analysis</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#umap">UMAP</a></li>
+</ul>
+</li>
 <li class="toctree-l2"><a class="reference internal" href="#typical-workflow">Typical Workflow</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#usage-tips">Usage Tips</a></li>
 </ul>
@@ -110,8 +112,8 @@
 <h2>Interface Overview<a class="headerlink" href="#interface-overview" title="Link to this heading"></a></h2>
 <p>The Analysis tab has two main sections:</p>
 <ol class="arabic simple">
-<li><p><strong>Navigation Controls</strong>: Back/Next buttons for moving between ROIs, plus Save Plot.</p></li>
-<li><p><strong>Content Area</strong>: Scrollable panel showing the current ROI’s visualizations and controls.</p></li>
+<li><p><strong>Navigation Controls</strong>: Back/Next buttons for moving between ROIs, plus removing ROIs.</p></li>
+<li><p><strong>Content Area</strong>: For each ROI, you are able to filter and visualize a variety of different plots.</p></li>
 </ol>
 </section>
 <section id="region-of-interest-roi-selection">
@@ -180,28 +182,26 @@
 <h3>Histogram<a class="headerlink" href="#histogram" title="Link to this heading"></a></h3>
 <p>Displays the frequency distribution of expression values for each selected protein. Outlier trimming is applied to focus on the main distribution. Useful for identifying bimodal populations or skewed expression.</p>
 </section>
-<section id="umap">
-<h3>UMAP<a class="headerlink" href="#umap" title="Link to this heading"></a></h3>
-<p>Projects the high-dimensional protein expression data into 2D using Uniform Manifold Approximation and Projection (UMAP). Each point is a cell; proximity in the plot reflects similarity in expression profile. Clusters in the UMAP often correspond to cell subtypes or states.</p>
-<p>The UMAP launcher is also accessible from the <a class="reference internal" href="view.html"><span class="doc">View Tab</span></a> tab.</p>
-<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
-<summary class="sd-summary-title sd-card-header">
-<span class="sd-summary-text">How it works</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">UMAP constructs a high-dimensional graph of cell-to-cell similarities based on their protein expression vectors, then optimizes a low-dimensional (2D) layout that preserves the local and global structure of that graph. The result is a 2D scatter plot where cells with similar expression profiles appear close together. Unlike PCA, UMAP preserves non-linear structure and is well-suited for identifying discrete cell populations.</p>
-</div>
-</details></section>
 </section>
 <section id="working-with-visualizations">
 <h2>Working with Visualizations<a class="headerlink" href="#working-with-visualizations" title="Link to this heading"></a></h2>
 <ul class="simple">
 <li><p><strong>Expand to New Window</strong>: Open any visualization in a separate window for detailed viewing or side-by-side comparison.</p></li>
 <li><p><strong>Return to Graph List</strong>: Go back to the main list of available visualizations for the current ROI.</p></li>
-<li><p><strong>Add New Charts</strong>: Create additional visualization instances.</p></li>
 </ul>
 </section>
 <section id="full-image-analysis">
 <h2>Full Image Analysis<a class="headerlink" href="#full-image-analysis" title="Link to this heading"></a></h2>
-<p>In addition to ROI-based analysis, the Analysis tab supports analysis across the entire loaded dataset — not just a drawn region. This mode uses all cells in the loaded cell data file, making it useful for global expression profiles and whole-image UMAP projections.</p>
+<p>In addition to ROI-based analysis, the Analysis tab supports analysis across the entire loaded dataset — not just a drawn region. This mode uses all cells in the loaded cell data file, making it useful for whole-image UMAP projections.</p>
+<section id="umap">
+<h3>UMAP<a class="headerlink" href="#umap" title="Link to this heading"></a></h3>
+<p>Projects the high-dimensional protein expression data into 2D using Uniform Manifold Approximation and Projection (UMAP). Each point is a cell; proximity in the plot reflects similarity in expression profile. Clusters in the UMAP often correspond to cell subtypes or states.</p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">How it works</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<p class="sd-card-text">UMAP constructs a high-dimensional graph of cell-to-cell similarities based on their protein expression vectors, then optimizes a low-dimensional (2D) layout that preserves the local and global structure of that graph. The result is a 2D scatter plot where cells with similar expression profiles appear close together. Unlike PCA, UMAP preserves non-linear structure and is well-suited for identifying discrete cell populations.</p>
+</div>
+</details></section>
 </section>
 <section id="typical-workflow">
 <h2>Typical Workflow<a class="headerlink" href="#typical-workflow" title="Link to this heading"></a></h2>
@@ -210,17 +210,14 @@
 <li><p>Switch to the Analysis tab and select the proteins of interest.</p></li>
 <li><p>Click <strong>Apply</strong> to generate visualizations.</p></li>
 <li><p>Step through ROIs with <strong>Back / Next</strong> to compare regions.</p></li>
-<li><p>Expand plots into separate windows for publication-quality side-by-side comparison.</p></li>
-<li><p>Click <strong>Save Plot</strong> to export key findings.</p></li>
+<li><p>Expand plots into separate windows for readability.</p></li>
+<li><p>Click <strong>Save Plot</strong> to export graph.</p></li>
 </ol>
 </section>
 <section id="usage-tips">
 <h2>Usage Tips<a class="headerlink" href="#usage-tips" title="Link to this heading"></a></h2>
 <ul class="simple">
 <li><p>Use the polygon lasso to trace irregular tissue structures or specific anatomical compartments.</p></li>
-<li><p>Select related protein pairs to compare co-expression patterns within the same region.</p></li>
-<li><p>Create multiple ROIs of similar size in different areas to systematically survey the tissue.</p></li>
-<li><p>Use UMAP on the full image first to identify major cell populations, then draw ROIs around spatial clusters to examine them in detail.</p></li>
 </ul>
 </section>
 </section>
