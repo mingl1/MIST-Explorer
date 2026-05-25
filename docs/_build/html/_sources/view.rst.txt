@@ -3,9 +3,6 @@ View Tab
 
 The View tab provides visualization and exploration capabilities for protein expression data and multi-channel microscopy images. Researchers can layer multiple protein channels, adjust display properties per layer, and select regions for downstream analysis.
 
-.. note::
-   Save a screenshot of the View tab to ``docs/source/_static/view_tab.png`` to display it here.
-
 .. image:: _static/view_tab.png
    :width: 600
    :alt: View tab interface
@@ -60,6 +57,8 @@ Each layer has its own control panel:
      - Opens a color picker. Apply a color tint to the grayscale channel data. Common choices: red, green, blue (primary), cyan, magenta, yellow (complementary), or custom.
    * - Visibility
      - Toggle button to show or hide a layer without removing it. Useful for comparing expression patterns.
+   * - Visibility Threshold
+     - Hides cells not within quantile range. Useful for sepearting high/low populations. Use auto contrast after adjust threshold to see clearer view of low populations.
    * - Delete Layer
      - Permanently removes the layer from the stack.
 

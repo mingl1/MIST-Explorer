@@ -188,7 +188,7 @@ class CellLayerAlignmentUI(QWidget):
         self.register_button.setMinimumHeight(30)
         self.register_button.setStyleSheet(self._get_button_style())
 
-        self.manually_align_button = QPushButton("Manually Align")
+        self.manually_align_button = QPushButton("Manually Register")
         self.manually_align_button.setEnabled(False)
         self.manually_align_button.setMinimumHeight(30)
         self.manually_align_button.setStyleSheet(self._get_button_style())
@@ -291,7 +291,9 @@ class CellLayerAlignmentUI(QWidget):
             _translate("MainWindow", "Register and Replace Selected Reference Channel")
         )
         self.register_button.setText(_translate("MainWindow", "Register Images"))
-        self.manually_align_button.setText(_translate("MainWindow", "Manually Align"))
+        self.manually_align_button.setText(
+            _translate("MainWindow", "Manually Register")
+        )
 
     # pylint: disable=unused-argument
     def set_target_image(self, item_uuid, is_leaf, channel):

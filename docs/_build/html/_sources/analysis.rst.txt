@@ -3,9 +3,6 @@ Analysis Tab
 
 The Analysis tab provides statistical and visual analysis tools for exploring protein expression data within specific regions of interest (ROIs). Draw regions on the canvas, select proteins, and generate a range of visualizations — all without leaving the application.
 
-.. note::
-   Save a screenshot of the Analysis tab to ``docs/source/_static/analysis_tab.png`` to display it here.
-
 .. image:: _static/analysis_tab.png
    :width: 600
    :alt: Analysis tab interface

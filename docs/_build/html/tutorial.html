@@ -110,9 +110,9 @@
 <p>The Extract tab prepares raw multi-cycle images for visualization and analysis.</p>
 <ol class="arabic simple">
 <li><p><strong>Crop and Rotate</strong>: Use the Transform sub-tab to crop to your region of interest and correct image orientation. You can also flip images if needed.</p></li>
-<li><p><strong>Manual Alignment</strong>: Before running automatic registration, use the manual alignment tool in the Transform sub-tab to roughly position your images. This step is optional but strongly recommended.</p></li>
-<li><p><strong>Automatic Registration</strong>: Run the registration pipeline to register images automatically. You will have a chance to manually align the output of the registeration pipeline.</p></li>
-<li><p><strong>Brightfield Alignment</strong>: Use the Alignment sub-tab if you need to align a brightfield layer to your fluorescence channels.</p></li>
+<li><p><strong>Manual Registeration</strong>: Before running automatic registration, use the manual alignment tool in the Transform sub-tab to roughly position your images. This step is optional but strongly recommended.</p></li>
+<li><p><strong>Automatic Registration</strong>: Run the registration pipeline to register images automatically. You will have a chance to manually register the output of the registeration pipeline in the post registeration modal.</p></li>
+<li><p><strong>Brightfield Alignment</strong>: Use the Alignment sub-tab if you need to align a tiff to reference brightfield, applies same transformation across all channels.</p></li>
 <li><p><strong>Cell Segmentation</strong>: In the Segmentation sub-tab, run StarDist (or CellProfiler) to identify individual cells.</p></li>
 <li><p><strong>Quantification</strong>: Run Cell Intensity Extraction in the Quantification sub-tab to produce a per-cell CSV of protein expression values.</p></li>
 </ol>

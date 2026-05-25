@@ -17,11 +17,11 @@ The Extract tab prepares raw multi-cycle images for visualization and analysis.
 
 1. **Crop and Rotate**: Use the Transform sub-tab to crop to your region of interest and correct image orientation. You can also flip images if needed.
 
-2. **Manual Alignment**: Before running automatic registration, use the manual alignment tool in the Transform sub-tab to roughly position your images. This step is optional but strongly recommended.
+2. **Manual Registeration**: Before running automatic registration, use the manual alignment tool in the Transform sub-tab to roughly position your images. This step is optional but strongly recommended.
 
-3. **Automatic Registration**: Run the registration pipeline to register images automatically. You will have a chance to manually align the output of the registeration pipeline.
+3. **Automatic Registration**: Run the registration pipeline to register images automatically. You will have a chance to manually register the output of the registeration pipeline in the post registeration modal.
 
-4. **Brightfield Alignment**: Use the Alignment sub-tab if you need to align a brightfield layer to your fluorescence channels.
+4. **Brightfield Alignment**: Use the Alignment sub-tab if you need to align a tiff to reference brightfield, applies same transformation across all channels.
 
 5. **Cell Segmentation**: In the Segmentation sub-tab, run StarDist (or CellProfiler) to identify individual cells.
 

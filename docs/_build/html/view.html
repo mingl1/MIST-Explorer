@@ -96,10 +96,6 @@
   <section id="view-tab">
 <h1>View Tab<a class="headerlink" href="#view-tab" title="Link to this heading"></a></h1>
 <p>The View tab provides visualization and exploration capabilities for protein expression data and multi-channel microscopy images. Researchers can layer multiple protein channels, adjust display properties per layer, and select regions for downstream analysis.</p>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>Save a screenshot of the View tab to <code class="docutils literal notranslate"><span class="pre">docs/source/_static/view_tab.png</span></code> to display it here.</p>
-</div>
 <a class="reference internal image-reference" href="_images/view_tab.png"><img alt="View tab interface" src="_images/view_tab.png" style="width: 600px;" />
 </a>
 <section id="interface-overview">
@@ -156,7 +152,10 @@
 <tr class="row-odd"><td><p>Visibility</p></td>
 <td><p>Toggle button to show or hide a layer without removing it. Useful for comparing expression patterns.</p></td>
 </tr>
-<tr class="row-even"><td><p>Delete Layer</p></td>
+<tr class="row-even"><td><p>Visibility Threshold</p></td>
+<td><p>Hides cells not within quantile range. Useful for sepearting high/low populations. Use auto contrast after adjust threshold to see clearer view of low populations.</p></td>
+</tr>
+<tr class="row-odd"><td><p>Delete Layer</p></td>
 <td><p>Permanently removes the layer from the stack.</p></td>
 </tr>
 </tbody>

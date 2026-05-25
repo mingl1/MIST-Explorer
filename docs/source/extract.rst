@@ -3,10 +3,7 @@ Extract Tab
 
 The Extract tab handles all image preparation and processing steps before visualization and analysis. It is organized into four sub-tabs: **Transform**, **Alignment**, **Segmentation**, and **Quantification**.
 
-.. note::
-   Save a screenshot of the Extract tab to ``docs/source/_static/extract_tab.png`` to display it here.
-
-.. image:: _static/extract_tab.png
+.. image:: _static/extract_tab.jpeg
    :width: 600
    :alt: Extract tab interface
 
@@ -36,10 +33,10 @@ Mirror the image along either axis:
 * **Flip Horizontal**: Mirror the image left-to-right.
 * **Flip Vertical**: Mirror the image top-to-bottom.
 
-Manual Alignment
-^^^^^^^^^^^^^^^^
+Registeration (and replace)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Manually translate images to remove gross positional offsets before running automatic registration. This step is optional but strongly recommended — it gives the registration algorithm a better starting point and significantly improves accuracy.
+Register a channel from an image onto a channel from another image. Optionally replace the channel from the other image with the newly registered channel. This can be done automatically, but manually centering and roughly aligning the channels before automatic registeration is strongly encouraged for best results.
 
 **Parameters**:
 
@@ -64,17 +61,15 @@ Manually translate images to remove gross positional offsets before running auto
      - When enabled, skips the centering pre-step in ITK coarse alignment. Disable if images are severely off-center.
    * - Skip Gradient Descent
      - Off
-     - When enabled, skips the ITK gradient descent step entirely, using only the initial coarse alignment. Enable to speed up alignment when the images are already roughly aligned.
-   * - Use Contrasted Image (Target)
+     - When enabled, skips the ITK gradient descent step entirely, using only the initial coarse and fine alignment. Enable to speed up alignment when the images are already roughly aligned.
+   * - Use Contrasted Image
      - Off
-     - Use the canvas contrast-adjusted version of the target image for alignment instead of the raw image.
-   * - Use Contrasted Image (Unaligned)
-     - Off
-     - Use the canvas contrast-adjusted version of the unaligned image for alignment instead of the raw image.
+     - Use the canvas contrast-adjusted version of the image for alignment instead of the raw image. This also effects manual registeration modal.
 
-After automatic registration completes, a **post-registration modal** displays the result. You can manually fine-tune the output in this modal before confirming.
 
-.. dropdown:: Post-registration modal — advanced settings
+After automatic registration completes, a **manual-registration modal** displays the result. You can manually fine-tune the output in this modal before confirming.
+
+.. dropdown:: Manual-registration modal — advanced settings
 
    The post-registration modal provides landmark-based manual refinement via RANSAC affine correction.
 
@@ -86,24 +81,15 @@ After automatic registration completes, a **post-registration modal** displays t
         - Default
         - Description
       * - RANSAC Threshold (px)
-        - 5.0
-        - Inlier threshold in pixels for the landmark RANSAC affine computation. Lower values apply stricter outlier rejection (only landmarks that fit the affine model within this many pixels are kept). Increase if too few landmarks are being accepted; decrease for more precise fits.
+        - 10.0
+        - Essentially how unsure you are of the landmarks, higher=more uncertainly or more specifically, it controls inlier threshold in pixels for the landmark RANSAC affine computation. Lower values apply stricter outlier rejection (only landmarks that fit the affine model within this many pixels are kept). Increase if too few landmarks are being accepted; decrease for more precise fits.
 
-Automatic Registration
-^^^^^^^^^^^^^^^^^^^^^^
+Bright Field Alignment
+----------------------
 
-Precisely aligns multi-cycle images using a feature-based registration pipeline.
+The Alignment sub-tab aligns the brightfield (transmitted light) layer of a tiff file to that of another (reference) tiff tile. This moves all channels of the non-reference image.
 
 .. dropdown:: How it works
-
-   The pipeline uses **optical flow** with **ORB (Oriented FAST and Rotated BRIEF)** feature detection as the primary method. If ORB cannot find sufficient correspondences (e.g. low-texture regions), **SIFT (Scale-Invariant Feature Transform)** is used as a fallback.
-
-   To handle large images efficiently, the image is divided into overlapping tiles. Each tile is registered independently and the results are composited. The tiled approach accounts for local deformations — such as stage drift or sample distortion — that a single global transform would miss.
-
-Alignment
----------
-
-The Alignment sub-tab aligns the brightfield (transmitted light) layer to the fluorescence channels. This is separate from multi-cycle registration in the Transform sub-tab.
 
 Settings
 ^^^^^^^^
@@ -120,7 +106,7 @@ Settings
      - Maximum image dimension during processing. Images larger than this are downsampled first to reduce memory usage.
    * - Number of Tiles
      - 10
-     - How many tiles the image is divided into for alignment. More tiles improves accuracy for images with local deformations but increases processing time.
+     - How many tiles the image is divided into for alignment. More tiles improves accuracy for images with local deformations but increases processing time quadratically.
    * - Overlap
      - 250 px
      - Pixel overlap between adjacent tiles. Sufficient overlap ensures seamless stitching of tile alignment results.
@@ -132,7 +118,9 @@ Click **Run** to perform the alignment, or **Cancel** to abort.
 
 .. dropdown:: How it works
 
-   Brightfield-to-fluorescence alignment uses the same optical flow pipeline as multi-cycle registration: ORB feature detection with SIFT fallback, applied tile-by-tile. The overlapping tile strategy is critical for large images where a single global homography cannot capture local stage drift or sample distortion.
+   The pipeline uses **optical flow** with **ORB (Oriented FAST and Rotated BRIEF)** feature detection as the primary method. If ORB cannot find sufficient correspondences (e.g. low-texture regions), **SIFT (Scale-Invariant Feature Transform)** is used as a fallback.
+
+   To handle large images efficiently, the image is divided into overlapping tiles. Each tile is registered independently and the results are composited. The tiled approach accounts for local deformations — such as stage drift or sample distortion — that a single global transform would miss.
 
 Segmentation
 ------------
@@ -166,7 +154,7 @@ StarDist uses a pre-trained convolutional neural network to detect and outline i
      - Description
    * - Pre-trained 2D Model
      - 2D_versatile_fluo
-     - The StarDist model used for detection. ``2D_versatile_fluo`` works well for most fluorescence images. ``2D_paper_dsb2018`` is suited for DSB-style nucleus images. ``2D_versatile_he`` is for H&E histology images.
+     - The StarDist model used for detection. ``2D_versatile_fluo`` works well for most fluorescence images. 
    * - Percentile Low
      - 3.00
      - Lower percentile used for image intensity normalization before segmentation.
@@ -179,7 +167,7 @@ StarDist uses a pre-trained convolutional neural network to detect and outline i
    * - NMS Threshold
      - 0.30
      - Maximum allowed IoU overlap between adjacent cell predictions (Non-Maximum Suppression). Lower values are more permissive about overlapping cells.
-   * - Scale Factor
+   * - Scale Factor (important)
      - 1.0
      - Rescales the image before passing it to the model. Use ``cell_diameter / training_cell_diameter`` to correct for images where cells are significantly larger or smaller than those used during model training. Values above 1.0 enlarge the image (for small cells); values below 1.0 shrink it (for large cells).
    * - Number of Tiles
@@ -216,7 +204,7 @@ The Quantification sub-tab extracts per-cell protein intensity values from your 
 Cell Intensity Extraction
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-For each cell identified by segmentation, the pipeline computes the median fluorescence intensity of each protein channel within the cell mask.
+For each cell identified by segmentation, the pipeline computes the median fluorescence intensity of each protein channel within the cell mask. User needs to specify a color csv for protein channel for it to be considered.
 
 **Output**: A CSV file with one row per cell and one column per protein channel, plus spatial metadata (cell centroid coordinates). This file is used as input for the View and Analysis tabs.
 

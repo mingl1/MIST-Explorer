@@ -10,10 +10,9 @@ MIST-Explorer is a tool for researchers and scientists working in single-cell pr
 
 Key Features
 ------------
-- **Extract Tab**: Crop, rotate, flip, and manually or automatically register multi-cycle images. Segment cells with StarDist or CellProfiler, then quantify per-cell protein intensities.
+- **Extract Tab**: Crop, rotate, flip, register and align images. Segment cells with StarDist or CellProfiler, then quantify per-cell protein intensities.
 - **View Tab**: Visualize multi-channel protein expression data as layered overlays with independent opacity, contrast, and color tinting per channel. Export to PNG or multi-channel TIFF.
 - **Analysis Tab**: Draw regions of interest (rectangle, circle, polygon) and generate box plots, z-score heatmaps, spatial heatmaps, pie charts, histograms, and UMAP projections.
-- **Alignment & Registration**: Align fluorescence channels and brightfield layers to within a few pixels using optical flow with ORB feature detection.
 
 Requirements
 ------------
