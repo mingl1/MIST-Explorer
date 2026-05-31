@@ -218,11 +218,11 @@ class ImageManager(QWidget):
     def _save_image_to_project(self, item_uuid, item):
         """Save image data to the project folder."""
         if item is None:
-            return
+            return False
 
         item_data = item.get("data", {})
         if not item_data:
-            return
+            return False
 
         image_name = item.get("name", f"Image_{item_uuid}")
         channel_count = len(item_data)
@@ -237,16 +237,26 @@ class ImageManager(QWidget):
             )
             channel_display_names[channel_name] = wrapper.name or channel_name
 
-        ProjectManager.save_image(
-            project_path=self.current_project_path,
-            image_uuid=str(item_uuid),
-            channel_data=item_data,
-            image_name=image_name,
-            channel_count=channel_count,
-            original_filename=original_filename,
-            contrast_settings=contrast_settings,
-            channel_display_names=channel_display_names,
-        )
+        try:
+            ProjectManager.save_image(
+                project_path=self.current_project_path,
+                image_uuid=str(item_uuid),
+                channel_data=item_data,
+                image_name=image_name,
+                channel_count=channel_count,
+                original_filename=original_filename,
+                contrast_settings=contrast_settings,
+                channel_display_names=channel_display_names,
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save image {item_uuid} to project: {e}")
+            QMessageBox.warning(
+                self,
+                "Save Failure",
+                f"Failed to save image '{image_name}' to disk. It will remain in your session, but you may need to free up space and try saving again.\n\nError: {str(e)}"
+            )
+            return False
 
     def _channel_display_text(self, channel: str, wrapper):
         display_name = getattr(wrapper, "name", "") or channel
@@ -398,7 +408,8 @@ class ImageManager(QWidget):
         original_filename = obj.get("original_filename", "")
         if not original_filename or not os.path.isfile(original_filename):
             if self._can_save_project():
-                self._save_image_to_project(item_uuid, obj)
+                if not self._save_image_to_project(item_uuid, obj):
+                    self._unsaved_created.add(str(item_uuid))
             else:
                 self._unsaved_created.add(str(item_uuid))
 
@@ -422,8 +433,8 @@ class ImageManager(QWidget):
             if item is None:
                 self._unsaved_created.discard(item_uuid_str)
                 continue
-            self._save_image_to_project(item_uuid_str, item)
-            self._unsaved_created.discard(item_uuid_str)
+            if self._save_image_to_project(item_uuid_str, item):
+                self._unsaved_created.discard(item_uuid_str)
 
     def save_all_images_to(self, folder: str):
         """Export every workspace image as a TIFF to folder and update project references."""
@@ -451,15 +462,23 @@ class ImageManager(QWidget):
                 continue
             file_path = os.path.join(folder, f"{name}.tif")
             stacked = np.stack(arrays, axis=0)
-            tifffile.imwrite(
-                file_path,
-                stacked,
-                photometric="minisblack",
-                imagej=ProjectManager.imagej_compatible_dtype(stacked.dtype),
-            )
-            item["original_filename"] = file_path
-            self._unsaved_created.discard(str(item_uuid))
-            self._save_image_reference(str(item_uuid), item)
+            try:
+                tifffile.imwrite(
+                    file_path,
+                    stacked,
+                    photometric="minisblack",
+                    imagej=ProjectManager.imagej_compatible_dtype(stacked.dtype),
+                )
+                item["original_filename"] = file_path
+                self._unsaved_created.discard(str(item_uuid))
+                self._save_image_reference(str(item_uuid), item)
+            except Exception as e:
+                logger.error(f"Failed to export image {item_uuid} to {file_path}: {e}")
+                QMessageBox.critical(
+                    self,
+                    "Export Failure",
+                    f"Failed to export image '{name}' to {file_path}.\n\nError: {str(e)}"
+                )
 
 
 class ImageTreeWidget(QTreeView):
@@ -938,44 +957,52 @@ class ImageTreeWidget(QTreeView):
             )
             if folder_path:
                 file_path = os.path.join(folder_path, f"{name}.tif")
-                if single_channel is not None and single_channel in channel_dict:
-                    channel_array = np.asarray(channel_dict[single_channel].data)
-                    tifffile.imwrite(
-                        file_path,
-                        channel_array,
-                        photometric="minisblack",
-                        imagej=ProjectManager.imagej_compatible_dtype(
-                            channel_array.dtype
-                        ),
-                    )
-                    # Segmentation label export counts as a canonical save
-                    exported_wrapper = channel_dict.get(single_channel)
-                    if exported_wrapper is not None and is_segmentation_channel(
-                        exported_wrapper
-                    ):
-                        self._mark_export_saved(item_uuid, item, file_path)
+                try:
+                    if single_channel is not None and single_channel in channel_dict:
+                        channel_array = np.asarray(channel_dict[single_channel].data)
+                        tifffile.imwrite(
+                            file_path,
+                            channel_array,
+                            photometric="minisblack",
+                            imagej=ProjectManager.imagej_compatible_dtype(
+                                channel_array.dtype
+                            ),
+                        )
+                        # Segmentation label export counts as a canonical save
+                        exported_wrapper = channel_dict.get(single_channel)
+                        if exported_wrapper is not None and is_segmentation_channel(
+                            exported_wrapper
+                        ):
+                            self._mark_export_saved(item_uuid, item, file_path)
+                        else:
+                            # Regular single-channel: just remove from unsaved set
+                            manager = self.parent()
+                            if isinstance(manager, ImageManager):
+                                manager._unsaved_created.discard(str(item_uuid))
                     else:
-                        # Regular single-channel: just remove from unsaved set
-                        manager = self.parent()
-                        if isinstance(manager, ImageManager):
-                            manager._unsaved_created.discard(str(item_uuid))
-                else:
-                    arrays = [
-                        channel_obj.data
-                        for _, channel_obj in sorted(channel_dict.items())
-                        if not is_segmentation_channel(channel_obj)
-                    ]
-                    if not arrays:
-                        return
-                    stacked = np.stack(arrays, axis=0)  # Shape: (channels, H, W)
-                    tifffile.imwrite(
-                        file_path,
-                        stacked,
-                        photometric="minisblack",
-                        imagej=ProjectManager.imagej_compatible_dtype(stacked.dtype),
+                        arrays = [
+                            channel_obj.data
+                            for _, channel_obj in sorted(channel_dict.items())
+                            if not is_segmentation_channel(channel_obj)
+                        ]
+                        if not arrays:
+                            return
+                        stacked = np.stack(arrays, axis=0)  # Shape: (channels, H, W)
+                        tifffile.imwrite(
+                            file_path,
+                            stacked,
+                            photometric="minisblack",
+                            imagej=ProjectManager.imagej_compatible_dtype(stacked.dtype),
+                        )
+                        # Full-image export: mark saved and update original_filename
+                        self._mark_export_saved(item_uuid, item, file_path)
+                except Exception as e:
+                    logger.error(f"Failed to export TIFF for {item_uuid}: {e}")
+                    QMessageBox.critical(
+                        self,
+                        "Save Failure",
+                        f"Failed to save TIFF to {file_path}.\n\nError: {str(e)}"
                     )
-                    # Full-image export: mark saved and update original_filename
-                    self._mark_export_saved(item_uuid, item, file_path)
         elif file_type == "png":
             folder_path = QFileDialog.getExistingDirectory(
                 self, "Select Folder to Save PNG"
@@ -1000,25 +1027,33 @@ class ImageTreeWidget(QTreeView):
             # image has cell IDs above that ceiling, fall back to TIF so the
             # exported pixel values stay in sync with the CellIDs in the CSV.
             channel_array = np.asarray(wrapper.data)
-            if channel_array.dtype == np.int32 and channel_array.max() > 65535:
-                tif_path = os.path.splitext(file_path)[0] + ".tif"
-                tifffile.imwrite(
-                    tif_path,
-                    channel_array,
-                    photometric="minisblack",
-                    imagej=False,
-                )
-            elif channel_array.dtype in [np.int32, np.uint16, np.uint32, np.int16]:
-                clean_arr = np.clip(channel_array, 0, 65535).astype(np.uint16)
-                Image.fromarray(clean_arr).save(file_path)
-            else:
-                if hasattr(wrapper, "get_uint8_data"):
-                    png_data = wrapper.get_uint8_data()
+            try:
+                if channel_array.dtype == np.int32 and channel_array.max() > 65535:
+                    tif_path = os.path.splitext(file_path)[0] + ".tif"
+                    tifffile.imwrite(
+                        tif_path,
+                        channel_array,
+                        photometric="minisblack",
+                        imagej=False,
+                    )
+                elif channel_array.dtype in [np.int32, np.uint16, np.uint32, np.int16]:
+                    clean_arr = np.clip(channel_array, 0, 65535).astype(np.uint16)
+                    Image.fromarray(clean_arr).save(file_path)
                 else:
-                    png_data = self._normalize_to_uint8(wrapper.data)
-                if not isinstance(png_data, np.ndarray) or png_data.dtype != np.uint8:
-                    png_data = self._normalize_to_uint8(np.asarray(png_data))
-                Image.fromarray(png_data).save(file_path)
+                    if hasattr(wrapper, "get_uint8_data"):
+                        png_data = wrapper.get_uint8_data()
+                    else:
+                        png_data = self._normalize_to_uint8(wrapper.data)
+                    if not isinstance(png_data, np.ndarray) or png_data.dtype != np.uint8:
+                        png_data = self._normalize_to_uint8(np.asarray(png_data))
+                    Image.fromarray(png_data).save(file_path)
+            except Exception as e:
+                logger.error(f"Failed to export image for {item_uuid}: {e}")
+                QMessageBox.critical(
+                    self,
+                    "Save Failure",
+                    f"Failed to save image to {file_path}.\n\nError: {str(e)}"
+                )
 
     def set_as_segmentation_label(self, i_uuid: UUID, channel: int):
         """Set the selected image as the StarDist label image for alignment"""

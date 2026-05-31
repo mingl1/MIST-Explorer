@@ -379,7 +379,7 @@ class AlignmentPreviewDialog(AlignmentViewDialog):
         self.landmark_ransac_threshold_spinbox = QDoubleSpinBox()
         self.landmark_ransac_threshold_spinbox.setRange(1.0, 50.0)
         self.landmark_ransac_threshold_spinbox.setSingleStep(0.5)
-        self.landmark_ransac_threshold_spinbox.setValue(5.0)
+        self.landmark_ransac_threshold_spinbox.setValue(10.0)
         self.landmark_ransac_threshold_spinbox.setDecimals(1)
         self.landmark_ransac_threshold_spinbox.setToolTip(
             "RANSAC inlier threshold in pixels (lower = stricter outlier rejection)"
@@ -629,7 +629,7 @@ class AlignmentPreviewDialog(AlignmentViewDialog):
                 data = json.load(f)
             batch = data["current_batch"]
             landmarks = batch["landmarks"]
-            threshold = float(batch.get("ransac_threshold_px", 5.0))
+            threshold = float(batch.get("ransac_threshold_px", 10.0))
         except Exception as exc:
             QMessageBox.warning(
                 self, "Import Error", f"Could not parse landmarks file:\n{exc}"

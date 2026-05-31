@@ -460,7 +460,7 @@ def apply_ransac_affine_warp(
     img: np.ndarray,
     fixed_pts_colrow: np.ndarray,
     moving_pts_colrow: np.ndarray,
-    ransac_threshold: float = 5.0,
+    ransac_threshold: float = 10.0,
     out_shape: tuple[int, int] | None = None,
 ) -> tuple[np.ndarray, dict]:
     """Fit affine with RANSAC and warp img. Returns (warped, {"M", "inliers", "reprojection_px"})."""

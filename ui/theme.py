@@ -176,11 +176,7 @@ class ThemeManager(QObject):
         inst = cls(app)
         cls._instance = inst
 
-        saved = inst._load_preference()
-        if saved in ("DARK", "LIGHT"):
-            inst._mode = saved
-        else:
-            inst._mode = inst.detect_system_theme()
+        inst._mode = inst.detect_system_theme()
 
         inst._apply()
         logger.info("ThemeManager initialized: %s", inst._mode)

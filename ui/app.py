@@ -39,8 +39,7 @@ class _ResizeDragButton(QPushButton):
     def __init__(self, handle: "SidebarHandle"):
         super().__init__(handle)
         self._handle = handle
-        icon_path = resource_path("assets/icons/left_right_indicator.svg")
-        self.setIcon(QIcon(str(icon_path)))
+        self._icon_path = resource_path("assets/icons/left_right_indicator.svg")
         self.setIconSize(QSize(12, 12))
         self.setFixedSize(14, 40)
         self.setCursor(Qt.CursorShape.SizeHorCursor)
@@ -48,8 +47,9 @@ class _ResizeDragButton(QPushButton):
         self._apply_theme()
 
     def _apply_theme(self):
-        from ui.theme import ThemeManager
+        from ui.theme import ThemeManager, make_themed_icon
         c = ThemeManager.instance().get_current()
+        self.setIcon(make_themed_icon(str(self._icon_path), 12))
         self.setStyleSheet(
             f"""
             QPushButton {{
@@ -94,10 +94,12 @@ class SidebarHandle(QSplitterHandle):
         self.setFixedWidth(16)
         self.setStyleSheet("background: transparent;")
 
-        self._btn = QPushButton("‹", self)
+        self._btn = QPushButton(self)
         self._btn.setFixedSize(14, 40)
+        self._btn.setIconSize(QSize(12, 12))
         self._btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._btn.setToolTip("Collapse/expand sidebar")
+        self._collapsed = False
         self._apply_btn_theme()
 
         self._resize_btn = _ResizeDragButton(handle=self)
@@ -115,23 +117,25 @@ class SidebarHandle(QSplitterHandle):
         self._container.adjustSize()
 
     def _apply_btn_theme(self):
-        from ui.theme import ThemeManager
+        from ui.theme import ThemeManager, make_themed_icon
         c = ThemeManager.instance().get_current()
+        icon_name = "chevron_right.svg" if self._collapsed else "chevron_left.svg"
+        icon_path = resource_path(f"assets/icons/{icon_name}")
+        self._btn.setIcon(make_themed_icon(str(icon_path), 12))
         self._btn.setStyleSheet(
             f"""
             QPushButton {{
                 background: {c["handle_bg"]};
                 border: none;
                 border-radius: 4px;
-                font-size: 11px;
-                color: {c["handle_text"]};
             }}
             QPushButton:hover {{ background: {c["handle_hover"]}; }}
         """
         )
 
     def set_collapsed(self, collapsed: bool):
-        self._btn.setText("›" if collapsed else "‹")
+        self._collapsed = collapsed
+        self._apply_btn_theme()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
