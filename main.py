@@ -16,36 +16,49 @@ _log_dir.mkdir(parents=True, exist_ok=True)
 _log_file = _log_dir / "mist-explorer.log"
 _crash_file = _log_dir / "crash.log"
 
-# --- Root logger with file + console output ---
-_fmt = logging.Formatter(
-    "%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
-)
 
-# Rotating file handler: 5 MB per file, keep 3 backups
-_file_handler = RotatingFileHandler(
-    _log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
-)
-_file_handler.setLevel(logging.DEBUG)
-_file_handler.setFormatter(_fmt)
+def setup_logging(console_logs=False):
+    """Configure logging for the application."""
+    fmt = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+    )
+    handlers = []
 
-_console_handler = logging.StreamHandler()
-_console_handler.setLevel(logging.WARNING)
-_console_handler.setFormatter(_fmt)
+    # Console handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(fmt)
+    if console_logs:
+        console_handler.setLevel(logging.DEBUG)
+    else:
+        console_handler.setLevel(logging.WARNING)
+    handlers.append(console_handler)
 
-logging.basicConfig(level=logging.WARNING, handlers=[_file_handler, _console_handler])
-for _name in ("core", "ui", "controller", "UMAP_App", "MIST_UMAP", "MIST_MAIN"):
-    logging.getLogger(_name).setLevel(logging.DEBUG)
+    # File handler (if not console-only)
+    if not console_logs:
+        file_handler = RotatingFileHandler(
+            _log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+        )
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(fmt)
+        handlers.append(file_handler)
 
-_logger = logging.getLogger("MIST_MAIN")
-_logger.info("=== MIST-Explorer started ===")
-_logger.info(f"Log file: {_log_file}")
+    # Use force=True to reconfigure if basicConfig was already called
+    logging.basicConfig(level=logging.WARNING, handlers=handlers, force=True)
+    for name in ("core", "ui", "controller", "UMAP_App", "MIST_UMAP", "MIST_MAIN"):
+        logging.getLogger(name).setLevel(logging.DEBUG)
+
+    logger = logging.getLogger("MIST_MAIN")
+    logger.info("=== MIST-Explorer started ===")
+    if not console_logs:
+        logger.info(f"Log file: {_log_file}")
 
 
 # --- Global crash handler ---
 def _crash_handler(exc_type, exc_value, exc_tb):
     """Write unhandled exceptions to crash.log and the main log, then exit."""
+    logger = logging.getLogger("MIST_MAIN")
     tb_text = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
-    _logger.critical(f"Unhandled exception:\n{tb_text}")
+    logger.critical(f"Unhandled exception:\n{tb_text}")
     try:
         with open(_crash_file, "w", encoding="utf-8") as f:
             f.write(f"MIST-Explorer Crash Report\n{'=' * 40}\n\n{tb_text}")
@@ -116,6 +129,11 @@ def parse_cli_args(argv=None):
         help="Cell data CSV/XLSX for View tab.")
     parser.add_argument("-r", "--reference", default=None,
         help="Reference image for Extract tab.")
+    parser.add_argument(
+        "--console-logs",
+        action="store_true",
+        help="Redirect logs to console/stdout instead of a file.",
+    )
     return parser.parse_known_args(argv)
 
 
@@ -162,6 +180,7 @@ def launch_main_window(app: QApplication, project_path: Path, cli_args=None):
 
 if __name__ == "__main__":
     cli_args, qt_args = parse_cli_args(sys.argv[1:])
+    setup_logging(cli_args.console_logs)
     __app = QApplication([sys.argv[0], *qt_args])
 
     loading_dialog = LoadingDialog()

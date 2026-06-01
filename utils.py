@@ -414,7 +414,7 @@ def remove_padding(padded_image, original_shape):
 
 
 def warp_image(img, transform_matrix) -> np.ndarray:
-    """Inverse warp an image using the given affine matrix.
+    """Warp an image using the given backward affine matrix (DST→SRC).
 
     Preserves the input dtype when cv2 supports it (uint8, uint16, int16,
     float32, float64). Promotes other integer/float dtypes to float32, and
@@ -425,9 +425,9 @@ def warp_image(img, transform_matrix) -> np.ndarray:
         return img
 
     if transform_matrix.shape == (2, 3):
-        M_inv = np.linalg.inv(np.vstack([transform_matrix, [0, 0, 1]]))[:2, :]
+        M = transform_matrix
     elif transform_matrix.shape == (3, 3):
-        M_inv = np.linalg.inv(transform_matrix)[:2, :]
+        M = transform_matrix[:2, :]
     else:
         raise ValueError("Transform matrix must be 2x3 or 3x3")
 
@@ -435,7 +435,7 @@ def warp_image(img, transform_matrix) -> np.ndarray:
     src = to_cv2_friendly(img)
     h, w = src.shape[:2]
     warped = cv2.warpAffine(
-        src, M_inv, (w, h), flags=cv2.INTER_LINEAR, borderValue=0
+        src, M, (w, h), flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP, borderValue=0
     )
     if warped.dtype != original_dtype and original_dtype in _CV2_WARP_DTYPES:
         warped = warped.astype(original_dtype, copy=False)
@@ -452,6 +452,12 @@ def _safe_warp_affine(
     if original_dtype not in _cv2_ok:
         img = img.astype(np.float32)
     h, w = out_shape_hw if out_shape_hw else img.shape[:2]
+    # By default, cv2.warpAffine expects a backward map (dst->src).
+    # If M is a forward map (src->dst), we should either invert it or use the flag.
+    # To be consistent with warp_image, we use the flag and expect M to be a backward map,
+    # OR we follow the controller's expectation of forward maps and NO flag.
+    # Given apply_ransac_affine_warp gets a forward map from estimateAffine2D,
+    # we should NOT use the flag so warpAffine inverts it.
     warped = cv2.warpAffine(img, M, (w, h), flags=cv2.INTER_LINEAR, borderValue=0)
     return warped.astype(original_dtype) if warped.dtype != original_dtype else warped
 
@@ -471,6 +477,8 @@ def apply_ransac_affine_warp(
     )
     if M is None:
         raise RuntimeError("Affine RANSAC failed — too few inliers.")
+    # estimateAffine2D returns a forward map (SRC→DST), which is what
+    # cv2.warpAffine expects by default.
     warped = _safe_warp_affine(img, M, out_shape)
     proj = (M[:, :2] @ moving_pts_colrow.T + M[:, 2:]).T
     err = float(np.mean(np.linalg.norm(proj - fixed_pts_colrow, axis=1)))

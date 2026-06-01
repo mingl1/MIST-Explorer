@@ -81,6 +81,8 @@ class AlignmentPreviewDialog(AlignmentViewDialog):
         self.downscaled = False
 
         self._ransac_M: np.ndarray | None = None
+        self._last_lm_src: np.ndarray | None = None
+        self._last_lm_dst: np.ndarray | None = None
 
         self._lm_mode = False
         self._lm_waiting_for = "reference"  # "reference" | "moving"
@@ -166,6 +168,9 @@ class AlignmentPreviewDialog(AlignmentViewDialog):
         self.image_view.moving_item.resetTransform()
         self.offset_x, self.offset_y = 0, 0
         self.transformations = [[0.0, []]]
+        self._ransac_M = None
+        self.aligned_image = to_uint8(self.original_aligned_image.copy())
+        self._refresh_overlay()
         self.reset_zoom()
         self.update_offset_label()
 
@@ -357,6 +362,11 @@ class AlignmentPreviewDialog(AlignmentViewDialog):
 
     def _setup_landmark_controls(self) -> None:
         self.landmark_button = QPushButton("Start Landmark")
+        self.landmark_reuse_button = QPushButton("Reuse Previous")
+        self.landmark_reuse_button.setEnabled(False)
+        self.landmark_reuse_button.setVisible(False)
+        self.landmark_reuse_button.setToolTip("Restore landmarks from the previous RANSAC estimation")
+
         self.landmark_undo_button = QPushButton("Undo Last")
         self.landmark_undo_button.setEnabled(False)
         self.landmark_cancel_button = QPushButton("Cancel Landmark")
@@ -372,6 +382,7 @@ class AlignmentPreviewDialog(AlignmentViewDialog):
         self.export_landmarks_btn.clicked.connect(self._export_landmarks_to_json)
 
         self.landmark_button.clicked.connect(self._on_landmark_button_clicked)
+        self.landmark_reuse_button.clicked.connect(self._reuse_last_landmarks)
         self.landmark_undo_button.clicked.connect(self._undo_landmark)
         self.landmark_cancel_button.clicked.connect(self._cancel_landmark_mode)
 
@@ -386,6 +397,7 @@ class AlignmentPreviewDialog(AlignmentViewDialog):
         )
 
         self.landmark_layout.addWidget(self.landmark_button)
+        self.landmark_layout.addWidget(self.landmark_reuse_button)
         self.landmark_layout.addWidget(self.landmark_undo_button)
         self.landmark_layout.addWidget(self.landmark_cancel_button)
         self.landmark_layout.addWidget(self.landmark_status_label)
@@ -453,10 +465,13 @@ class AlignmentPreviewDialog(AlignmentViewDialog):
         self._update_landmark_ui()
 
     def _on_landmark_click(self, scene_x: float, scene_y: float) -> None:
+        radius = self.landmark_ransac_threshold_spinbox.value()
         if self._lm_waiting_for == "reference":
             self._lm_pending_ref = (scene_x, scene_y)
             n = len(self._lm_src_pts) + 1
-            marker = self._add_scene_marker(scene_x, scene_y, n, QColor(255, 80, 80))
+            marker = self._add_scene_marker(
+                scene_x, scene_y, n, QColor(255, 80, 80), radius=radius
+            )
             self._lm_ref_markers.append(marker)
             self._lm_waiting_for = "moving"
         elif self._lm_waiting_for == "moving" and self._lm_pending_ref is not None:
@@ -467,15 +482,17 @@ class AlignmentPreviewDialog(AlignmentViewDialog):
             self._lm_dst_pts.append((local_pt.x(), local_pt.y()))
             self._lm_pending_ref = None
             n = len(self._lm_src_pts)
-            marker = self._add_scene_marker(scene_x, scene_y, n, QColor(80, 210, 80))
+            marker = self._add_scene_marker(
+                scene_x, scene_y, n, QColor(80, 210, 80), radius=radius
+            )
             self._lm_mov_markers.append(marker)
             self._lm_waiting_for = "reference"
         self._update_landmark_ui()
 
     def _add_scene_marker(
-        self, x: float, y: float, number: int, color: QColor
+        self, x: float, y: float, number: int, color: QColor, radius: float = 8.0
     ) -> tuple:
-        r = 8
+        r = max(4.0, radius)  # Ensure it's never too small to see
         ellipse = QGraphicsEllipseItem(x - r, y - r, r * 2, r * 2)
         fill = QColor(color.red(), color.green(), color.blue(), 130)
         ellipse.setBrush(QBrush(fill))
@@ -484,7 +501,7 @@ class AlignmentPreviewDialog(AlignmentViewDialog):
         self.image_view.get_scene().addItem(ellipse)
 
         text = QGraphicsSimpleTextItem(str(number))
-        font = QFont("Arial", 8, QFont.Weight.Bold)
+        font = QFont("Arial", max(8, int(r * 0.8)), QFont.Weight.Bold)
         text.setFont(font)
         text.setBrush(QBrush(Qt.GlobalColor.white))
         text.setPos(x + r + 1, y - r - 1)
@@ -516,6 +533,12 @@ class AlignmentPreviewDialog(AlignmentViewDialog):
         has_pending = self._lm_pending_ref is not None
         self.landmark_undo_button.setEnabled(self._lm_mode and (bool(n) or has_pending))
         self.landmark_cancel_button.setEnabled(self._lm_mode)
+
+        self.landmark_reuse_button.setVisible(self._lm_mode)
+        self.landmark_reuse_button.setEnabled(
+            self._lm_mode and self._last_lm_src is not None
+        )
+
         has_data = bool(n) or (self._ransac_M is not None)
         self.export_landmarks_btn.setEnabled(has_data)
 
@@ -546,10 +569,40 @@ class AlignmentPreviewDialog(AlignmentViewDialog):
             self.landmark_button.setText(f"Need {3 - n} more pair(s)")
             self.landmark_button.setEnabled(False)
 
+    def _reuse_last_landmarks(self) -> None:
+        if self._last_lm_src is None or self._last_lm_dst is None:
+            return
+
+        # Clear any pending reference click to avoid mismatching
+        if self._lm_waiting_for == "moving" and self._lm_pending_ref is not None:
+            self._undo_landmark()
+
+        radius = self.landmark_ransac_threshold_spinbox.value()
+        for s, d in zip(self._last_lm_src, self._last_lm_dst):
+            n = len(self._lm_src_pts) + 1
+            # src (s) is in scene space
+            self._lm_src_pts.append(tuple(s))
+            ref_marker = self._add_scene_marker(
+                s[0], s[1], n, QColor(255, 80, 80), radius=radius
+            )
+            self._lm_ref_markers.append(ref_marker)
+
+            # dst (d) is in local space of CURRENT baked pixmap
+            scene_pt = self.image_view.moving_item.mapToScene(QPointF(d[0], d[1]))
+            self._lm_dst_pts.append(tuple(d))
+            mov_marker = self._add_scene_marker(
+                scene_pt.x(), scene_pt.y(), n, QColor(80, 210, 80), radius=radius
+            )
+            self._lm_mov_markers.append(mov_marker)
+
+        self._update_landmark_ui()
+
     def _bake_ui_transform(self, qt_matrix: np.ndarray, w: int, h: int) -> None:
         identity = np.array([[1, 0, 0], [0, 1, 0]], dtype=np.float32)
         if np.allclose(qt_matrix, identity):
             return
+        # qt_matrix is a forward map (SRC→DST). By default, cv2.warpAffine
+        # expects a forward map and inverts it internally.
         baked = cv2.warpAffine(
             self.aligned_image, qt_matrix, (w, h), flags=cv2.INTER_LINEAR, borderValue=0
         )
@@ -597,6 +650,10 @@ class AlignmentPreviewDialog(AlignmentViewDialog):
             prev_3x3 = np.vstack([self._ransac_M, [0, 0, 1]])
             new_3x3 = np.vstack([new_M, [0, 0, 1]])
             self._ransac_M = (new_3x3 @ prev_3x3)[:2, :]
+
+        # Save for possible reuse
+        self._last_lm_src = src.copy()
+        self._last_lm_dst = dst_baked.copy()
 
         self.aligned_image = warped
         self._refresh_overlay()
@@ -650,13 +707,15 @@ class AlignmentPreviewDialog(AlignmentViewDialog):
             dst = lm["dst"]
             n = len(self._lm_src_pts) + 1
 
-            ref_marker = self._add_scene_marker(src[0], src[1], n, QColor(255, 80, 80))
+            ref_marker = self._add_scene_marker(
+                src[0], src[1], n, QColor(255, 80, 80), radius=threshold
+            )
             self._lm_ref_markers.append(ref_marker)
             self._lm_src_pts.append((src[0], src[1]))
 
             mov_scene = self.image_view.moving_item.mapToScene(QPointF(dst[0], dst[1]))
             mov_marker = self._add_scene_marker(
-                mov_scene.x(), mov_scene.y(), n, QColor(80, 210, 80)
+                mov_scene.x(), mov_scene.y(), n, QColor(80, 210, 80), radius=threshold
             )
             self._lm_mov_markers.append(mov_marker)
             self._lm_dst_pts.append((dst[0], dst[1]))

@@ -95,6 +95,7 @@ class ReferenceGraphicsViewUI(QGraphicsView):
         self.size_grip.setCursor(Qt.CursorShape.SizeFDiagCursor)
         # Install event filter to intercept size grip events
         self.size_grip.installEventFilter(self)
+        self.setAcceptDrops(True)
 
         # self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         # self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
@@ -163,14 +164,22 @@ class ReferenceGraphicsViewUI(QGraphicsView):
     # pylint: disable=invalid-name
     def dragEnterEvent(self, event: QDragEnterEvent | None):
         """Handle drag enter event"""
-        if event is not None and event.mimeData() is not None:
-            event.acceptProposedAction()
+        if event is not None:
+            mime = event.mimeData()
+            if mime and mime.hasUrls():
+                event.setDropAction(Qt.DropAction.CopyAction)
+                event.accept()
 
     # pylint: disable=invalid-name
     def dragMoveEvent(self, event: QDragMoveEvent | None):
         """Handle drag move event"""
         if event is not None:
-            event.acceptProposedAction()
+            mime = event.mimeData()
+            if mime and mime.hasUrls():
+                event.setDropAction(Qt.DropAction.CopyAction)
+                event.accept()
+            else:
+                event.ignore()
 
     # pylint: disable=invalid-name
     def dropEvent(self, event: QDropEvent | None):
@@ -184,7 +193,8 @@ class ReferenceGraphicsViewUI(QGraphicsView):
                 file_path = url.toLocalFile()
                 if file_path is not None:
                     self.image_dropped.emit(file_path)
-            event.acceptProposedAction()
+            event.setDropAction(Qt.DropAction.CopyAction)
+            event.accept()
 
     def position_arrows(self):
         """Position the navigation arrows"""

@@ -315,13 +315,13 @@ class ImageStorage:
 
 # Could maybe use collections.namedtuple to represent ImageWrapper
 class ImageWrapper:
-    def __init__(self, data, name="", cmap="gray"):
+    def __init__(self, data, name="", cmap="gray", copy_data=True):
         if not isinstance(data, np.ndarray):
             raise TypeError("Data must be a numpy array.")
 
         self.name = name
         self.cmap = cmap
-        self.data = data.copy()
+        self.data = data.copy() if copy_data else data
         self.contrast_min = 0
         self.contrast_max = 255
         self.is_virtual_segmentation = False
@@ -329,11 +329,11 @@ class ImageWrapper:
         # intentionally NOT copied so that a new wrapper always gets a fresh cache.
         self._thumb_cache: dict[int, np.ndarray] = {}
 
-    def copy(self):
+    def copy(self, copy_data=True):
         new_obj = object.__new__(ImageWrapper)
         new_obj.name = self.name
         new_obj.cmap = self.cmap
-        new_obj.data = self.data.copy()
+        new_obj.data = self.data.copy() if copy_data else self.data
         new_obj.contrast_min = self.contrast_min
         new_obj.contrast_max = self.contrast_max
         new_obj.is_virtual_segmentation = self.is_virtual_segmentation
@@ -341,7 +341,7 @@ class ImageWrapper:
         return new_obj
 
     def __copy__(self):
-        return self.copy()
+        return self.copy(copy_data=True)
 
     def __deepcopy__(self, memo):
         new_obj = object.__new__(ImageWrapper)
@@ -446,8 +446,11 @@ class BaseGraphicsView(QWidget):
         if event and event.mimeData():
             mime_data = event.mimeData()
             if mime_data is not None and mime_data.hasUrls():
-                event.acceptProposedAction()
+                event.setDropAction(Qt.DropAction.CopyAction)
+                event.accept()
                 return True
+        if event:
+            event.ignore()
         return False
 
     def _read_tiff_pages(self, file_path):
@@ -527,7 +530,7 @@ class BaseGraphicsView(QWidget):
                 channel_name = f"Channel {channel_num}"
                 image_adjusted = self._apply_contrast_adjustment(image, adjust_contrast)
                 working_channels[channel_name] = ImageWrapper(
-                    image_adjusted, channel_name
+                    image_adjusted, channel_name, copy_data=False
                 )
                 self._update_progress(channel_num, self.num_channels)
                 # print("File queue:", self.file_queue, "Current file:", file_name)
@@ -542,7 +545,7 @@ class BaseGraphicsView(QWidget):
                         channel_one_image = display_image
                 self.working_channels = working_channels
                 self._update_number_of_channels(emit_data, subsample_for_emit)
-                self.reset_working_channels = {name: w.copy() for name, w in working_channels.items()}
+                self.reset_working_channels = {name: w.copy(copy_data=False) for name, w in working_channels.items()}
 
                 self._schedule_caching_task(self.working_channels, self.uuid)
 
@@ -571,13 +574,13 @@ class BaseGraphicsView(QWidget):
             )
             raise
         channel_name = "Channel 1"
-        channel_one_wrapper = ImageWrapper(channel_one_image, channel_name)
+        channel_one_wrapper = ImageWrapper(channel_one_image, channel_name, copy_data=False)
         working_channel = {channel_name: channel_one_wrapper}
         display_image = scale_adjust(channel_one_image)
         with self.queue_lock:
             if self.file_queue and self.file_queue[-1] == file_name:
                 self.working_channels = working_channel
-                self.reset_working_channels = working_channel.copy()
+                self.reset_working_channels = {k: v.copy(copy_data=False) for k, v in working_channel.items()}
                 emit_data[channel_name] = display_image
                 self._update_number_of_channels(emit_data, subsample_for_emit)
                 self.memory_cache.put(
@@ -747,7 +750,7 @@ class BaseGraphicsView(QWidget):
         img_data = scale_adjust(image_data)
 
         # Store full resolution
-        self.image_wrapper = ImageWrapper(img_data, "Channel 1")
+        self.image_wrapper = ImageWrapper(img_data, "Channel 1", copy_data=False)
         self.working_channels[channel_name] = self.image_wrapper
 
         # Handle display emission
@@ -777,8 +780,8 @@ class BaseGraphicsView(QWidget):
         self, channel_name: str, image_wrapper: ImageWrapper, replace_image_wrapper=True
     ) -> None:
         """Store channel data in full resolution containers."""
-        self.working_channels[channel_name] = image_wrapper.copy()
-        self.reset_working_channels[channel_name] = image_wrapper.copy()
+        self.working_channels[channel_name] = image_wrapper.copy(copy_data=False)
+        self.reset_working_channels[channel_name] = image_wrapper.copy(copy_data=False)
         if replace_image_wrapper:
             logger.debug("stored image_wrapper")
             self.image_wrapper = self.working_channels[channel_name]
@@ -829,7 +832,7 @@ class BaseGraphicsView(QWidget):
             if subsample_for_emit:
                 # Create wrappers for subsampled data
                 display_wrappers = {
-                    name: ImageWrapper(data, name) for name, data in emit_data.items()
+                    name: ImageWrapper(data, name, copy_data=False) for name, data in emit_data.items()
                 }
                 # self.np_channels.update(display_wrappers)
                 self.image_signal.emit(display_wrappers, True)
@@ -862,8 +865,8 @@ class BaseGraphicsView(QWidget):
     def _add_to_manager(self, file_name: str, image_channels, metadata=None) -> None:
         """Finalize processing with cleanup and emissions."""
         self.update_progress.emit(100, "Image Loaded")
-        # Deep copy to prevent race: worker may mutate working_channels after emission
-        channels_snapshot = copy.deepcopy(image_channels)
+        # Shallow copy to prevent race while minimizing memory overhead
+        channels_snapshot = {k: v.copy(copy_data=False) for k, v in image_channels.items()}
         self.update_manager.emit(channels_snapshot, file_name, metadata)
         self.image_count += 1
 

@@ -246,6 +246,8 @@ class Controller:
             if img.dtype not in _cv2_ok:
                 img = img.astype(np.float32)
             out_h, out_w = target_shape[:2] if target_shape is not None else img.shape[:2]
+            # Controller receives a forward map (Moving→Target) from UI/Aligner,
+            # which is what cv2.warpAffine expects by default.
             warped = cv2.warpAffine(img, matrix, (out_w, out_h))
             results[layer_key] = (
                 warped.astype(original_dtype) if warped.dtype != original_dtype else warped

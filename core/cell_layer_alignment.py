@@ -340,11 +340,9 @@ class CellLayerAligner(QThread):
                 del final_aligned_image
                 final_aligned_image = next_aligned
 
-            # warp_image() uses its matrix as a backward map (DST→SRC), so
-            # sequential warps compose as: M_coarse @ M_refine (@ M_grad).
-            # _apply_matrix_to_all_layers uses cv2.warpAffine directly (forward
-            # SRC→DST convention), so we invert the composed backward map to
-            # get a forward matrix compatible with Qt transforms.
+            # Sequential warps using warp_image() compose as: M_coarse @ M_refine (@ M_grad).
+            # Controller receives the inverted (forward Moving→Target) map for Qt
+            # compatibility, and handles inverting it back to backward map for warping.
             coarse_3x3 = np.vstack([full_coarse_matrix, [0, 0, 1]])
             refine_3x3 = np.vstack([full_refinement_transform, [0, 0, 1]])
             pre_3x3_bwd = coarse_3x3 @ refine_3x3
@@ -566,9 +564,12 @@ class CellLayerAligner(QThread):
             scaled_matrix[0, 2] *= scale_factor
             scaled_matrix[1, 2] *= scale_factor
         elif matrix.shape == (3, 3):
-            s_from = np.diag([from_scale, from_scale, 1.0])
-            s_to_inv = np.diag([1 / to_scale, 1 / to_scale, 1.0])
-            scaled_matrix = s_to_inv @ matrix @ s_from
+            # For 3x3 matrices (DST = M @ SRC), scaling coordinates by S
+            # (where S is the diag matrix of scale_factor) results in M_new = S @ M @ S_inv.
+            # This preserves the rotation/scale part and scales translation by scale_factor.
+            s = np.diag([scale_factor, scale_factor, 1.0])
+            s_inv = np.diag([1 / scale_factor, 1 / scale_factor, 1.0])
+            scaled_matrix = s @ matrix @ s_inv
         return scaled_matrix
 
     def _convert_to_original_dtype(self, img, original_dtype):

@@ -506,12 +506,18 @@ class ImageTreeWidget(QTreeView):
         """Handle drag enter."""
         mime = event.mimeData()
         if mime and mime.hasUrls():
-            event.acceptProposedAction()
+            event.setDropAction(Qt.DropAction.CopyAction)
+            event.accept()
 
     # pylint: disable=invalid-name
     def dragMoveEvent(self, event):  # type: ignore
         """Handle drag move."""
-        event.acceptProposedAction()
+        mime = event.mimeData()
+        if mime and mime.hasUrls():
+            event.setDropAction(Qt.DropAction.CopyAction)
+            event.accept()
+        else:
+            event.ignore()
 
     # pylint: disable=invalid-name
     def dropEvent(self, event):  # type: ignore
@@ -524,7 +530,8 @@ class ImageTreeWidget(QTreeView):
                 file_path = url.toLocalFile()
                 if file_path is not None:
                     self.image_dropped.emit(file_path)
-            event.acceptProposedAction()
+            event.setDropAction(Qt.DropAction.CopyAction)
+            event.accept()
 
     def selectionChanged(self, selected: QItemSelection, deselected: QItemSelection):
         """Emit generation context whenever image-manager selection changes."""
