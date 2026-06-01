@@ -27,6 +27,7 @@ from core.project_manager import ProjectManager
 from core.project_naming import is_segmentation_channel, is_temp_project_name
 from ui.alignment.alignment_preview_dialog import AlignmentPreviewDialog
 from ui.alignment.alignment_view_dialog import AlignmentViewDialog
+from ui.alignment.crop_anchor_dialog import CropAnchorDialog
 from ui.stardist.crop_experiment_dialog import CropExperimentDialog
 
 logger = logging.getLogger(__name__)
@@ -1034,6 +1035,9 @@ class SignalConnectionManager:
         )
 
         # Execution
+        self.c.view.register_groupbox.find_anchor_button.clicked.connect(
+            self._open_crop_anchor_dialog
+        )
         self.c.view.register_groupbox.run_button.clicked.connect(
             self.c.model_register.run_registration
         )
@@ -1102,6 +1106,51 @@ class SignalConnectionManager:
         self.c.model_register.set_reference_channel_key(
             self.c.view.register_groupbox.reference_selector.current_channel()
         )
+
+    def _open_crop_anchor_dialog(self):
+        """Open the auto crop-anchor finder for the selected moving/reference pair.
+
+        Reference = decoding cycle 1 (smaller); its top-left patch is located within
+        the moving protein image, which is then rotate-then-cropped at that anchor.
+        """
+        storage = self.c.view.images_tab.storage
+        mov_entry = storage.get_data("alignment_moving_uuid")
+        ref_entry = storage.get_data("alignment_ref_uuid")
+        if not mov_entry or not ref_entry:
+            self.c.handle_error(
+                "Select both a Moving (protein) and Reference image in Align Arrays first."
+            )
+            return
+        mov_uuid = mov_entry["value"]
+        ref_uuid = ref_entry["value"]
+        mov_item = storage.get_data(mov_uuid)
+        ref_item = storage.get_data(ref_uuid)
+        if mov_item is None or ref_item is None:
+            self.c.handle_error("Selected images are no longer available.")
+            return
+
+        key = "Channel 1"
+        mov_data = mov_item["data"]
+        ref_data = ref_item["data"]
+        if key not in mov_data or key not in ref_data:
+            self.c.handle_error(f"Both images need a '{key}' (brightfield) channel.")
+            return
+        mov_ch = mov_data[key].data
+        ref_ch = ref_data[key].data
+
+        dialog = CropAnchorDialog(
+            ref_ch, mov_ch, ref_shape=ref_ch.shape, parent=self.c.view
+        )
+        dialog.transform_ready.connect(
+            lambda payload: self.c.model_canvas.crop_with_transform(
+                mov_uuid,
+                payload["T"],
+                payload["crop_w"],
+                payload["crop_h"],
+                source_name=mov_item.get("name"),
+            )
+        )
+        dialog.exec()
 
     def _setup_cell_intensity_conns(self):
         """Cell intensity-related connections"""

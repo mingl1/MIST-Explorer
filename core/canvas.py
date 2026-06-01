@@ -1928,6 +1928,49 @@ class ImageGraphicsView(BaseGraphicsView):
         if right <= left or bottom <= top:
             raise ValueError("❌ Invalid crop region: empty or out-of-bounds")
 
+    def crop_with_transform(
+        self, moving_uuid, transform, crop_w, crop_h, source_name=None
+    ):
+        """Rotate-then-crop the moving image using a reference->protein transform.
+
+        ``transform`` is a 2x3 affine T mapping reference coords into the moving
+        (protein) image. We invert it so the crop's top-left is reference (0, 0)
+        and the rotation is removed, then warp each channel directly into a
+        (crop_w, crop_h) output -- a single targeted warp that also crops, rather
+        than rotating the whole multi-gigapixel image. Saved as a new image.
+        """
+        item = self.storage.get_data(str(moving_uuid))
+        assert item is not None, "Moving image not found in storage while cropping"
+        src_channels = item["data"]
+
+        T = np.asarray(transform, dtype=np.float64).reshape(2, 3)
+        A = T[:, :2]
+        t = T[:, 2]
+        inv_a = np.linalg.inv(A)
+        M = np.hstack([inv_a, (-inv_a @ t).reshape(2, 1)]).astype(np.float32)
+
+        crop_w = int(round(crop_w))
+        crop_h = int(round(crop_h))
+        if crop_w <= 0 or crop_h <= 0:
+            raise ValueError("Invalid crop size")
+
+        name = f"cropped_{source_name or item.get('name', 'image')}"
+        channels = {}
+        for channel_name, wrapper in src_channels.items():
+            if "Channel" not in channel_name:
+                continue
+            warped = cv2.warpAffine(
+                wrapper.data, M, (crop_w, crop_h), flags=cv2.INTER_LINEAR
+            )
+            new_wrapper = ImageWrapper(warped, name=wrapper.name, cmap=wrapper.cmap)
+            new_wrapper.contrast_min = wrapper.contrast_min
+            new_wrapper.contrast_max = wrapper.contrast_max
+            channels[channel_name] = new_wrapper
+
+        if not channels:
+            raise ValueError("Moving image has no channels to crop")
+        self.add_to_canvas(channels, True, name)
+
     @pyqtSlot()
     def flip_horizontal(self):
         """Flip the image horizontally"""

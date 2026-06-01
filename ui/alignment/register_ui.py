@@ -96,6 +96,10 @@ class RegisterUI(QWidget):
         self.ncc_threshold_layout.addWidget(self.ncc_threshold_value_label)
         self.register_components_vlayout.addLayout(self.ncc_threshold_layout)
 
+        # find crop anchor button
+        self.find_anchor_button = QPushButton(self.register_groupbox)
+        self.register_components_vlayout.addWidget(self.find_anchor_button)
+
         # run button
         self.run_button = QPushButton(self.register_groupbox)
         self.register_components_vlayout.addWidget(self.run_button)
@@ -112,6 +116,7 @@ class RegisterUI(QWidget):
     def __retranslate_UI(self):
         _translate = QCoreApplication.translate
         self.register_groupbox.setTitle(_translate("MainWindow", "Align Arrays"))
+        self.find_anchor_button.setText(_translate("MainWindow", "Find Crop Anchor"))
         self.max_size_label.setText(_translate("MainWindow", "Max Size (px)"))
         self.num_tiles_label.setText(_translate("MainWindow", "Number of Tiles"))
         self.overlap_label.setText(_translate("MainWindow", "Overlap (px)"))
