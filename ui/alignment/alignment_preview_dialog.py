@@ -21,9 +21,11 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
     QMessageBox,
     QPushButton,
     QVBoxLayout,
+    QWidget,
 )
 
 from ui.alignment.alignment_view_dialog import (
@@ -116,6 +118,38 @@ class AlignmentPreviewDialog(AlignmentViewDialog):
             layout.addWidget(self.metadata_groupbox)
 
     def _add_editing_controls(self, layout: QVBoxLayout) -> None:
+        idx = layout.indexOf(self.image_view)
+        if idx != -1:
+            layout.removeWidget(self.image_view)
+            self.view_layout = QHBoxLayout()
+            self.view_layout.addWidget(self.image_view, stretch=1)
+
+            self.landmarks_sidebar = QWidget()
+            self.landmarks_sidebar.setFixedWidth(150)
+            sidebar_layout = QVBoxLayout(self.landmarks_sidebar)
+            sidebar_layout.setContentsMargins(0, 0, 0, 0)
+
+            header_layout = QHBoxLayout()
+            header_layout.addWidget(QLabel("<b>Landmarks</b>"))
+            self.hide_sidebar_btn = QPushButton("✕")
+            self.hide_sidebar_btn.setFixedSize(20, 20)
+            self.hide_sidebar_btn.setToolTip("Hide sidebar")
+            self.hide_sidebar_btn.clicked.connect(self._hide_landmarks_sidebar)
+            header_layout.addWidget(self.hide_sidebar_btn)
+            sidebar_layout.addLayout(header_layout)
+
+            self.landmarks_list_widget = QListWidget()
+            self.landmarks_list_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            self.landmarks_list_widget.customContextMenuRequested.connect(self._on_sidebar_right_click)
+            self.landmarks_list_widget.itemClicked.connect(
+                self._on_landmark_list_item_clicked
+            )
+            sidebar_layout.addWidget(self.landmarks_list_widget)
+
+            self.view_layout.addWidget(self.landmarks_sidebar)
+            self.landmarks_sidebar.setVisible(False)
+            layout.insertLayout(idx, self.view_layout)
+
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.control_layout = QHBoxLayout()
         self._setup_editable_controls()
@@ -356,6 +390,36 @@ class AlignmentPreviewDialog(AlignmentViewDialog):
         self.image_view.moving_item.setTransform(new_transform)
         self.update_offset_label()
 
+    def _hide_landmarks_sidebar(self) -> None:
+        self.landmarks_sidebar.setVisible(False)
+        if hasattr(self, "toggle_list_btn"):
+            self.toggle_list_btn.setChecked(False)
+
+    def _toggle_landmarks_list(self) -> None:
+        self.landmarks_sidebar.setVisible(self.toggle_list_btn.isChecked())
+
+    def _update_landmarks_list(self) -> None:
+        if not hasattr(self, "landmarks_list_widget"):
+            return
+        self.landmarks_list_widget.clear()
+        for i in range(len(self._lm_src_pts)):
+            self.landmarks_list_widget.addItem(f"Pair {i + 1}")
+        if self._lm_pending_ref is not None:
+            n = len(self._lm_src_pts) + 1
+            self.landmarks_list_widget.addItem(f"Pair {n} (pending)")
+
+    def _on_landmark_list_item_clicked(self, item) -> None:
+        idx = self.landmarks_list_widget.row(item)
+        if 0 <= idx < len(self._lm_src_pts):
+            src_x, src_y = self._lm_src_pts[idx]
+            self.image_view.centerOn(src_x, src_y)
+            # Zoom in if current zoom is too low
+            target_zoom = 3.0
+            if self.image_view._current_zoom < target_zoom:
+                factor = target_zoom / self.image_view._current_zoom
+                self.image_view.scale(factor, factor)
+                self.image_view._current_zoom = target_zoom
+
     # ------------------------------------------------------------------
     # Landmark controls
     # ------------------------------------------------------------------
@@ -365,7 +429,9 @@ class AlignmentPreviewDialog(AlignmentViewDialog):
         self.landmark_reuse_button = QPushButton("Reuse Previous")
         self.landmark_reuse_button.setEnabled(False)
         self.landmark_reuse_button.setVisible(False)
-        self.landmark_reuse_button.setToolTip("Restore landmarks from the previous RANSAC estimation")
+        self.landmark_reuse_button.setToolTip(
+            "Restore landmarks from the previous RANSAC estimation"
+        )
 
         self.landmark_undo_button = QPushButton("Undo Last")
         self.landmark_undo_button.setEnabled(False)
@@ -373,6 +439,12 @@ class AlignmentPreviewDialog(AlignmentViewDialog):
         self.landmark_cancel_button.setEnabled(False)
         self.landmark_cancel_button.setToolTip("Cancel landmark mode (Esc)")
         self.landmark_status_label = QLabel("")
+
+        self.toggle_list_btn = QPushButton("Toggle List")
+        self.toggle_list_btn.setCheckable(True)
+        self.toggle_list_btn.setChecked(True)
+        self.toggle_list_btn.setVisible(False)
+        self.toggle_list_btn.clicked.connect(self._toggle_landmarks_list)
 
         self.import_landmarks_btn = QPushButton("Import Landmarks JSON")
         self.import_landmarks_btn.clicked.connect(self._import_landmarks_from_json)
@@ -400,6 +472,7 @@ class AlignmentPreviewDialog(AlignmentViewDialog):
         self.landmark_layout.addWidget(self.landmark_reuse_button)
         self.landmark_layout.addWidget(self.landmark_undo_button)
         self.landmark_layout.addWidget(self.landmark_cancel_button)
+        self.landmark_layout.addWidget(self.toggle_list_btn)
         self.landmark_layout.addWidget(self.landmark_status_label)
         self.landmark_layout.addStretch()
         self.landmark_layout.addWidget(ransac_threshold_label)
@@ -440,6 +513,9 @@ class AlignmentPreviewDialog(AlignmentViewDialog):
         self.image_view.setStyleSheet("QGraphicsView { border: 2px solid #FFA500; }")
         self._set_transform_controls_enabled(False)
         self._update_preview_label()
+        self.toggle_list_btn.setVisible(True)
+        if self.toggle_list_btn.isChecked():
+            self.landmarks_sidebar.setVisible(True)
         self._update_landmark_ui()
 
     def _exit_landmark_mode(self) -> None:
@@ -449,6 +525,8 @@ class AlignmentPreviewDialog(AlignmentViewDialog):
         self.image_view.setStyleSheet("")
         self._set_transform_controls_enabled(True)
         self._update_preview_label()
+        self.toggle_list_btn.setVisible(False)
+        self.landmarks_sidebar.setVisible(False)
 
     def _cancel_landmark_mode(self) -> None:
         if not self._lm_mode:
@@ -487,6 +565,58 @@ class AlignmentPreviewDialog(AlignmentViewDialog):
             )
             self._lm_mov_markers.append(marker)
             self._lm_waiting_for = "reference"
+        self._update_landmark_ui()
+
+    def _on_landmark_right_click(self, scene_x: float, scene_y: float) -> None:
+        """Identify if a marker was clicked and delete it."""
+        # Check reference markers
+        for i, (ellipse, text) in enumerate(self._lm_ref_markers):
+            if ellipse.contains(ellipse.mapFromScene(QPointF(scene_x, scene_y))):
+                self._delete_landmark_at_index(i)
+                return
+        # Check moving markers
+        for i, (ellipse, text) in enumerate(self._lm_mov_markers):
+            if ellipse.contains(ellipse.mapFromScene(QPointF(scene_x, scene_y))):
+                self._delete_landmark_at_index(i)
+                return
+
+    def _on_sidebar_right_click(self, pos) -> None:
+        item = self.landmarks_list_widget.itemAt(pos)
+        if item:
+            idx = self.landmarks_list_widget.row(item)
+            self._delete_landmark_at_index(idx)
+
+    def _delete_landmark_at_index(self, index: int) -> None:
+        num_completed = len(self._lm_src_pts)
+        is_pending = (index == num_completed) and (self._lm_pending_ref is not None)
+
+        if index < num_completed:
+            # Delete completed pair
+            self._lm_src_pts.pop(index)
+            self._lm_dst_pts.pop(index)
+            # Remove markers from scene
+            for marker_list in (self._lm_ref_markers, self._lm_mov_markers):
+                e, t = marker_list.pop(index)
+                self.image_view.get_scene().removeItem(e)
+                self.image_view.get_scene().removeItem(t)
+        elif is_pending:
+            # Delete pending reference
+            self._lm_pending_ref = None
+            self._lm_waiting_for = "reference"
+            e, t = self._lm_ref_markers.pop(index)
+            self.image_view.get_scene().removeItem(e)
+            self.image_view.get_scene().removeItem(t)
+        else:
+            return
+
+        # Re-number remaining markers
+        for i in range(index, len(self._lm_ref_markers)):
+            _, t = self._lm_ref_markers[i]
+            t.setText(str(i + 1))
+        for i in range(index, len(self._lm_mov_markers)):
+            _, t = self._lm_mov_markers[i]
+            t.setText(str(i + 1))
+
         self._update_landmark_ui()
 
     def _add_scene_marker(
@@ -541,6 +671,8 @@ class AlignmentPreviewDialog(AlignmentViewDialog):
 
         has_data = bool(n) or (self._ransac_M is not None)
         self.export_landmarks_btn.setEnabled(has_data)
+
+        self._update_landmarks_list()
 
         if not self._lm_mode:
             self.landmark_button.setText("Start Landmark")
@@ -653,7 +785,9 @@ class AlignmentPreviewDialog(AlignmentViewDialog):
 
         # Save for possible reuse
         self._last_lm_src = src.copy()
-        self._last_lm_dst = dst_baked.copy()
+        # Project dst_baked through new_M to find their new locations in the warped image
+        dst_baked_h = np.hstack([dst_baked, np.ones((len(dst_baked), 1), dtype=np.float64)])
+        self._last_lm_dst = (dst_baked_h @ new_M.T).copy()
 
         self.aligned_image = warped
         self._refresh_overlay()

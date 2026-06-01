@@ -3,13 +3,13 @@ import math
 import cv2
 import numpy as np
 import pytest
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QListWidget
 from scipy.ndimage import center_of_mass
 
 #
-from ui.alignment.alignment_preview_dialog import (
-    AlignmentPreviewDialog,
-)  # Replace with your actual import
+from ui.alignment.alignment_preview_dialog import \
+    AlignmentPreviewDialog  # Replace with your actual import
 
 # --- Helper Functions for Testing ---
 
@@ -83,6 +83,7 @@ def dialog(qtbot):
     
     def test_mock_get_current_aligned_image():
         import copy
+
         # The logic of the test assumes that accepting computes the final image and returns it.
         # But accept_alignment() emits it and closes the dialog.
         # So we can just call it (if it hasn't been called) or capture the emitted value.
@@ -317,3 +318,101 @@ class TestAlignmentPreviewDialog:
             f"Expected T({dx},0) but got {matrix}. "
             "Landmark coords were likely not projected into baked image space."
         )
+
+    def test_landmark_reuse_after_ransac(self, dialog):
+        """Test that 'Reuse Previous' landmarks follow the features after a RANSAC warp.
+
+        When a RANSAC alignment is applied, the moving image is 'baked' (warped).
+        Reused landmarks must be updated to their new positions in the baked image
+        so that they stay anchored to the image features they were originally placed on.
+        """
+        # 1. Start landmark mode
+        dialog._on_landmark_button_clicked()
+        assert dialog._lm_mode is True
+
+        # 2. Add 3 pairs of landmarks to satisfy minimum requirement
+        # We'll simulate a 20px right shift alignment.
+        # Target points at (500, 500), (600, 500), (500, 600)
+        # Moving points at (480, 500), (580, 500), (480, 600)
+        pairs = [
+            ((500.0, 500.0), (480.0, 500.0)),
+            ((600.0, 500.0), (580.0, 500.0)),
+            ((500.0, 600.0), (480.0, 600.0)),
+        ]
+
+        for src_pt, dst_pt in pairs:
+            dialog._on_landmark_click(src_pt[0], src_pt[1]) # Reference (red)
+            dialog._on_landmark_click(dst_pt[0], dst_pt[1]) # Moving (green)
+
+        assert len(dialog._lm_src_pts) == 3
+        assert len(dialog._lm_dst_pts) == 3
+
+        # 3. Compute RANSAC
+        dialog._on_landmark_button_clicked()
+
+        # M should be roughly [[1, 0, 20], [0, 1, 0]]
+        assert dialog._ransac_M is not None
+        np.testing.assert_allclose(dialog._ransac_M, [[1, 0, 20], [0, 1, 0]], atol=1e-1)
+
+        # 4. Enter landmark mode again and Reuse Previous
+        dialog._on_landmark_button_clicked()
+        dialog._reuse_last_landmarks()
+
+        # 5. Verify reused landmarks
+        assert len(dialog._lm_src_pts) == 3
+        assert len(dialog._lm_dst_pts) == 3
+
+        # After the image was shifted +20px, the features that were at (480, 500)
+        # are now at (500, 500) in the baked image. 
+        # The moving landmarks (dst) should have followed them.
+        for i, (src_pt, _) in enumerate(pairs):
+            expected_dst = src_pt # They should now align with target!
+            actual_dst = dialog._lm_dst_pts[i]
+            np.testing.assert_allclose(actual_dst, expected_dst, atol=1e-1)
+
+    def test_landmark_sidebar(self, dialog, qtbot):
+        """Test that the landmark sidebar populates and responds to clicks."""
+        dialog.show()
+        qtbot.waitExposed(dialog)
+        
+        # Start landmark mode
+        dialog._start_landmark_mode()
+        assert dialog.landmarks_sidebar.isVisible()
+        assert dialog.toggle_list_btn.isVisible()
+        assert dialog.toggle_list_btn.isChecked()
+
+        # Add 2 landmark pairs
+        # Points far from edges to avoid clamping during centerOn
+        dialog._on_landmark_click(500, 500) # ref
+        dialog._on_landmark_click(510, 510) # mov
+        dialog._on_landmark_click(1000, 1000) # ref
+        dialog._on_landmark_click(1010, 1010) # mov
+
+        assert dialog.landmarks_list_widget.count() == 2
+        assert dialog.landmarks_list_widget.item(0).text() == "Pair 1"
+        assert dialog.landmarks_list_widget.item(1).text() == "Pair 2"
+
+        # Test click on "Pair 1"
+        # Force a very high zoom to ensure centering is possible
+        dialog.image_view.scale(10.0, 10.0)
+        dialog.image_view._current_zoom = 10.0
+        
+        item = dialog.landmarks_list_widget.item(0)
+        dialog._on_landmark_list_item_clicked(item)
+        
+        # Verify centering - map viewport center to scene
+        view_center = dialog.image_view.mapToScene(dialog.image_view.viewport().rect().center())
+        # We allow some tolerance due to scrollbar offsets and viewport margins
+        assert view_center.x() == pytest.approx(500, abs=5.0)
+        assert view_center.y() == pytest.approx(500, abs=5.0)
+
+        # Test hide sidebar via method
+        dialog._hide_landmarks_sidebar()
+        assert not dialog.landmarks_sidebar.isVisible()
+        assert not dialog.toggle_list_btn.isChecked()
+
+        # Exit landmark mode
+        dialog._exit_landmark_mode()
+        assert not dialog.landmarks_sidebar.isVisible()
+        assert not dialog.toggle_list_btn.isVisible()
+

@@ -175,6 +175,16 @@ class ZoomableImageView(QGraphicsView):
             self._parent_dialog._on_landmark_click(scene_pt.x(), scene_pt.y())
             event.accept()
             return
+        if (
+            self._parent_dialog
+            and getattr(self._parent_dialog, "_lm_mode", False)
+            and event.button() == Qt.MouseButton.RightButton
+        ):
+            scene_pt = self.mapToScene(event.pos())
+            if hasattr(self._parent_dialog, "_on_landmark_right_click"):
+                self._parent_dialog._on_landmark_right_click(scene_pt.x(), scene_pt.y())
+            event.accept()
+            return
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
