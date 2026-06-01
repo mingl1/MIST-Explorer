@@ -29,7 +29,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from core.crop_anchor_finder import CropAnchorFinder, contrast_to_uint8
+from core.crop_anchor_finder import CropAnchorFinder, brightfield_binarize
 from core.image_utils import numpy_to_qimage
 
 logger = logging.getLogger(__name__)
@@ -186,7 +186,7 @@ class CropAnchorDialog(QDialog):
             ),
             interpolation=cv2.INTER_AREA,
         )
-        return contrast_to_uint8(small)
+        return brightfield_binarize(small)
 
     def _show_overview(self):
         self._overview_pixmap_item.setPixmap(_to_pixmap(self._overview_u8))
@@ -199,7 +199,7 @@ class CropAnchorDialog(QDialog):
 
     def _show_reference_patch(self):
         s = min(self.patch_size.value(), self.ref_h, self.ref_w)
-        patch = contrast_to_uint8(self.reference_img[:s, :s])
+        patch = brightfield_binarize(self.reference_img[:s, :s])
         pix = _to_pixmap(patch).scaled(
             _PREVIEW_SIDE,
             _PREVIEW_SIDE,

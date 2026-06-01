@@ -1,10 +1,12 @@
 """Auto-find the crop anchor that maps the reference (decoding cycle 1) top-left
 into the larger protein (moving) image.
 
-Matching is done with ORB features at full resolution (no downscaling, no density
-map) between the contrast-adjusted reference top-left patch and the contrast-adjusted
-moving image. ORB is rotation-robust and is already used in the alignment pipeline.
-RANSAC partial-affine fits a transform; running it repeatedly on the remaining
+Matching is done with ORB features at full resolution (no downscaling) between the
+brightfield-binarized reference top-left patch and the binarized moving image. The
+brightfield is binarized with a quadtree-adaptive Otsu threshold (``brightfield_binarize``)
+rather than a naive global percentile, so uneven illumination across the slide montage
+does not wash out blobs. ORB is rotation-robust and is already used in the alignment
+pipeline. RANSAC partial-affine fits a transform; running it repeatedly on the remaining
 (non-inlier) matches yields ranked candidates. Each candidate carries a 2x3 affine
 transform T (reference -> protein); the crop anchor is T applied to reference (0, 0).
 """
@@ -15,14 +17,59 @@ import cv2
 import numpy as np
 from PyQt6.QtCore import QThread, pyqtSignal
 from scipy.spatial import cKDTree
+from skimage.filters import threshold_otsu
 
-from utils import adjust_contrast, calculate_ncc
+from utils import calculate_ncc
 
 logger = logging.getLogger(__name__)
 
 _MIN_INLIERS = 8
 _EMPTY_PTS = np.empty((0, 2), dtype=np.float32)
 _BLOB_MATCH_RADIUS = 6.0
+_QUAD_MIN_SIZE = 32
+_QUAD_MAX_STD = 10.0
+
+
+def quadtree_threshold(img: np.ndarray, min_size: int = _QUAD_MIN_SIZE,
+                       max_std: float = _QUAD_MAX_STD) -> np.ndarray:
+    """Quadtree-adaptive Otsu binarization.
+
+    Recursively subdivides the image; a tile is thresholded with a local Otsu cut
+    once it is uniform enough (std <= max_std) or has reached ``min_size``. This
+    handles the uneven illumination of a stitched brightfield montage far better
+    than a single global threshold.
+    """
+    H, W = img.shape[:2]
+    mask = np.zeros((H, W), dtype=bool)
+
+    def process_tile(x0, y0, width, height):
+        if width <= 0 or height <= 0:
+            return
+        tile = img[y0 : y0 + height, x0 : x0 + width]
+        if tile.std() <= max_std or width <= min_size or height <= min_size:
+            try:
+                t = threshold_otsu(tile)
+            except ValueError:
+                t = tile.mean()
+            mask[y0 : y0 + height, x0 : x0 + width] = tile > t
+        else:
+            w_half = width // 2
+            h_half = height // 2
+            process_tile(x0, y0, w_half, h_half)
+            process_tile(x0 + w_half, y0, width - w_half, h_half)
+            process_tile(x0, y0 + h_half, w_half, height - h_half)
+            process_tile(x0 + w_half, y0 + h_half, width - w_half, height - h_half)
+
+    process_tile(0, 0, W, H)
+    return mask
+
+
+def brightfield_binarize(img: np.ndarray, min_size: int = _QUAD_MIN_SIZE,
+                         max_std: float = _QUAD_MAX_STD) -> np.ndarray:
+    """Brightfield -> uint8 blob mask (0/255) via quadtree-adaptive Otsu."""
+    gray = _to_gray(img).astype(np.float32, copy=False)
+    mask = quadtree_threshold(gray, min_size=min_size, max_std=max_std)
+    return (mask.astype(np.uint8) * 255)
 
 
 def _blob_centroids(gray_u8: np.ndarray, max_pts: int = 4000) -> np.ndarray:
@@ -74,13 +121,6 @@ def _to_gray(img: np.ndarray) -> np.ndarray:
     raise ValueError(f"Unsupported image shape {img.shape}")
 
 
-def contrast_to_uint8(img: np.ndarray, low: float = 1.0, high: float = 99.0) -> np.ndarray:
-    """Percentile contrast-adjust an image and return uint8 (for ORB / display)."""
-    gray = _to_gray(img).astype(np.float32, copy=False)
-    adjusted = adjust_contrast(gray, low, high)  # float32 in [0, 1]
-    return (adjusted * 255.0).astype(np.uint8)
-
-
 class CropAnchorFinder(QThread):
     """Worker that proposes ranked crop-anchor candidates via ORB matching."""
 
@@ -97,6 +137,8 @@ class CropAnchorFinder(QThread):
         n_features: int = 50000,
         ratio: float = 0.75,
         ransac_thresh: float = 8.0,
+        quad_min_size: int = _QUAD_MIN_SIZE,
+        quad_max_std: float = _QUAD_MAX_STD,
         parent=None,
     ):
         super().__init__(parent)
@@ -107,6 +149,8 @@ class CropAnchorFinder(QThread):
         self.n_features = int(n_features)
         self.ratio = float(ratio)
         self.ransac_thresh = float(ransac_thresh)
+        self.quad_min_size = int(quad_min_size)
+        self.quad_max_std = float(quad_max_std)
 
     # -- public ------------------------------------------------------------
     def run(self):
@@ -121,11 +165,14 @@ class CropAnchorFinder(QThread):
         ref = _to_gray(self.reference_img)
         mov = _to_gray(self.moving_img)
 
-        # Small top-left reference patch, contrast-adjusted to uint8.
+        # Small top-left reference patch, quadtree-binarized to a blob mask.
         s = min(self.patch_size, ref.shape[0], ref.shape[1])
-        patch = contrast_to_uint8(ref[:s, :s])
-        self.progress.emit(15, "Contrast-adjusting moving image")
-        mov_u8 = contrast_to_uint8(mov)
+        self.progress.emit(10, "Binarizing reference (quadtree)")
+        patch = brightfield_binarize(
+            ref[:s, :s], self.quad_min_size, self.quad_max_std
+        )
+        self.progress.emit(20, "Binarizing moving image (quadtree)")
+        mov_u8 = brightfield_binarize(mov, self.quad_min_size, self.quad_max_std)
 
         orb = cv2.ORB_create(nfeatures=self.n_features)
         self.progress.emit(30, "Detecting reference features")
