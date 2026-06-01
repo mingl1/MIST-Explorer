@@ -16,7 +16,6 @@ from PyQt6.QtGui import QBrush, QColor, QPainter, QPen, QPixmap, QPolygonF
 from PyQt6.QtCore import QPointF
 from PyQt6.QtWidgets import (
     QDialog,
-    QDoubleSpinBox,
     QGraphicsPixmapItem,
     QGraphicsScene,
     QGraphicsView,
@@ -30,9 +29,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from core.crop_anchor_finder import CropAnchorFinder
+from core.crop_anchor_finder import CropAnchorFinder, contrast_to_uint8
 from core.image_utils import numpy_to_qimage
-from utils import to_uint8
 
 logger = logging.getLogger(__name__)
 
@@ -59,9 +57,14 @@ class CropAnchorDialog(QDialog):
         self.ref_h = int(ref_shape[0])
         self.ref_w = int(ref_shape[1])
         self.pad = float(pad)
+        # Square crop, default 1.1x the reference's larger side.
+        self._default_crop_px = int(round(self.pad * max(self.ref_h, self.ref_w)))
 
         self.candidates: list[dict] = []
         self.selected_index = -1
+        self._order_ncc: list[int] = []
+        self._order_inliers: list[int] = []
+        self._order_blob: list[int] = []
         self._finder = None
 
         # Overview of the (large) protein image, downscaled for display.
@@ -97,19 +100,19 @@ class CropAnchorDialog(QDialog):
         self.num_candidates.setValue(5)
         left.addWidget(self.num_candidates)
 
-        left.addWidget(QLabel("Rotation search (± deg)"))
-        self.angle_range = QDoubleSpinBox()
-        self.angle_range.setRange(0.0, 180.0)
-        self.angle_range.setSingleStep(1.0)
-        self.angle_range.setValue(15.0)
-        left.addWidget(self.angle_range)
+        left.addWidget(QLabel("ORB features"))
+        self.n_features = QSpinBox()
+        self.n_features.setRange(1000, 500000)
+        self.n_features.setSingleStep(5000)
+        self.n_features.setValue(50000)
+        left.addWidget(self.n_features)
 
-        left.addWidget(QLabel("Crop padding factor"))
-        self.pad_factor = QDoubleSpinBox()
-        self.pad_factor.setRange(1.0, 2.0)
-        self.pad_factor.setSingleStep(0.05)
-        self.pad_factor.setValue(self.pad)
-        left.addWidget(self.pad_factor)
+        left.addWidget(QLabel("Crop size (px, square)"))
+        self.crop_size_px = QSpinBox()
+        self.crop_size_px.setRange(1, 200000)
+        self.crop_size_px.setSingleStep(100)
+        self.crop_size_px.setValue(self._default_crop_px)
+        left.addWidget(self.crop_size_px)
 
         self.find_button = QPushButton("Find candidates")
         self.find_button.clicked.connect(self._start_find)
@@ -119,10 +122,26 @@ class CropAnchorDialog(QDialog):
         self.progress.setValue(0)
         left.addWidget(self.progress)
 
-        left.addWidget(QLabel("Candidates (ranked)"))
-        self.candidate_list = QListWidget()
-        self.candidate_list.currentRowChanged.connect(self._on_candidate_selected)
-        left.addWidget(self.candidate_list, stretch=1)
+        left.addWidget(QLabel("Ranked by NCC"))
+        self.list_ncc = QListWidget()
+        self.list_ncc.currentRowChanged.connect(
+            lambda r: self._on_list_selected(self.list_ncc, self._order_ncc, r)
+        )
+        left.addWidget(self.list_ncc, stretch=1)
+
+        left.addWidget(QLabel("Ranked by inliers"))
+        self.list_inliers = QListWidget()
+        self.list_inliers.currentRowChanged.connect(
+            lambda r: self._on_list_selected(self.list_inliers, self._order_inliers, r)
+        )
+        left.addWidget(self.list_inliers, stretch=1)
+
+        left.addWidget(QLabel("Ranked by blob match"))
+        self.list_blob = QListWidget()
+        self.list_blob.currentRowChanged.connect(
+            lambda r: self._on_list_selected(self.list_blob, self._order_blob, r)
+        )
+        left.addWidget(self.list_blob, stretch=1)
 
         self.approve_button = QPushButton("Approve && Crop")
         self.approve_button.setEnabled(False)
@@ -167,7 +186,7 @@ class CropAnchorDialog(QDialog):
             ),
             interpolation=cv2.INTER_AREA,
         )
-        return to_uint8(small)
+        return contrast_to_uint8(small)
 
     def _show_overview(self):
         self._overview_pixmap_item.setPixmap(_to_pixmap(self._overview_u8))
@@ -180,7 +199,7 @@ class CropAnchorDialog(QDialog):
 
     def _show_reference_patch(self):
         s = min(self.patch_size.value(), self.ref_h, self.ref_w)
-        patch = to_uint8(self.reference_img[:s, :s])
+        patch = contrast_to_uint8(self.reference_img[:s, :s])
         pix = _to_pixmap(patch).scaled(
             _PREVIEW_SIDE,
             _PREVIEW_SIDE,
@@ -196,8 +215,9 @@ class CropAnchorDialog(QDialog):
         self._show_reference_patch()
         self.find_button.setEnabled(False)
         self.approve_button.setEnabled(False)
-        self.candidate_list.clear()
+        self._clear_lists()
         self.candidates = []
+        self.selected_index = -1
         self._clear_boxes()
         self.progress.setValue(0)
 
@@ -206,7 +226,7 @@ class CropAnchorDialog(QDialog):
             self.moving_img,
             patch_size=self.patch_size.value(),
             num_candidates=self.num_candidates.value(),
-            angle_range=self.angle_range.value(),
+            n_features=self.n_features.value(),
         )
         self._finder.progress.connect(lambda p, _msg: self.progress.setValue(p))
         self._finder.candidates_ready.connect(self._on_candidates_ready)
@@ -214,27 +234,56 @@ class CropAnchorDialog(QDialog):
         self._finder.finished.connect(lambda: self.find_button.setEnabled(True))
         self._finder.start()
 
+    def _clear_lists(self):
+        for widget in (self.list_ncc, self.list_inliers, self.list_blob):
+            widget.blockSignals(True)
+            widget.clear()
+            widget.blockSignals(False)
+
     def _on_error(self, msg):
         self.find_button.setEnabled(True)
         self.progress.setValue(0)
         logger.error("Crop anchor search failed: %s", msg)
-        self.candidate_list.addItem(f"Error: {msg}")
+        self.list_ncc.addItem(f"Error: {msg}")
 
     def _on_candidates_ready(self, candidates):
         self.candidates = candidates or []
-        self.candidate_list.clear()
         self._draw_boxes()
-        for i, cand in enumerate(self.candidates):
-            self.candidate_list.addItem(
-                f"#{i + 1}  score={cand['score']:.3f}  angle={cand['angle']:.1f}°"
-            )
+
+        self._order_ncc = self._rank_by(lambda c: c["score"])
+        self._order_inliers = self._rank_by(lambda c: c.get("inliers", 0))
+        self._order_blob = self._rank_by(lambda c: c.get("blob_fraction", 0.0))
+        self._populate_list(self.list_ncc, self._order_ncc)
+        self._populate_list(self.list_inliers, self._order_inliers)
+        self._populate_list(self.list_blob, self._order_blob)
+
         if self.candidates:
-            self.candidate_list.setCurrentRow(0)
+            self.list_ncc.setCurrentRow(0)  # triggers selection + preview
             self.approve_button.setEnabled(True)
+
+    def _rank_by(self, key):
+        return sorted(
+            range(len(self.candidates)),
+            key=lambda i: key(self.candidates[i]),
+            reverse=True,
+        )
+
+    def _populate_list(self, widget, order):
+        widget.blockSignals(True)
+        widget.clear()
+        for rank, idx in enumerate(order):
+            c = self.candidates[idx]
+            widget.addItem(
+                f"#{rank + 1}  ncc={c['score']:.3f}  inl={c.get('inliers', 0)}  "
+                f"ratio={c.get('inlier_ratio', 0):.2f}  blob={c.get('blob_fraction', 0):.2f}  "
+                f"resid={c.get('residual', 0):.1f}  ang={c['angle']:.1f}°"
+            )
+        widget.blockSignals(False)
 
     # -- overlay boxes -----------------------------------------------------
     def _crop_size(self):
-        return self.ref_w * self.pad_factor.value(), self.ref_h * self.pad_factor.value()
+        size = float(self.crop_size_px.value())
+        return size, size
 
     def _box_polygon(self, cand) -> QPolygonF:
         """Crop rectangle (reference rect under T) projected into overview coords."""
@@ -275,12 +324,18 @@ class CropAnchorDialog(QDialog):
             self._box_items.append(text)
 
     # -- selection / preview ----------------------------------------------
-    def _on_candidate_selected(self, row):
-        if row < 0 or row >= len(self.candidates):
+    def _on_list_selected(self, active_widget, order, row):
+        if row < 0 or row >= len(order):
             return
-        self.selected_index = row
+        # Selecting in one list clears the others so the active pick is unambiguous.
+        for widget in (self.list_ncc, self.list_inliers, self.list_blob):
+            if widget is not active_widget:
+                widget.blockSignals(True)
+                widget.setCurrentRow(-1)
+                widget.blockSignals(False)
+        self.selected_index = order[row]
         self._draw_boxes()
-        self._show_preview(self.candidates[row])
+        self._show_preview(self.candidates[self.selected_index])
 
     def _show_preview(self, cand):
         """Rotate-then-crop preview built from the downscaled overview (fast)."""
